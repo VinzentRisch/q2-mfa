@@ -6,13 +6,10 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import Composition, FeatureTable, Frequency
-from rachis import Citations
 from rachis.core.type import Bool, Float, Range
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
-
-citations = Citations.load("citations.bib", package="q2_mfa")
 
 plugin = Plugin(
     name="mfa",

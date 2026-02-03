@@ -13,7 +13,7 @@ from rachis.plugin.testing import TestPluginBase
 from q2_mfa.transform import transform_clr
 
 
-class TestDfToJsonPerSample(TestPluginBase):
+class TestTransformCLR(TestPluginBase):
     package = "q2_mfa.tests"
 
     def test_transform_clr_data_adaptive_uses_min_nonzero(self):

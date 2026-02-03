@@ -11,8 +11,6 @@ from .transform import transform_clr
 try:
     from ._version import __version__
 except ModuleNotFoundError:
-    __version__ = '0.0.0+notfound'
+    __version__ = "0.0.0+notfound"
 
-__all__ = [
-    "transform_clr"
-]
+__all__ = ["transform_clr"]

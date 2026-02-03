@@ -10,8 +10,9 @@ import pandas as pd
 
 
 def transform_clr(
-        table: pd.DataFrame, pseudocount: float = None, pseudocount_data_adaptive: 
-        bool = True
+    table: pd.DataFrame,
+    pseudocount: float = None,
+    pseudocount_data_adaptive: bool = True,
 ) -> pd.DataFrame:
     """
     Adds a pseudocount to a feature table and applies a centered log-ratio (CLR)
@@ -42,10 +43,10 @@ def transform_clr(
         raise ValueError(
             '"pseudocount-data-adaptive" and "pseudocount" cannot both be set.'
         )
-    
+
     if pseudocount_data_adaptive:
         pseudocount = table[table > 0].min().min()
-    
+
     table = np.log(table + pseudocount)
     table = table.sub(table.mean(axis=1), axis=0)
     return table

@@ -25,7 +25,7 @@ class TestDfToJsonPerSample(TestPluginBase):
             [[-0.346574, 0.346574], [-0.143841, 0.143841]],
         )
 
-        obs = transform_clr(df, pseudocount=None, pseudocount_data_adaptive=True)
+        obs = transform_clr(df, pseudocount=None)
         pd.testing.assert_frame_equal(obs, exp)
         assert np.allclose(obs.sum(axis=1).to_numpy(), 0.0)
 
@@ -38,18 +38,6 @@ class TestDfToJsonPerSample(TestPluginBase):
             [[-0.549306, 0.549306], [-0.168236, 0.168236]],
         )
 
-        obs = transform_clr(df, pseudocount=0.5, pseudocount_data_adaptive=False)
+        obs = transform_clr(df, pseudocount=0.5)
         pd.testing.assert_frame_equal(obs, exp)
         assert np.allclose(obs.sum(axis=1).to_numpy(), 0.0)
-
-    def test_transform_clr_raises_both_false(self):
-        with self.assertRaisesRegex(ValueError, "must be set"):
-            transform_clr(
-                pd.DataFrame(), pseudocount=None, pseudocount_data_adaptive=False
-            )
-
-    def test_transform_clr_raises_both_true(self):
-        with self.assertRaisesRegex(ValueError, "cannot both be set"):
-            transform_clr(
-                pd.DataFrame(), pseudocount=1.0, pseudocount_data_adaptive=True
-            )

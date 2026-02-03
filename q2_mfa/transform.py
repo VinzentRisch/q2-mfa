@@ -36,3 +36,25 @@ def transform_clr(
     table = np.log(table + pseudocount)
     table = table.sub(table.mean(axis=1), axis=0)
     return table
+
+
+def transform_log(
+    table: pd.DataFrame,
+    pseudocount: float = None,
+) -> pd.DataFrame:
+    """
+    Applies a log-normal (log) transformation to a DataFrame after adding
+    a pseudocount. The pseudocount can be provided explicitly or computed as the
+    minimum non-zero value in the table.
+
+    Args:
+        table (pd.DataFrame): feature table with non-negative values
+        pseudocount (float): value added prior to log transform
+
+    Output:
+        pd.DataFrame: log-transformed feature table
+    """
+    if not pseudocount:
+        pseudocount = table[table > 0].min().min()
+
+    return np.log(table + pseudocount)

@@ -6,10 +6,12 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import Composition, FeatureTable, Frequency
+from q2_types.ordination import PCoAResults
 from rachis.core.type import Float, Range
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
+from q2_mfa.pca import pca
 
 plugin = Plugin(
     name="mfa",
@@ -37,5 +39,19 @@ plugin.methods.register_function(
     output_descriptions={"clr_table": "The CLR transformed table."},
     name="Centered log-ratio (CLR) transformation.",
     description="A centered log-ratio transformation of the input table.",
+    citations=[],
+)
+
+plugin.methods.register_function(
+    function=pca,
+    inputs={"table": FeatureTable[Frequency | Composition]},
+    parameters={},
+    outputs=[("pca_results", PCoAResults)],
+    input_descriptions={"table": "The frequency table."},
+    parameter_descriptions={},
+    output_descriptions={"pca_results": "The PCA results."},
+    name="PCA",
+    description="Principal Component Analysis (PCA) of the input table. The data is "
+    "scaled before the PCA is performed.",
     citations=[],
 )

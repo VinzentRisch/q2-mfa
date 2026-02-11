@@ -7,11 +7,14 @@
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import Composition, FeatureTable, Frequency
 from q2_types.ordination import PCoAResults
+from rachis import Citations
 from rachis.core.type import Float, Range
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
 from q2_mfa.pca import pca
+
+citations = Citations.load("citations.bib", package="q2_mfa")
 
 plugin = Plugin(
     name="mfa",
@@ -53,5 +56,5 @@ plugin.methods.register_function(
     name="PCA",
     description="Principal Component Analysis (PCA) of the input table. The data is "
     "scaled before the PCA is performed.",
-    citations=[],
+    citations=[citations["hotelling1933analysis"]],
 )

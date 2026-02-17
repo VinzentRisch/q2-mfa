@@ -5,12 +5,12 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from q2_types.feature_table import Composition, FeatureTable, Frequency
-from rachis.core.type import Float, Range
-from rachis.plugin import Plugin
+from q2_types.feature_table import Composition, FeatureTable, Frequency, Normalized
+from rachis.core.type import Categorical, Choices, Float, Range, Str
+from rachis.plugin import Bool, MetadataColumn, Plugin
 
 from q2_mfa import __version__, transform_clr
-from q2_mfa.transform import transform_log
+from q2_mfa.transform import pretreat_metabolome
 
 plugin = Plugin(
     name="mfa",
@@ -42,20 +42,59 @@ plugin.methods.register_function(
 )
 
 plugin.methods.register_function(
-    function=transform_log,
+    function=pretreat_metabolome,
     inputs={"table": FeatureTable[Frequency]},
     parameters={
+        "sample_normalization": Str % Choices(["none", "pqn"]),
+        "pqn_method": Str % Choices(["median", "mean"]),
+        "pqn_ref_samples": MetadataColumn[Categorical],
+        "pqn_ref_label": Str,
+        "transform": Str % Choices(["log", "sqrt", "none"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
+        "center": Bool,
+        "scale": Str % Choices(["none", "autoscale", "pareto", "range"]),
     },
-    outputs=[("log_table", FeatureTable[Composition])],
-    input_descriptions={"table": "The frequency table."},
+    outputs=[("pretreated_table", FeatureTable[Normalized])],
+    input_descriptions={"table": "Metabolomics feature table."},
     parameter_descriptions={
-        "pseudocount": "The pseudocount to add to the table before the "
-        "transformation. If it is set to None, the pseudocount is "
-        "computed as the minimum non-zero value.",
+        "sample_normalization": (
+            "Sample-level normalization to apply: 'none' or 'pqn' "
+            "(Probabilistic Quotient Normalization)."
+        ),
+        "pqn_method": (
+            "How to construct the PQN reference spectrum: 'median' or 'mean'."
+        ),
+        "pqn_ref_samples": (
+            "Optional categorical metadata column name used to select samples "
+            "for building the PQN reference spectrum."
+        ),
+        "pqn_ref_label": (
+            "Label value in `pqn_ref_samples` indicating which samples to use "
+            "for the PQN reference. Required when `pqn_ref_samples` is provided."
+        ),
+        "transform": "Transformation applied to the data ('log', 'sqrt', or 'none').",
+        "pseudocount": (
+            "Offset added before log transform. If omitted/None and transform='log', "
+            "it is inferred as the minimum non-zero value."
+        ),
+        "center": "If True, mean-center each feature",
+        "scale": (
+            "Feature scaling method applied after centering: 'none', 'autoscale' "
+            "(divide by std), 'pareto' (divide by sqrt(std)), or 'range' "
+            "(divide by max-min)."
+        ),
     },
-    output_descriptions={"log_table": "The log-normal transformed table."},
-    name="Log-normal transformation.",
-    description="A log-normal transformation of the input feature table.",
+    output_descriptions={
+        "pretreated_table": (
+            "Pretreated table after optional PQN normalization, transform, centering, "
+            "and scaling."
+        )
+    },
+    name="Metabolomics preprocessing",
+    description=(
+        "Applies metabolomics-friendly preprocessing in order: optional sample "
+        "normalization, optional transform (log/sqrt), optional feature centering, and "
+        "optional feature scaling."
+    ),
     citations=[],
 )

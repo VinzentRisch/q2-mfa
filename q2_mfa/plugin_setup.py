@@ -6,7 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import Composition, FeatureTable, Frequency, Normalized
-from rachis.core.type import Categorical, Choices, Float, Range, Str
+from rachis.core.type import Categorical, Choices, Float, Int, Range, Str
 from rachis.plugin import Bool, MetadataColumn, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -45,34 +45,38 @@ plugin.methods.register_function(
     function=pretreat_metabolome,
     inputs={"table": FeatureTable[Frequency]},
     parameters={
-        "sample_normalization": Str % Choices(["none", "pqn"]),
+        "sample_normalization": Str % Choices(["pqn"]),
         "pqn_method": Str % Choices(["median", "mean"]),
         "pqn_ref_samples": MetadataColumn[Categorical],
         "pqn_ref_label": Str,
-        "transform": Str % Choices(["log", "sqrt", "none"]),
+        "transform": Str % Choices(["log", "log10", "sqrt"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
         "center": Bool,
-        "scale": Str % Choices(["none", "autoscale", "pareto", "range"]),
+        "scale": Str % Choices(["autoscale", "pareto", "range"]),
+        "impute": Str % Choices(["knn", "rf"]),
+        "knn_neighbors": Int % Range(1, None),
+        "rf_n_estimators": Int % Range(1, None),
+        "rf_random_state": Int,
     },
     outputs=[("pretreated_table", FeatureTable[Normalized])],
     input_descriptions={"table": "Metabolomics feature table."},
     parameter_descriptions={
         "sample_normalization": (
-            "Sample-level normalization to apply: 'none' or 'pqn' "
+            "Sample-level normalization to apply: 'pqn' "
             "(Probabilistic Quotient Normalization)."
         ),
         "pqn_method": (
             "How to construct the PQN reference spectrum: 'median' or 'mean'."
         ),
         "pqn_ref_samples": (
-            "Optional categorical metadata column name used to select samples "
+            "Categorical metadata column name used to select samples "
             "for building the PQN reference spectrum."
         ),
         "pqn_ref_label": (
             "Label value in `pqn_ref_samples` indicating which samples to use "
             "for the PQN reference. Required when `pqn_ref_samples` is provided."
         ),
-        "transform": "Transformation applied to the data ('log', 'sqrt', or 'none').",
+        "transform": "Transformation applied to the data ('log', 'log10', 'sqrt').",
         "pseudocount": (
             "Offset added before log transform. If omitted/None and transform='log', "
             "it is inferred as the minimum non-zero value."
@@ -83,18 +87,24 @@ plugin.methods.register_function(
             "(divide by std), 'pareto' (divide by sqrt(std)), or 'range' "
             "(divide by max-min)."
         ),
+        "impute": (
+            "Missing-value imputation method. K-Nearest Neighbors imputation, or "
+            "Random Forest imputation."
+        ),
+        "knn_neighbors": "Number of neighbors for KNN imputation.",
+        "rf_n_estimators": "Number of trees for RandomForest imputation.",
+        "rf_random_state": "Random state for RandomForest reproducibility.",
     },
     output_descriptions={
         "pretreated_table": (
-            "Pretreated table after optional PQN normalization, transform, centering, "
-            "and scaling."
+            "Pretreated table after optional imputation, normalization, "
+            "transformation, centering, and scaling."
         )
     },
-    name="Metabolomics preprocessing",
+    name="Metabolomics pretreatment",
     description=(
-        "Applies metabolomics-friendly preprocessing in order: optional sample "
-        "normalization, optional transform (log/sqrt), optional feature centering, and "
-        "optional feature scaling."
+        "Applies metabolomics-friendly pretreatment in order: imputation,  sample "
+        "normalization, transformation, centering, and feature scaling."
     ),
     citations=[],
 )

@@ -8,6 +8,9 @@
 import numpy as np
 import pandas as pd
 import rachis
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer, KNNImputer
 
 
 def transform_clr(
@@ -117,21 +120,87 @@ def normalize_pqn(
     return X
 
 
+def impute_table(
+    table: pd.DataFrame,
+    impute: str = "knn",
+    knn_neighbors: int = 10,
+    rf_n_estimators: int = 100,
+    rf_random_state: int | None = 0,
+) -> pd.DataFrame:
+    """
+    Helper to perform missing-value imputation on a numeric dataframe with.
+
+    Supports:
+        - "knn": sklearn.impute.KNNImputer
+        - "rf": IterativeImputer with RandomForestRegressor
+
+    Parameters:
+        table (pd.DataFrame):
+            Numeric data frame (samples x features) to impute; missing values as NaN.
+        impute (str | None):
+            Imputation method: "knn", "rf", or None to skip imputation.
+        knn_neighbors (int):
+            Number of neighbors for KNN imputation (used when impute == "knn").
+        rf_n_estimators (int):
+            Number of trees for RandomForestRegressor (used when impute == "rf").
+        rf_random_state (int | None):
+            Random state for RandomForest and IterativeImputer reproducibility.
+
+    Returns:
+        pd.DataFrame:
+            New DataFrame with imputed values, preserving index and columns.
+
+    Raises:
+        ValueError:
+            If an unknown imputation method is provided.
+    """
+    table = table.replace(0, np.nan)
+
+    if impute == "knn":
+
+        imputer = KNNImputer(n_neighbors=knn_neighbors)
+        table_imp = pd.DataFrame(
+            imputer.fit_transform(table), index=table.index, columns=table.columns
+        )
+
+    elif impute == "rf":
+
+        estimator = RandomForestRegressor(
+            n_estimators=rf_n_estimators, random_state=rf_random_state
+        )
+        imp = IterativeImputer(
+            estimator=estimator,
+            random_state=rf_random_state,
+            max_iter=10,
+            initial_strategy="mean",
+        )
+        table_imp = pd.DataFrame(
+            imp.fit_transform(table), index=table.index, columns=table.columns
+        )
+
+    return table_imp
+
+
 def pretreat_metabolome(
     table: pd.DataFrame,
     sample_normalization: str | None = None,
     pqn_method: str = "median",
     pqn_ref_samples: rachis.CategoricalMetadataColumn = None,
-    pqn_ref_label: str = None,
+    pqn_ref_label: str | None = None,
     transform: str | None = None,
     pseudocount: float | None = None,
     center: bool = False,
     scale: str | None = None,
+    impute: str | None = None,
+    knn_neighbors: int = 5,
+    rf_n_estimators: int = 100,
+    rf_random_state: int | None = 0,
 ) -> pd.DataFrame:
     """
     Applies metabolomics-friendly preprocessing to a feature table.
 
     Steps (in order):
+        0) Optional imputation (knn or rf)
         1) Sample normalization: PQN
         2) Transform (log, log10 or sqrt)
         3) Centering (per feature / column)
@@ -151,15 +220,23 @@ def pretreat_metabolome(
             Label value in `pqn_ref_samples` indicating which samples to use for the
             PQN reference. Required when `pqn_ref_samples` is provided.
         transform (str):
-            Transformation to apply: "log", "sqrt", or "none".
+            Transformation to apply: "log", "log10", "sqrt", or "none".
         pseudocount (float | None):
-            Offset added before log transform. If None and transform="log",
+            Offset added before log transform. If None and transform starts with "log",
             uses the minimum non-zero value in the table. Must be > 0.
         center (bool):
             If True, mean-center each feature (column).
         scale (str):
             Scaling method: "none", "autoscale" (unit variance), "pareto"
             (divide by sqrt(std)), or "range" (divide by max-min).
+        impute (str | None):
+            Missing-value imputation method. Supported: "knn", "rf", or None.
+        knn_neighbors (int):
+            Number of neighbors for KNN imputation.
+        rf_n_estimators (int):
+            Number of trees for RandomForest used in iterative imputation.
+        rf_random_state (int | None):
+            Random state for RandomForest / IterativeImputer reproducibility.
 
     Returns:
         pd.DataFrame:
@@ -172,8 +249,17 @@ def pretreat_metabolome(
 
     X = table.astype(float).copy()
 
-    # 1) Sample normalization (PQN)
+    # 0) Optional imputation (before normalization/transform)
+    if impute is not None:
+        X = impute_table(
+            X,
+            impute=impute,
+            knn_neighbors=knn_neighbors,
+            rf_n_estimators=rf_n_estimators,
+            rf_random_state=rf_random_state,
+        )
 
+    # 1) Sample normalization (PQN)
     if sample_normalization == "pqn":
         X = normalize_pqn(
             table=X,
@@ -183,7 +269,6 @@ def pretreat_metabolome(
         )
 
     # 2) Transform
-
     if transform in ("log", "log10"):
         if (X < 0).any().any():
             raise ValueError("Log transform requires non-negative values.")
@@ -210,7 +295,6 @@ def pretreat_metabolome(
         X = X - X.mean(axis=0)
 
     # 4) Scale per feature (column)
-
     if scale == "autoscale":
         sd = X.std(axis=0, ddof=0)
         if (sd == 0).any():

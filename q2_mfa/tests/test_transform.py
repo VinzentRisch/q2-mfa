@@ -14,7 +14,12 @@ from numpy.testing import assert_allclose
 from rachis import CategoricalMetadataColumn
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.transform import normalize_pqn, pretreat_metabolome, transform_clr
+from q2_mfa.transform import (
+    impute_table,
+    normalize_pqn,
+    pretreat_metabolome,
+    transform_clr,
+)
 
 
 class TestTransformCLR(TestPluginBase):
@@ -497,6 +502,36 @@ class TestPQN(TestPluginBase):
                 ref_samples=self.ref_metadata,
                 ref_label="qc",
             )
+
+
+class TestImputeTable(TestPluginBase):
+    package = "q2_mfa"
+
+    def setUp(self):
+        super().setUp()
+        self.df = pd.DataFrame(
+            {
+                "F1": [0.0, 1.0, 2.0],
+                "F2": [3.0, 0.0, 4.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
+
+    def test_impute_preserves_shape_index_columns(self):
+        out = impute_table(self.df, impute="knn", knn_neighbors=2)
+
+        self.assertEqual(out.shape, self.df.shape)
+        self.assertFalse((out.to_numpy() == 0.0).any())
+        self.assertListEqual(list(out.index), list(self.df.index))
+        self.assertListEqual(list(out.columns), list(self.df.columns))
+
+    def test_impute_replaces_zeros(self):
+        out = impute_table(self.df, impute="rf", rf_n_estimators=10, rf_random_state=42)
+
+        self.assertEqual(out.shape, self.df.shape)
+        self.assertFalse((out.to_numpy() == 0.0).any())
+        self.assertListEqual(list(out.index), list(self.df.index))
+        self.assertListEqual(list(out.columns), list(self.df.columns))
 
 
 if __name__ == "__main__":

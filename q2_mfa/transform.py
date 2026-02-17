@@ -184,7 +184,7 @@ def pretreat_metabolome(
 
     # 2) Transform
 
-    if transform == "log" or "log10":
+    if transform in ("log", "log10"):
         if (X < 0).any().any():
             raise ValueError("Log transform requires non-negative values.")
         if pseudocount is None:

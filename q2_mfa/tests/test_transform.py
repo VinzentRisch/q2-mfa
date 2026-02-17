@@ -59,7 +59,7 @@ class TestTransformLog(TestPluginBase):
             [[0.000000, 0.693147], [1.098612, 1.386294]],
         )
 
-        obs = pretreat_metabolome(df, pseudocount=None)
+        obs = pretreat_metabolome(df, pseudocount=None, transform="log")
         pd.testing.assert_frame_equal(obs, exp)
 
     def test_transform_log_fixed_pseudocount(self):
@@ -71,7 +71,7 @@ class TestTransformLog(TestPluginBase):
             [[-0.693147, 0.405465], [0.916291, 1.252763]],
         )
 
-        obs = pretreat_metabolome(df, pseudocount=0.5)
+        obs = pretreat_metabolome(df, pseudocount=0.5, transform="log")
         pd.testing.assert_frame_equal(obs, exp)
 
 

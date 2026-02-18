@@ -217,7 +217,6 @@ def transform_table(
     if transform in ("log", "log10"):
         if pseudocount is None:
             min_nonzero = table.where(table > 0).min().min()
-
             pseudocount = float(min_nonzero)
         if transform == "log":
             table = np.log(table + pseudocount)
@@ -228,6 +227,62 @@ def transform_table(
         table = np.sqrt(table)
 
     return pd.DataFrame(table, index=table.index, columns=table.columns)
+
+
+def scale_table(
+    table: pd.DataFrame,
+    scale: str = "auto",
+) -> pd.DataFrame:
+    """
+    Applies scaling to a feature table.
+
+    Supported scaling methods:
+        - "autoscale": mean-center and divide by standard deviation (unit variance)
+        - "pareto": mean-center and divide by square root of standard deviation
+        - "range": mean-center and divide by max-min range
+
+    Parameters:
+        table (pd.DataFrame):
+            Feature table (samples x features).
+        scale (str | None):
+            Scaling method: "auto", "pareto", or "range".
+
+    Returns:
+        pd.DataFrame:
+            Scaled table with the same shape and index/columns as input.
+
+    Raises:
+        ValueError:
+            If scaling fails due to zero variance or range.
+    """
+    # center the table first
+    table = table - table.mean(axis=0)
+
+    if scale == "auto":
+        sd = table.std(axis=0, ddof=0)
+        if (sd == 0).any():
+            raise ValueError(
+                "Autoscaling not possible: at least one feature has zero variance."
+            )
+        table = table / sd
+
+    elif scale == "pareto":
+        sd = table.std(axis=0, ddof=0)
+        if (sd == 0).any():
+            raise ValueError(
+                "Pareto scaling not possible: at least one feature has zero variance."
+            )
+        table = table / np.sqrt(sd)
+
+    elif scale == "range":
+        rng = table.max(axis=0) - table.min(axis=0)
+        if (rng == 0).any():
+            raise ValueError(
+                "Range scaling not possible: at least one feature has zero range."
+            )
+        table = table / rng
+
+    return table
 
 
 def pretreat_metabolome(
@@ -253,7 +308,7 @@ def pretreat_metabolome(
         1) Sample normalization: PQN
         2) Transform (log, log10, sqrt, or none)
         3) Centering (per feature / column)
-        4) Scaling (per feature / column): autoscale, pareto, or range
+        4) Scaling (per feature / column): auto, pareto, or range
 
     Parameters:
         table (pd.DataFrame):
@@ -276,7 +331,7 @@ def pretreat_metabolome(
         center (bool):
             If True, mean-center each feature (column).
         scale (str):
-            Scaling method: "none", "autoscale" (unit variance), "pareto"
+            Scaling method: "none", "auto" (unit variance), "pareto"
             (divide by sqrt(std)), or "range" (divide by max-min).
         impute (str | None):
             Missing-value imputation method. Supported: "knn", "rf", or None.
@@ -330,28 +385,7 @@ def pretreat_metabolome(
         X = X - X.mean(axis=0)
 
     # 4) Scale per feature (column)
-    if scale == "autoscale":
-        sd = X.std(axis=0, ddof=0)
-        if (sd == 0).any():
-            raise ValueError(
-                "Autoscaling not possible: at least one feature has zero variance."
-            )
-        X = X / sd
-
-    elif scale == "pareto":
-        sd = X.std(axis=0, ddof=0)
-        if (sd == 0).any():
-            raise ValueError(
-                "Pareto scaling not possible: at least one feature has zero variance."
-            )
-        X = X / np.sqrt(sd)
-
-    elif scale == "range":
-        rng = X.max(axis=0) - X.min(axis=0)
-        if (rng == 0).any():
-            raise ValueError(
-                "Range scaling not possible: at least one feature has zero range."
-            )
-        X = X / rng
+    if scale is not None:
+        X = scale_table(X, scale=scale)
 
     return pd.DataFrame(X, index=table.index, columns=table.columns)

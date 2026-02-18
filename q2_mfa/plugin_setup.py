@@ -52,7 +52,7 @@ plugin.methods.register_function(
         "transform": Str % Choices(["log", "log10", "sqrt"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
         "center": Bool,
-        "scale": Str % Choices(["autoscale", "pareto", "range"]),
+        "scale": Str % Choices(["auto", "pareto", "range"]),
         "impute": Str % Choices(["knn", "rf"]),
         "knn_neighbors": Int % Range(1, None),
         "rf_n_estimators": Int % Range(1, None),
@@ -83,9 +83,9 @@ plugin.methods.register_function(
         ),
         "center": "If True, mean-center each feature",
         "scale": (
-            "Feature scaling method applied after centering: 'none', 'autoscale' "
-            "(divide by std), 'pareto' (divide by sqrt(std)), or 'range' "
-            "(divide by max-min)."
+            "Feature scaling method applied: 'auto' (mean-center and divide by std), "
+            "'pareto' (mean-center and divide by sqrt(std)), or 'range' (mean-center "
+            "and divide by max-min)."
         ),
         "impute": (
             "Missing-value imputation method. K-Nearest Neighbors imputation, or "

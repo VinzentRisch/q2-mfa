@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pandas.testing as pdt
 from numpy.testing import assert_allclose
+from pandas._testing import assert_frame_equal
 from rachis import CategoricalMetadataColumn
 from rachis.plugin.testing import TestPluginBase
 
@@ -18,6 +19,7 @@ from q2_mfa.transform import (
     impute_table,
     normalize_pqn,
     pretreat_metabolome,
+    scale_table,
     transform_clr,
     transform_table,
 )
@@ -152,67 +154,6 @@ class TestPretreatMetabolome(TestPluginBase):
         means = out.mean(axis=0).to_numpy()
         assert_allclose(means, np.zeros_like(means), rtol=0, atol=1e-12)
 
-    def test_autoscale_only_no_centering_matches_definition(self):
-        df = self.df_nonneg
-
-        out = pretreat_metabolome(
-            df,
-            sample_normalization=None,
-            transform=None,
-            center=False,
-            scale="autoscale",
-        )
-
-        # Expected manual computation
-        X = df.astype(float)
-        sd = X.std(axis=0, ddof=0)
-        expected = X / sd
-
-        assert_allclose(out.to_numpy(), expected.to_numpy(), atol=1e-12)
-
-        # scaling should reduce std by exactly sd factor
-        new_std = out.std(axis=0, ddof=0).to_numpy()
-        original_std = X.std(axis=0, ddof=0).to_numpy()
-
-        assert_allclose(new_std, original_std / original_std, atol=1e-12)
-
-    def test_pareto_scaling(self):
-        df = self.df_nonneg
-        out = pretreat_metabolome(
-            df,
-            sample_normalization=None,
-            transform=None,
-            center=False,
-            scale="pareto",
-        )
-        X = df.astype(float)
-        sd = X.std(axis=0, ddof=0)
-        expected = X / np.sqrt(sd)
-
-        assert_allclose(out.to_numpy(), expected.to_numpy(), atol=1e-12)
-
-    def test_range_scaling_only_no_centering_matches_definition(self):
-        df = self.df_nonneg
-
-        out = pretreat_metabolome(
-            df,
-            sample_normalization=None,
-            transform=None,
-            center=False,
-            scale="range",
-        )
-
-        # Expected manual computation
-        X = df.astype(float)
-        rng = X.max(axis=0) - X.min(axis=0)
-        expected = X / rng
-
-        assert_allclose(out.to_numpy(), expected.to_numpy(), atol=1e-12)
-
-        # resulting feature ranges should equal 1
-        new_rng = out.max(axis=0) - out.min(axis=0)
-        assert_allclose(new_rng.to_numpy(), np.ones_like(new_rng), atol=1e-12)
-
     # --------- PQN tests (don’t overfit; test properties) ---------
 
     def test_pqn_is_samplewise_scaling_only(self):
@@ -262,41 +203,79 @@ class TestPretreatMetabolome(TestPluginBase):
 
     # ---------- Error tests (assertRaisesRegex) ----------
 
-    def test_autoscale_raises_on_zero_variance_feature(self):
+
+class TestScaleTable(TestPluginBase):
+    package = "q2_mfa"
+
+    def setUp(self):
+        super().setUp()
+
+        self.df_nonneg = pd.DataFrame(
+            {
+                "F1": [0.0, 1.0, 2.0],
+                "F2": [3.0, 0.0, 4.0],
+                "F3": [5.0, 6.0, 0.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
+
+        self.df_no_variance = pd.DataFrame(
+            {
+                "F1": [7.0, 7.0, 7.0],
+                "F2": [1.0, 2.0, 3.0],
+                "F3": [2.0, 2.0, 5.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
+
+    def test_autoscale(self):
+        out = scale_table(self.df_nonneg, scale="auto")
+
+        X = self.df_nonneg
+        sd = X.std(axis=0, ddof=0)
+        expected = (X - X.mean(axis=0)) / sd
+
+        assert_frame_equal(out, expected)
+
+    def test_pareto_scaling(self):
+        out = scale_table(self.df_nonneg, scale="pareto")
+
+        X = self.df_nonneg
+        sd = X.std(axis=0, ddof=0)
+        expected = (X - X.mean(axis=0)) / np.sqrt(sd)
+
+        assert_frame_equal(out, expected)
+
+    def test_range_scaling(self):
+        out = scale_table(self.df_nonneg, scale="range")
+
+        # Expected manual computation
+        X = self.df_nonneg
+        rng = X.max(axis=0) - X.min(axis=0)
+        expected = (X - X.mean(axis=0)) / rng
+
+        assert_frame_equal(out, expected)
+
+    def test_autoscale_raises(self):
         with self.assertRaisesRegex(
             ValueError,
             r"Autoscaling not possible: at least one feature has zero variance\.",
         ):
-            pretreat_metabolome(
-                self.df_zero_variance_feature,
-                transform=None,
-                center=False,  # IMPORTANT: keep constant feature constant
-                scale="autoscale",
-            )
+            scale_table(self.df_no_variance, scale="auto")
 
-    def test_pareto_raises_on_zero_variance_feature(self):
+    def test_pareto_raises(self):
         with self.assertRaisesRegex(
             ValueError,
             r"Pareto scaling not possible: at least one feature has zero variance\.",
         ):
-            pretreat_metabolome(
-                self.df_zero_variance_feature,
-                transform=None,
-                center=False,  # IMPORTANT
-                scale="pareto",
-            )
+            scale_table(self.df_no_variance, scale="pareto")
 
-    def test_range_raises_on_zero_range_feature(self):
+    def test_range_raises(self):
         with self.assertRaisesRegex(
             ValueError,
             r"Range scaling not possible: at least one feature has zero range\.",
         ):
-            pretreat_metabolome(
-                self.df_zero_range_feature,
-                transform=None,
-                center=False,  # IMPORTANT
-                scale="range",
-            )
+            scale_table(self.df_no_variance, scale="range")
 
 
 class TestTransformTable(TestPluginBase):

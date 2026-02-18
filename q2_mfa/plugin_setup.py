@@ -9,8 +9,7 @@ from q2_types.feature_table import Composition, FeatureTable, Frequency, Normali
 from rachis.core.type import Categorical, Choices, Float, Int, Range, Str
 from rachis.plugin import Bool, MetadataColumn, Plugin
 
-from q2_mfa import __version__, transform_clr
-from q2_mfa.transform import pretreat_metabolome
+from q2_mfa import __version__, pretreat_metabolome, transform_clr
 
 plugin = Plugin(
     name="mfa",

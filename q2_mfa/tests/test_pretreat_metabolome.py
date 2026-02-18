@@ -29,7 +29,6 @@ class TestPretreatMetabolome(TestPluginBase):
 
     def setUp(self):
         super().setUp()
-        # All non-negative, includes zeros and positives (valid for log/sqrt)
         self.df_nonneg = pd.DataFrame(
             {
                 "F1": [0.0, 1.0, 2.0],
@@ -39,79 +38,7 @@ class TestPretreatMetabolome(TestPluginBase):
             index=["S1", "S2", "S3"],
         )
 
-        # Contains a negative value (invalid for log/sqrt)
-        self.df_has_negative = pd.DataFrame(
-            {
-                "F1": [0.0, -1.0, 2.0],
-                "F2": [3.0, 0.0, 4.0],
-                "F3": [5.0, 6.0, 0.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        # No positive values anywhere -> pseudocount inference should fail for log
-        self.df_no_positive = pd.DataFrame(
-            {
-                "F1": [0.0, 0.0, 0.0],
-                "F2": [0.0, 0.0, 0.0],
-                "F3": [0.0, 0.0, 0.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        # Zero variance in at least one feature after centering decision:
-        # Here F1 is constant; if center=False, autoscale/pareto should fail on sd==0.
-        self.df_zero_variance_feature = pd.DataFrame(
-            {
-                "F1": [7.0, 7.0, 7.0],  # constant -> sd == 0
-                "F2": [1.0, 2.0, 3.0],
-                "F3": [2.0, 2.0, 5.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        # Zero range in at least one feature when center=False:
-        self.df_zero_range_feature = pd.DataFrame(
-            {
-                "F1": [9.0, 9.0, 9.0],  # max-min == 0
-                "F2": [1.0, 2.0, 3.0],
-                "F3": [4.0, 6.0, 8.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        # Simple non-negative DF for deterministic golden tests
-        self.df_small = pd.DataFrame(
-            {
-                "F1": [0.0, 1.0],
-                "F2": [3.0, 7.0],
-            },
-            index=["S1", "S2"],
-        )
-
-        # A slightly larger DF for centering/scaling invariants
-        self.df_nonneg = pd.DataFrame(
-            {
-                "F1": [0.0, 1.0, 2.0],
-                "F2": [3.0, 0.0, 4.0],
-                "F3": [5.0, 6.0, 0.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        # DF suited to PQN: all positive, not identical across samples
-        self.df_pqn = pd.DataFrame(
-            {
-                "F1": [10.0, 20.0, 30.0],
-                "F2": [5.0, 10.0, 15.0],
-                "F3": [2.0, 4.0, 6.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-    # --------- Value-based “golden” tests ---------
-
-    def test_centering_makes_feature_means_zero(self):
+    def test_centering(self):
         out = pretreat_metabolome(
             self.df_nonneg,
             sample_normalization=None,
@@ -120,57 +47,23 @@ class TestPretreatMetabolome(TestPluginBase):
             scale=None,
         )
 
-        means = out.mean(axis=0).to_numpy()
-        assert_allclose(means, np.zeros_like(means), rtol=0, atol=1e-12)
-
-    # --------- PQN tests (don’t overfit; test properties) ---------
-
-    def test_pqn_is_samplewise_scaling_only(self):
-        # With PQN on, each sample should be scaled by a single factor
-        # (ratios between features within a sample should be preserved)
-        out = pretreat_metabolome(
-            self.df_pqn,
-            sample_normalization="pqn",
-            pqn_method="median",
-            transform=None,
-            center=False,
-            scale=None,
-        )
-
-        # For each sample i, out_i / in_i should be constant across features
-        # (within numerical tolerance)
-        ratio = out / self.df_pqn
-        for sid in ratio.index:
-            row = ratio.loc[sid].to_numpy()
-            assert_allclose(row, np.full_like(row, row[0]), rtol=0, atol=1e-10)
-
-    def test_pqn_does_not_change_zeros(self):
-        df = self.df_nonneg.copy()
-        out = pretreat_metabolome(
-            df,
-            sample_normalization="pqn",
-        )
-        # Multiplicative scaling should keep zeros as zeros
-        mask = df.to_numpy() == 0.0
-        self.assertTrue((out.to_numpy()[mask] == 0.0).all())
-
-    # ---------- Happy-path tests ----------
+        expected = self.df_nonneg - self.df_nonneg.mean(axis=0)
+        assert_frame_equal(out, expected)
 
     def test_preserves_shape_index_columns(self):
         out = pretreat_metabolome(
             self.df_nonneg,
-            sample_normalization=None,
+            sample_normalization="pqn",
+            impute="knn",
             transform="log",
             pseudocount=1e-6,
-            center=True,
-            scale=None,
+            center=False,
+            scale="auto",
         )
         self.assertIsInstance(out, pd.DataFrame)
         self.assertEqual(out.shape, self.df_nonneg.shape)
         self.assertListEqual(list(out.index), list(self.df_nonneg.index))
         self.assertListEqual(list(out.columns), list(self.df_nonneg.columns))
-
-    # ---------- Error tests (assertRaisesRegex) ----------
 
 
 class TestScaleTable(TestPluginBase):

@@ -181,6 +181,55 @@ def impute_table(
     return table_imp
 
 
+def transform_table(
+    table: pd.DataFrame,
+    transform: str = "log",
+    pseudocount: float | None = None,
+) -> pd.DataFrame:
+    """
+    Applies a transformation to a feature table.
+
+    Supported transformations:
+        - "log": natural logarithm
+        - "log10": base-10 logarithm
+        - "sqrt": square root
+
+    Parameters:
+        table (pd.DataFrame):
+            Feature table (samples x features).
+        transform (str):
+            Transformation type: "log", "log10", "sqrt".
+        pseudocount (float | None):
+            Offset added before log/log10 transform. If None, uses the minimum
+            non-zero value in the table. Must be > 0.
+
+    Returns:
+        pd.DataFrame:
+            Transformed table with the same shape and index/columns as input.
+
+    Raises:
+        ValueError:
+            If inputs are invalid or transformation fails.
+    """
+    if (table < 0).any().any():
+        raise ValueError("Transformation requires all values to be non negative.")
+
+    if transform in ("log", "log10"):
+        if pseudocount is None:
+            min_nonzero = table.where(table > 0).min().min()
+
+            pseudocount = float(min_nonzero)
+        if transform == "log":
+            table = np.log(table + pseudocount)
+        elif transform == "log10":
+            table = np.log10(table + pseudocount)
+
+    elif transform == "sqrt":
+        table = np.sqrt(table)
+
+    return pd.DataFrame(table, index=table.index, columns=table.columns)
+
+
 def pretreat_metabolome(
     table: pd.DataFrame,
     sample_normalization: str | None = None,
@@ -202,7 +251,7 @@ def pretreat_metabolome(
     Steps (in order):
         0) Optional imputation (knn or rf)
         1) Sample normalization: PQN
-        2) Transform (log, log10 or sqrt)
+        2) Transform (log, log10, sqrt, or none)
         3) Centering (per feature / column)
         4) Scaling (per feature / column): autoscale, pareto, or range
 
@@ -269,26 +318,12 @@ def pretreat_metabolome(
         )
 
     # 2) Transform
-    if transform in ("log", "log10"):
-        if (X < 0).any().any():
-            raise ValueError("Log transform requires non-negative values.")
-        if pseudocount is None:
-            min_nonzero = X.where(X > 0).min().min()
-            if pd.isna(min_nonzero):
-                raise ValueError(
-                    "Cannot infer pseudocount: table has no positive values. "
-                    "Provide `pseudocount` explicitly."
-                )
-            pseudocount = float(min_nonzero)
-        if transform == "log":
-            X = np.log(X + pseudocount)
-        elif transform == "log10":
-            X = np.log10(X + pseudocount)
-
-    elif transform == "sqrt":
-        if (X < 0).any().any():
-            raise ValueError("Sqrt transform requires non-negative values.")
-        X = np.sqrt(X)
+    if transform is not None and transform != "none":
+        X = transform_table(
+            X,
+            transform=transform,
+            pseudocount=pseudocount,
+        )
 
     # 3) Center per feature (column)
     if center:

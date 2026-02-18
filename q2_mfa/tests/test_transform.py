@@ -19,6 +19,7 @@ from q2_mfa.transform import (
     normalize_pqn,
     pretreat_metabolome,
     transform_clr,
+    transform_table,
 )
 
 
@@ -167,44 +168,6 @@ class TestPretreatMetabolome(TestPluginBase):
 
     # --------- Value-based “golden” tests ---------
 
-    def test_transform_log_with_fixed_pseudocount_exact(self):
-        out = pretreat_metabolome(
-            self.df_small,
-            sample_normalization=None,
-            transform="log",
-            pseudocount=0.5,
-            center=False,
-            scale=None,
-        )
-
-        expected = np.log(self.df_small.to_numpy() + 0.5)
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
-
-    def test_transform_log_with_none_pseudocount(self):
-        out = pretreat_metabolome(
-            self.df_small,
-            sample_normalization=None,
-            transform="log",
-            pseudocount=None,
-            center=False,
-            scale=None,
-        )
-
-        expected = np.log(self.df_small.to_numpy() + 1.0)
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
-
-    def test_transform_sqrt_exact(self):
-        out = pretreat_metabolome(
-            self.df_small,
-            sample_normalization=None,
-            transform="sqrt",
-            center=False,
-            scale=None,
-        )
-
-        expected = np.sqrt(self.df_small.to_numpy())
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
-
     def test_centering_makes_feature_means_zero(self):
         out = pretreat_metabolome(
             self.df_nonneg,
@@ -327,43 +290,6 @@ class TestPretreatMetabolome(TestPluginBase):
 
     # ---------- Error tests (assertRaisesRegex) ----------
 
-    def test_log_raises_on_negative_values(self):
-        with self.assertRaisesRegex(
-            ValueError, r"Log transform requires non-negative values\."
-        ):
-            pretreat_metabolome(
-                self.df_has_negative,
-                transform="log",
-                pseudocount=1e-6,
-                center=False,
-                scale=None,
-            )
-
-    def test_sqrt_raises_on_negative_values(self):
-        with self.assertRaisesRegex(
-            ValueError, r"Sqrt transform requires non-negative values\."
-        ):
-            pretreat_metabolome(
-                self.df_has_negative,
-                transform="sqrt",
-                center=False,
-                scale=None,
-            )
-
-    def test_log_infer_pseudocount_raises_when_no_positive_values(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            r"Cannot infer pseudocount: table has no positive "
-            r"values\.\s*Provide `pseudocount` explicitly\.",
-        ):
-            pretreat_metabolome(
-                self.df_no_positive,
-                transform="log",
-                pseudocount=None,
-                center=False,
-                scale=None,
-            )
-
     def test_autoscale_raises_on_zero_variance_feature(self):
         with self.assertRaisesRegex(
             ValueError,
@@ -399,6 +325,65 @@ class TestPretreatMetabolome(TestPluginBase):
                 center=False,  # IMPORTANT
                 scale="range",
             )
+
+
+class TestTransformTable(TestPluginBase):
+    package = "q2_mfa"
+
+    def setUp(self):
+        super().setUp()
+        self.df_has_negative = pd.DataFrame(
+            {
+                "F1": [0.0, -1.0, 2.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
+        self.df_small = pd.DataFrame(
+            {
+                "F1": [0.0, 1.0],
+                "F2": [3.0, 7.0],
+            },
+            index=["S1", "S2"],
+        )
+
+    def test_transform_log_with_fixed_pseudocount_exact(self):
+        out = transform_table(
+            self.df_small,
+            transform="log",
+            pseudocount=0.5,
+        )
+
+        expected = np.log(self.df_small.to_numpy() + 0.5)
+        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
+
+    def test_log_raises_on_negative_values(self):
+        with self.assertRaisesRegex(
+            ValueError, "Transformation requires all values to be non negative."
+        ):
+            transform_table(
+                self.df_has_negative,
+                transform="log",
+                pseudocount=1e-6,
+            )
+
+    def test_transform_log_with_none_pseudocount(self):
+        out = transform_table(
+            self.df_small,
+            transform="log",
+            pseudocount=None,
+        )
+
+        expected = np.log(self.df_small.to_numpy() + 1.0)
+        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
+
+    def test_transform_sqrt_exact(self):
+        out = transform_table(
+            self.df_small,
+            transform="sqrt",
+        )
+
+        expected = np.sqrt(self.df_small.to_numpy())
+        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
 
 
 class TestPQN(TestPluginBase):

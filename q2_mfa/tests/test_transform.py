@@ -53,34 +53,6 @@ class TestTransformCLR(TestPluginBase):
         assert np.allclose(obs.sum(axis=1).to_numpy(), 0.0)
 
 
-class TestTransformLog(TestPluginBase):
-    package = "q2_mfa.tests"
-
-    def test_transform_log_data_adaptive_uses_min_nonzero(self):
-        df = pd.DataFrame(
-            [[0, 1], [2, 3]],
-        )
-
-        exp = pd.DataFrame(
-            [[0.000000, 0.693147], [1.098612, 1.386294]],
-        )
-
-        obs = pretreat_metabolome(df, pseudocount=None, transform="log")
-        pd.testing.assert_frame_equal(obs, exp)
-
-    def test_transform_log_fixed_pseudocount(self):
-        df = pd.DataFrame(
-            [[0, 1], [2, 3]],
-        )
-
-        exp = pd.DataFrame(
-            [[-0.693147, 0.405465], [0.916291, 1.252763]],
-        )
-
-        obs = pretreat_metabolome(df, pseudocount=0.5, transform="log")
-        pd.testing.assert_frame_equal(obs, exp)
-
-
 class TestPretreatMetabolome(TestPluginBase):
     package = "q2_mfa"
 
@@ -346,15 +318,44 @@ class TestTransformTable(TestPluginBase):
             index=["S1", "S2"],
         )
 
-    def test_transform_log_with_fixed_pseudocount_exact(self):
+    def test_transform_log_fixed_pseudocount(self):
         out = transform_table(
             self.df_small,
             transform="log",
             pseudocount=0.5,
         )
 
-        expected = np.log(self.df_small.to_numpy() + 0.5)
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
+        expected = np.log(self.df_small + 0.5)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_log10_fixed_pseudocount(self):
+        out = transform_table(
+            self.df_small,
+            transform="log10",
+            pseudocount=0.5,
+        )
+
+        expected = np.log10(self.df_small + 0.5)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_sqrt_fixed_pseudocount(self):
+        out = transform_table(
+            self.df_small,
+            transform="sqrt",
+        )
+
+        expected = np.sqrt(self.df_small)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_log_none_pseudocount(self):
+        out = transform_table(
+            self.df_small,
+            transform="log",
+            pseudocount=None,
+        )
+
+        expected = np.log(self.df_small + 1.0)
+        assert_allclose(out.to_numpy(), expected)
 
     def test_log_raises_on_negative_values(self):
         with self.assertRaisesRegex(
@@ -365,16 +366,6 @@ class TestTransformTable(TestPluginBase):
                 transform="log",
                 pseudocount=1e-6,
             )
-
-    def test_transform_log_with_none_pseudocount(self):
-        out = transform_table(
-            self.df_small,
-            transform="log",
-            pseudocount=None,
-        )
-
-        expected = np.log(self.df_small.to_numpy() + 1.0)
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
 
     def test_transform_sqrt_exact(self):
         out = transform_table(

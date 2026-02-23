@@ -21,12 +21,10 @@ class TestPCA(TestPluginBase):
             self.get_data_path("random_data.txt"), sep="\t", index_col=0
         )
 
-    def test_returns_ordinationresults(self):
-        ordn = pca(self.table)
-        self.assertIsInstance(ordn, OrdinationResults)
-
     def test_shapes_and_labels(self):
         ordn = pca(self.table)
+
+        self.assertIsInstance(ordn, OrdinationResults)
 
         # sklearn PCA() keeps all components by default:
         # n_components = min(n_samples, n_features)

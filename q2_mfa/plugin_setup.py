@@ -8,7 +8,7 @@
 from q2_types.feature_table import Composition, FeatureTable, Frequency
 from q2_types.ordination import PCoAResults
 from rachis import Citations
-from rachis.core.type import Float, Range
+from rachis.core.type import Float, Properties, Range
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -47,9 +47,9 @@ plugin.methods.register_function(
 
 plugin.methods.register_function(
     function=pca,
-    inputs={"table": FeatureTable[Frequency | Composition]},
+    inputs={"table": FeatureTable[Frequency]},
     parameters={},
-    outputs=[("pca_results", PCoAResults)],
+    outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={},
     output_descriptions={"pca_results": "The PCA results."},

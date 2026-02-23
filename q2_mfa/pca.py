@@ -9,7 +9,6 @@ import pandas as pd
 import skbio
 from skbio import OrdinationResults
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 
 
 def pca(
@@ -27,14 +26,9 @@ def pca(
         skbio.OrdinationResults: PCA results containing sample scores, feature loadings,
         eigenvalues, and proportion of variance explained.
     """
-
-    # Scale
-    scaler = StandardScaler()
-    table_scaled = scaler.fit_transform(table)
-
     # PCA
     pca = PCA()
-    table_pca = pca.fit_transform(table_scaled)
+    table_pca = pca.fit_transform(table)
 
     # Build ordination pieces
 

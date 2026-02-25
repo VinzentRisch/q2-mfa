@@ -7,9 +7,8 @@
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import Composition, FeatureTable, Frequency
 from q2_types.ordination import PCoAResults
-from rachis import Citations
 from rachis.core.type import Float, Properties, Range
-from rachis.plugin import Plugin
+from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
 from q2_mfa.pca import pca

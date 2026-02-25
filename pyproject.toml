@@ -49,4 +49,4 @@ where = ["."]
 include = ["q2_mfa*"]
 
 [tool.setuptools.package-data]
-mfa = ["**/*"]
+q2_mfa = ["**/*"]

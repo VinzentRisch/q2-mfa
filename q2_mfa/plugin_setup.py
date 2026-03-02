@@ -5,7 +5,7 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from q2_types.feature_table import Composition, FeatureTable, Frequency
+from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis.core.type import Float, Range
 from rachis.plugin import Plugin
 
@@ -27,7 +27,7 @@ plugin.methods.register_function(
     parameters={
         "pseudocount": Float % Range(0, None, inclusive_start=False),
     },
-    outputs=[("transformed_table", FeatureTable[Composition])],
+    outputs=[("transformed_table", FeatureTable[Unconstrained])],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": "The pseudocount to add to the table before the "

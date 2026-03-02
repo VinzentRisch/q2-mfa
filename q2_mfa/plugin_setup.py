@@ -27,14 +27,14 @@ plugin.methods.register_function(
     parameters={
         "pseudocount": Float % Range(0, None, inclusive_start=False),
     },
-    outputs=[("clr_table", FeatureTable[Composition])],
+    outputs=[("transformed_table", FeatureTable[Composition])],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": "The pseudocount to add to the table before the "
         "transformation. If it is set to None, the pseudocount is "
         "computed as the minimum non-zero value.",
     },
-    output_descriptions={"clr_table": "The CLR transformed table."},
+    output_descriptions={"transformed_table": "The CLR transformed table."},
     name="Centered log-ratio (CLR) transformation.",
     description="A centered log-ratio transformation of the input table.",
     citations=[],

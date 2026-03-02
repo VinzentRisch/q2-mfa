@@ -36,6 +36,10 @@ plugin.methods.register_function(
     },
     output_descriptions={"transformed_table": "The CLR transformed table."},
     name="Centered log-ratio (CLR) transformation.",
-    description="A centered log-ratio transformation of the input table.",
+    description=(
+        "A centered log-ratio transformation of the input table. The CLR-transformed "
+        "table contains real-valued coordinates in Euclidean space, removing the "
+        "constant-sum constraint of compositional data."
+    ),
     citations=[],
 )

@@ -62,5 +62,9 @@ plugin.methods.register_function(
         "either by additive pseudocount replacement or multiplicative "
         "replacement before the CLR is applied."
     ),
-    citations=[citations["martin2003dealing"], citations["aitchison1982statistical"]],
+    citations=[
+        citations["martin2003dealing"],
+        citations["aitchison1982statistical"],
+        citations["aton2025scikit"],
+    ],
 )

@@ -6,7 +6,7 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .transform import transform_clr
+from .transform_clr import transform_clr
 
 try:
     from ._version import __version__

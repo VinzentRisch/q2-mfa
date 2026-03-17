@@ -11,7 +11,7 @@ import pandas as pd
 from rachis.plugin.testing import TestPluginBase
 from skbio.stats.composition import clr, multi_replace
 
-from q2_mfa.transform import transform_clr
+from q2_mfa.transform_clr import transform_clr
 
 
 class TestTransformCLR(TestPluginBase):

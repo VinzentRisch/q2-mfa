@@ -21,8 +21,8 @@ requirements:
     - versioningit
 
   run:
-    - numpy
     - pandas
+    - scikit-bio
     - qiime2 >={{ qiime2 }}
     - q2-types >={{ q2_types }}
 

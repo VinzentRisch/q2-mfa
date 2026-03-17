@@ -5,9 +5,9 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from q2_types.feature_table import Composition, FeatureTable, Frequency
+from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from q2_types.ordination import PCoAResults
-from rachis.core.type import Float, Properties, Range
+from rachis.core.type import Choices, Float, Properties, Range, Str
 from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -30,18 +30,43 @@ plugin.methods.register_function(
     inputs={"table": FeatureTable[Frequency]},
     parameters={
         "pseudocount": Float % Range(0, None, inclusive_start=False),
+        "replacement_method": Str % Choices("multiplicative", "pseudocount"),
+        "delta": Float % Range(0, None, inclusive_start=False),
     },
-    outputs=[("clr_table", FeatureTable[Composition])],
+    outputs=[("transformed_table", FeatureTable[Unconstrained])],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
-        "pseudocount": "The pseudocount to add to the table before the "
-        "transformation. If it is set to None, the pseudocount is "
-        "computed as the minimum non-zero value.",
+        "pseudocount": (
+            "Value used to replace zeros before CLR. If not provided, the "
+            "smallest positive value in the table is used. This parameter is "
+            "only used when replacement_method is 'pseudocount'."
+        ),
+        "replacement_method": (
+            "Method used to handle zeros before CLR. 'multiplicative' replaces "
+            "zeros while rescaling the remaining values to preserve the "
+            "composition. 'pseudocount' adds the pseudocount to all values in "
+            "the table."
+        ),
+        "delta": (
+            "Replacement value used for multiplicative replacement. This "
+            "parameter is only used when replacement_method is "
+            "'multiplicative'."
+        ),
     },
-    output_descriptions={"clr_table": "The CLR transformed table."},
+    output_descriptions={"transformed_table": "The CLR transformed table."},
     name="Centered log-ratio (CLR) transformation.",
-    description="A centered log-ratio transformation of the input table.",
-    citations=[],
+    description=(
+        "A centered log-ratio transformation of the input table. The CLR-transformed "
+        "table contains real-valued coordinates in Euclidean space, removing the "
+        "constant-sum constraint of compositional data. Zeros can be handled "
+        "either by additive pseudocount replacement or multiplicative "
+        "replacement before the CLR is applied."
+    ),
+    citations=[
+        citations["martin2003dealing"],
+        citations["aitchison1982statistical"],
+        citations["aton2025scikit"],
+    ],
 )
 
 plugin.methods.register_function(

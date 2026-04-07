@@ -90,6 +90,6 @@ def mfa(ctx, feature_tables):
     weighted_table = pd.concat(weighted_tables, axis=1)
     global_pca = pca(weighted_table)
 
-    mfa_result = ctx.make_artifact(PCoAResults % Properties("mfa"), global_pca)
+    mfa_results = ctx.make_artifact(PCoAResults % Properties("mfa"), global_pca)
 
-    return mfa_result
+    return mfa_results

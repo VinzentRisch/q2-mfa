@@ -8,9 +8,7 @@
 import warnings
 
 import pandas as pd
-from q2_types.ordination import PCoAResults
 from rachis import Artifact
-from rachis.core.type import Properties
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
@@ -19,34 +17,8 @@ from q2_mfa.pca import pca
 
 
 class _FakeContext:
-    def get_action(self, plugin_name, action_name):
-        def _pca_action(table):
-            return (
-                Artifact.import_data(
-                    PCoAResults % Properties("pca"),
-                    pca(table.view(pd.DataFrame)),
-                ),
-            )
-
-        return _pca_action
-
     def make_artifact(self, semantic_type, view, view_type=None):
         return Artifact.import_data(semantic_type, view, view_type=view_type)
-
-
-class _ZeroEigenvalueContext(_FakeContext):
-    def get_action(self, plugin_name, action_name):
-        def _pca_action(table):
-            ordination = pca(table.view(pd.DataFrame))
-            ordination.eigvals.iloc[0] = 0.0
-            return (
-                Artifact.import_data(
-                    PCoAResults % Properties("pca"),
-                    ordination,
-                ),
-            )
-
-        return _pca_action
 
 
 class TestMFA(TestPluginBase):
@@ -92,8 +64,12 @@ class TestMFA(TestPluginBase):
         )
 
         reordered_b = self.table_b.loc[self.table_a.index]
-        lambda_a = float(pca(self.table_a).eigvals.iloc[0])
-        lambda_b = float(pca(reordered_b).eigvals.iloc[0])
+        lambda_a = float(
+            pca(self.table_a, n_components=1, svd_solver="full").eigvals.iloc[0]
+        )
+        lambda_b = float(
+            pca(reordered_b, n_components=1, svd_solver="full").eigvals.iloc[0]
+        )
         weighted = pd.concat(
             [
                 self.table_a.div(lambda_a**0.5).rename(
@@ -178,13 +154,66 @@ class TestMFA(TestPluginBase):
             )
 
     def test_mfa_raises_when_first_eigenvalue_is_non_positive(self):
-        ctx = _ZeroEigenvalueContext()
+        constant = pd.DataFrame(
+            [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]],
+            index=["sample-1", "sample-2", "sample-3"],
+            columns=["feature-c1", "feature-c2"],
+        )
 
         with self.assertRaisesRegex(ValueError, "non-positive first eigenvalue"):
             mfa(
-                ctx,
+                self.ctx,
                 {
-                    "metabolome": self.artifact_a,
+                    "metabolome": Artifact.import_data(
+                        "FeatureTable[Frequency]", constant
+                    ),
                     "microbiome": self.artifact_b,
                 },
             )
+
+    def test_mfa_uses_user_parameters_for_global_pca_only(self):
+        obs_artifact = mfa(
+            self.ctx,
+            {
+                "metabolome": self.artifact_a,
+                "microbiome": self.artifact_b,
+            },
+            n_components=1,
+            svd_solver="full",
+            random_state=0,
+        )
+        obs = obs_artifact.view(OrdinationResults)
+
+        reordered_b = self.table_b.loc[self.table_a.index]
+        lambda_a = float(
+            pca(self.table_a, n_components=1, svd_solver="full").eigvals.iloc[0]
+        )
+        lambda_b = float(
+            pca(reordered_b, n_components=1, svd_solver="full").eigvals.iloc[0]
+        )
+        weighted = pd.concat(
+            [
+                self.table_a.div(lambda_a**0.5).rename(
+                    columns=lambda c: f"metabolome:{c}"
+                ),
+                reordered_b.div(lambda_b**0.5).rename(
+                    columns=lambda c: f"microbiome:{c}"
+                ),
+            ],
+            axis=1,
+        )
+        exp = pca(weighted, n_components=1, svd_solver="full", random_state=0)
+
+        self.assertEqual(obs.samples.shape[1], 1)
+        pd.testing.assert_frame_equal(
+            obs.samples.set_axis(exp.samples.columns, axis=1),
+            exp.samples,
+        )
+        pd.testing.assert_frame_equal(
+            obs.features.set_axis(exp.features.columns, axis=1),
+            exp.features,
+        )
+        pd.testing.assert_series_equal(
+            obs.eigvals.set_axis(exp.eigvals.index),
+            exp.eigvals,
+        )

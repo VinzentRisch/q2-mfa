@@ -84,57 +84,73 @@ ordination_parameters = {
     "random_state": Int,
 }
 
+ordination_parameter_descriptions = {
+    "n_components": (
+        "Number of components to keep. If n_components is not set all "
+        "components are kept: n_components == min(n_samples, n_features). If "
+        "n_components == 'mle' and svd_solver == 'full', Minka's MLE is used "
+        "to guess the dimension. Use of n_components == 'mle' will interpret "
+        "svd_solver == 'auto' as svd_solver == 'full'. If 0 < n_components < "
+        "1 and svd_solver == 'full', select the number of components such "
+        "that the amount of variance that needs to be explained is greater "
+        "than the percentage specified by n_components. If svd_solver == "
+        "'arpack', the number of components must be strictly less than the "
+        "minimum of n_features and n_samples. Hence, the None case results "
+        "in: n_components == min(n_samples, n_features) - 1."
+    ),
+    "svd_solver": (
+        "If auto: the solver is selected by a default policy based on "
+        "X.shape and n_components. If the input data is larger than 500x500 "
+        "and the number of components to extract is lower than 80% of the "
+        "smallest dimension of the data, then the more efficient "
+        "'randomized' method is enabled. Otherwise the exact full SVD is "
+        "computed and optionally truncated afterwards. If full: run exact "
+        "full SVD calling the standard LAPACK solver via scipy.linalg.svd "
+        "and select the components by postprocessing. If arpack: run SVD "
+        "truncated to n_components calling the ARPACK solver via "
+        "scipy.sparse.linalg.svds. It requires strictly 0 < n_components < "
+        "min(X.shape). If randomized: run randomized SVD by the method of "
+        "Halko et al."
+    ),
+    "tol": "Tolerance for singular values computed by svd_solver == arpack.",
+    "iterated_power": (
+        "Number of iterations for the power method computed by svd_solver == "
+        "randomized."
+    ),
+    "n_oversamples": (
+        "Additional number of random vectors to sample the range of X when "
+        "svd_solver == randomized."
+    ),
+    "power_iteration_normalizer": (
+        "Power iteration normalizer for svd_solver == randomized."
+    ),
+    "random_state": (
+        "Used when the 'arpack' or 'randomized' solvers are used. Pass an int for "
+        "reproducible results across multiple function calls"
+    ),
+}
+
+mfa_parameter_descriptions = {
+    **ordination_parameter_descriptions,
+    "n_components": (
+        f"{ordination_parameter_descriptions['n_components']} This applies only "
+        "to the global PCA; the per-group weighting PCAs always use one component "
+        "with svd_solver == 'full'."
+    ),
+    "svd_solver": (
+        f"{ordination_parameter_descriptions['svd_solver']} This applies only "
+        "to the global PCA; the per-group weighting PCAs always use "
+        "svd_solver == 'full' with one component."
+    ),
+}
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Frequency]},
     parameters=ordination_parameters,
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
-    parameter_descriptions={
-        "n_components": (
-            "Number of components to keep. If n_components is not set all "
-            "components are kept: n_components == min(n_samples, n_features). If "
-            "n_components == 'mle' and svd_solver == 'full', Minka's MLE is used "
-            "to guess the dimension. Use of n_components == 'mle' will interpret "
-            "svd_solver == 'auto' as svd_solver == 'full'. If 0 < n_components < "
-            "1 and svd_solver == 'full', select the number of components such "
-            "that the amount of variance that needs to be explained is greater "
-            "than the percentage specified by n_components. If svd_solver == "
-            "'arpack', the number of components must be strictly less than the "
-            "minimum of n_features and n_samples. Hence, the None case results "
-            "in: n_components == min(n_samples, n_features) - 1."
-        ),
-        "svd_solver": (
-            "If auto: the solver is selected by a default policy based on "
-            "X.shape and n_components. If the input data is larger than 500x500 "
-            "and the number of components to extract is lower than 80% of the "
-            "smallest dimension of the data, then the more efficient "
-            "'randomized' method is enabled. Otherwise the exact full SVD is "
-            "computed and optionally truncated afterwards. If full: run exact "
-            "full SVD calling the standard LAPACK solver via scipy.linalg.svd "
-            "and select the components by postprocessing. If arpack: run SVD "
-            "truncated to n_components calling the ARPACK solver via "
-            "scipy.sparse.linalg.svds. It requires strictly 0 < n_components < "
-            "min(X.shape). If randomized: run randomized SVD by the method of "
-            "Halko et al."
-        ),
-        "tol": "Tolerance for singular values computed by svd_solver == arpack.",
-        "iterated_power": (
-            "Number of iterations for the power method computed by svd_solver == "
-            "randomized."
-        ),
-        "n_oversamples": (
-            "Additional number of random vectors to sample the range of X when "
-            "svd_solver == randomized."
-        ),
-        "power_iteration_normalizer": (
-            "Power iteration normalizer for svd_solver == randomized."
-        ),
-        "random_state": (
-            "Used when the 'arpack' or 'randomized' solvers are used. Pass an int for "
-            "reproducible results across multiple function calls"
-        ),
-    },
+    parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
@@ -153,36 +169,7 @@ plugin.pipelines.register_function(
     parameters=ordination_parameters,
     outputs=[("mfa_results", PCoAResults % Properties("mfa"))],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
-    parameter_descriptions={
-        "n_components": (
-            "Number of components to keep for the global MFA PCA. The per-group "
-            "weighting PCA always uses one component with the full solver. An "
-            "integer keeps that many components, a float in (0, 1) keeps enough "
-            "components to explain that fraction of the variance, 'mle' estimates "
-            "the dimensionality automatically using Minka's Maximum Likelihood "
-            "Estimation, and if not set all components are kept."
-        ),
-        "svd_solver": "Solver to use for the global MFA PCA.",
-        "tol": (
-            "Tolerance for singular values computed by the global PCA when "
-            "svd_solver == arpack."
-        ),
-        "iterated_power": (
-            "Number of iterations for the power method computed by the global PCA "
-            "when svd_solver == randomized."
-        ),
-        "n_oversamples": (
-            "Additional number of random vectors to sample the range of X for "
-            "the global PCA when svd_solver == randomized."
-        ),
-        "power_iteration_normalizer": (
-            "Power iteration normalizer for the global randomized SVD solver."
-        ),
-        "random_state": (
-            "Controls the randomness when the global PCA uses the arpack or "
-            "randomized solvers."
-        ),
-    },
+    parameter_descriptions=mfa_parameter_descriptions,
     output_descriptions={"mfa_results": "MFA results."},
     name="Multiple Factor Analysis (MFA)",
     description=(
@@ -190,5 +177,8 @@ plugin.pipelines.register_function(
         "table is treated as a separate group, and a global PCA is performed "
         "on the concatenated and weighted groups."
     ),
-    citations=[citations["escofier1994multiple"]],
+    citations=[
+        citations["escofier1994multiple"],
+        citations["pedregosa2011scikit"],
+    ],
 )

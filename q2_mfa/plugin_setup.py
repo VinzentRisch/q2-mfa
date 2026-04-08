@@ -116,5 +116,8 @@ plugin.methods.register_function(
     "Decomposition of the data to project it to a lower dimensional space. "
     "The input data is centered but not scaled for each feature before "
     "applying the SVD.",
-    citations=[citations["hotelling1933analysis"]],
+    citations=[
+        citations["hotelling1933analysis"],
+        citations["pedregosa2011scikit"],
+    ],
 )

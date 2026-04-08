@@ -15,9 +15,6 @@ from q2_mfa.pca import pca
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
-citations = Citations.load("citations.bib", package="q2_mfa")
-
-
 plugin = Plugin(
     name="mfa",
     version=__version__,

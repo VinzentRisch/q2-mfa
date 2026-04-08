@@ -26,26 +26,25 @@ class TestPCA(TestPluginBase):
 
         self.assertIsInstance(ordn, OrdinationResults)
 
-        # sklearn PCA() keeps all components by default:
-        # n_components = min(n_samples, n_features)
-        n_components_expected = min(self.table.shape[0], self.table.shape[1])
-
-        self.assertEqual(
-            ordn.samples.shape, (self.table.shape[0], n_components_expected)
-        )
-        self.assertEqual(
-            ordn.features.shape, (self.table.shape[1], n_components_expected)
-        )
-        self.assertEqual(ordn.eigvals.shape[0], n_components_expected)
-        self.assertEqual(ordn.proportion_explained.shape[0], n_components_expected)
-
         # Indices preserved
         self.assertListEqual(list(ordn.samples.index), list(self.table.index))
         self.assertListEqual(list(ordn.features.index), list(self.table.columns))
 
         # Axis naming
+        n_components_expected = min(self.table.shape[0], self.table.shape[1])
         expected_cols = [f"PC{i + 1}" for i in range(n_components_expected)]
         self.assertListEqual(list(ordn.samples.columns), expected_cols)
         self.assertListEqual(list(ordn.features.columns), expected_cols)
         self.assertListEqual(list(ordn.eigvals.index), expected_cols)
         self.assertListEqual(list(ordn.proportion_explained.index), expected_cols)
+
+    def test_invalid_parameter_combination_raises_value_error(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Wrong PCA parameter combination: .*with svd_solver='randomized'",
+        ):
+            pca(
+                self.table,
+                n_components="mle",
+                svd_solver="randomized",
+            )

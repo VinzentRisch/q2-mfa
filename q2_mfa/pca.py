@@ -54,7 +54,10 @@ def pca(
         power_iteration_normalizer=power_iteration_normalizer,
         random_state=random_state,
     )
-    table_pca = pca.fit_transform(table)
+    try:
+        table_pca = pca.fit_transform(table)
+    except ValueError as error:
+        raise ValueError(f"Wrong PCA parameter combination: {error}") from error
 
     # Build ordination pieces
 

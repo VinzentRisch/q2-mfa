@@ -88,34 +88,56 @@ plugin.methods.register_function(
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
-        "n_components": "Number of components to keep. An integer keeps that "
-        "many components, a float in (0, 1) keeps enough components to "
-        "explain that fraction of the variance, 'mle' estimates the "
-        "dimensionality automatically using Minka's Maximum Likelihood "
-        "Estimation, and if not set all components are kept.",
-        "svd_solver": "Solver to use. auto selects a solver based on X.shape "
-        "and n_components: if the input data has fewer than 1000 features and "
-        "more than 10 times as many samples, then covariance_eigh is used. "
-        "Otherwise, if the input data is larger than 500 by 500 and the "
-        "number of components to extract is lower than 80% of the smallest "
-        "dimension of the data, then randomized is selected. Otherwise, the "
-        "exact full SVD is computed and optionally truncated afterwards.",
-        "tol": "Tolerance for singular values computed by svd_solver == " "arpack.",
-        "iterated_power": "Number of iterations for the power method "
-        "computed by svd_solver == randomized.",
-        "n_oversamples": "Additional number of random vectors to sample the "
-        "range of X when svd_solver == randomized.",
-        "power_iteration_normalizer": "Power iteration normalizer for the "
-        "randomized SVD solver.",
-        "random_state": "Controls the randomness when the arpack or "
-        "randomized solvers are used.",
+        "n_components": (
+            "Number of components to keep. If n_components is not set all "
+            "components are kept: n_components == min(n_samples, n_features). If "
+            "n_components == 'mle' and svd_solver == 'full', Minka's MLE is used "
+            "to guess the dimension. Use of n_components == 'mle' will interpret "
+            "svd_solver == 'auto' as svd_solver == 'full'. If 0 < n_components < "
+            "1 and svd_solver == 'full', select the number of components such "
+            "that the amount of variance that needs to be explained is greater "
+            "than the percentage specified by n_components. If svd_solver == "
+            "'arpack', the number of components must be strictly less than the "
+            "minimum of n_features and n_samples. Hence, the None case results "
+            "in: n_components == min(n_samples, n_features) - 1."
+        ),
+        "svd_solver": (
+            "If auto: the solver is selected by a default policy based on "
+            "X.shape and n_components. If the input data is larger than 500x500 "
+            "and the number of components to extract is lower than 80% of the "
+            "smallest dimension of the data, then the more efficient "
+            "'randomized' method is enabled. Otherwise the exact full SVD is "
+            "computed and optionally truncated afterwards. If full: run exact "
+            "full SVD calling the standard LAPACK solver via scipy.linalg.svd "
+            "and select the components by postprocessing. If arpack: run SVD "
+            "truncated to n_components calling the ARPACK solver via "
+            "scipy.sparse.linalg.svds. It requires strictly 0 < n_components < "
+            "min(X.shape). If randomized: run randomized SVD by the method of "
+            "Halko et al."
+        ),
+        "tol": "Tolerance for singular values computed by svd_solver == arpack.",
+        "iterated_power": (
+            "Number of iterations for the power method computed by svd_solver == "
+            "randomized."
+        ),
+        "n_oversamples": (
+            "Additional number of random vectors to sample the range of X when "
+            "svd_solver == randomized."
+        ),
+        "power_iteration_normalizer": (
+            "Power iteration normalizer for svd_solver == randomized."
+        ),
+        "random_state": (
+            "Used when the 'arpack' or 'randomized' solvers are used. Pass an int for "
+            "reproducible results across multiple function calls"
+        ),
     },
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
-    description="Linear dimensionality reduction using Singular Value "
-    "Decomposition of the data to project it to a lower dimensional space. "
-    "The input data is centered but not scaled for each feature before "
-    "applying the SVD.",
+    description=(
+        "Principal component analysis implementation with scikit-learn. For more "
+        "information about the parameters consult the scikit-learn documentation."
+    ),
     citations=[
         citations["hotelling1933analysis"],
         citations["pedregosa2011scikit"],

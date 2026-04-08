@@ -60,7 +60,8 @@ plugin.methods.register_function(
         "table contains real-valued coordinates in Euclidean space, removing the "
         "constant-sum constraint of compositional data. Zeros can be handled "
         "either by additive pseudocount replacement or multiplicative "
-        "replacement before the CLR is applied."
+        "replacement before the CLR is applied. For more information on the "
+        "implementations or the parameters please consult the scikit-bio documentation."
     ),
     citations=[
         citations["martin2003dealing"],

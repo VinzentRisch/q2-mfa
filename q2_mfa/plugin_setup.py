@@ -53,8 +53,7 @@ plugin.methods.register_function(
             | Float % Range(0.0, 1.0, inclusive_start=False)
             | Str % Choices(["mle"])
         ),
-        "svd_solver": Str
-        % Choices(["auto", "full", "covariance_eigh", "arpack", "randomized"]),
+        "svd_solver": Str % Choices(["auto", "full", "arpack", "randomized"]),
         "tol": Float % Range(0.0, None),
         "iterated_power": Int % Range(0, None) | Str % Choices(["auto"]),
         "n_oversamples": Int % Range(1, None),

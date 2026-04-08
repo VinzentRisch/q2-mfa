@@ -12,16 +12,25 @@ from q2_types.ordination import PCoAResults
 from rachis.core.type import Properties
 from skbio import OrdinationResults
 
-from q2_mfa.pca import pca
 
-
-def mfa(ctx, feature_tables):
+def mfa(
+    ctx,
+    feature_tables,
+    n_components=None,
+    svd_solver="auto",
+    tol=0.0,
+    iterated_power="auto",
+    n_oversamples=10,
+    power_iteration_normalizer="auto",
+    random_state=None,
+):
     """
     Run Multiple Factor Analysis on a collection of feature tables.
 
-    Each input table is analyzed with the registered PCA action to obtain the
+    Each input table is analyzed with an exact one-component PCA to obtain the
     first eigenvalue used for classical MFA block weighting. The weighted tables
-    are then concatenated and a global PCA is performed on the combined matrix.
+    are then concatenated and a global PCA is performed on the combined matrix
+    using the user-specified PCA parameters.
 
     Parameters:
         ctx : qiime2.sdk.Context
@@ -88,8 +97,23 @@ def mfa(ctx, feature_tables):
 
     # Run the global ordination on the weighted multi-block feature table.
     weighted_table = pd.concat(weighted_tables, axis=1)
-    global_pca = pca(weighted_table)
+    weighted_table_artifact = ctx.make_artifact(
+        "FeatureTable[Frequency]", weighted_table
+    )
 
-    mfa_results = ctx.make_artifact(PCoAResults % Properties("mfa"), global_pca)
+    (global_pca,) = pca_action(
+        weighted_table_artifact,
+        n_components=n_components,
+        svd_solver=svd_solver,
+        tol=tol,
+        iterated_power=iterated_power,
+        n_oversamples=n_oversamples,
+        power_iteration_normalizer=power_iteration_normalizer,
+        random_state=random_state,
+    )
+
+    # Recreate artifact with mfa property
+    global_ordination = global_pca.view(OrdinationResults)
+    mfa_results = ctx.make_artifact(PCoAResults % Properties("mfa"), global_ordination)
 
     return mfa_results

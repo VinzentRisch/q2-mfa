@@ -70,22 +70,24 @@ plugin.methods.register_function(
     ],
 )
 
+ordination_parameters = {
+    "n_components": (
+        Int % Range(1, None)
+        | Float % Range(0.0, 1.0, inclusive_start=False)
+        | Str % Choices(["mle"])
+    ),
+    "svd_solver": Str % Choices(["auto", "full", "arpack", "randomized"]),
+    "tol": Float % Range(0.0, None),
+    "iterated_power": Int % Range(0, None) | Str % Choices(["auto"]),
+    "n_oversamples": Int % Range(1, None),
+    "power_iteration_normalizer": Str % Choices(["auto", "QR", "LU", "none"]),
+    "random_state": Int,
+}
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Frequency]},
-    parameters={
-        "n_components": (
-            Int % Range(1, None)
-            | Float % Range(0.0, 1.0, inclusive_start=False)
-            | Str % Choices(["mle"])
-        ),
-        "svd_solver": Str % Choices(["auto", "full", "arpack", "randomized"]),
-        "tol": Float % Range(0.0, None),
-        "iterated_power": Int % Range(0, None) | Str % Choices(["auto"]),
-        "n_oversamples": Int % Range(1, None),
-        "power_iteration_normalizer": Str % Choices(["auto", "QR", "LU", "none"]),
-        "random_state": Int,
-    },
+    parameters=ordination_parameters,
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
@@ -123,14 +125,45 @@ plugin.methods.register_function(
 plugin.pipelines.register_function(
     function=mfa,
     inputs={"feature_tables": Collection[FeatureTable[Frequency]]},
-    parameters={},
+    parameters=ordination_parameters,
     outputs=[("mfa_results", PCoAResults % Properties("mfa"))],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
-    parameter_descriptions={},
-    output_descriptions={"mfa_results": "Global PCA ordination (MFA)."},
+    parameter_descriptions={
+        "n_components": (
+            "Number of components to keep for the global MFA PCA. The per-group "
+            "weighting PCA always uses one component with the full solver. An "
+            "integer keeps that many components, a float in (0, 1) keeps enough "
+            "components to explain that fraction of the variance, 'mle' estimates "
+            "the dimensionality automatically using Minka's Maximum Likelihood "
+            "Estimation, and if not set all components are kept."
+        ),
+        "svd_solver": "Solver to use for the global MFA PCA.",
+        "tol": (
+            "Tolerance for singular values computed by the global PCA when "
+            "svd_solver == arpack."
+        ),
+        "iterated_power": (
+            "Number of iterations for the power method computed by the global PCA "
+            "when svd_solver == randomized."
+        ),
+        "n_oversamples": (
+            "Additional number of random vectors to sample the range of X for "
+            "the global PCA when svd_solver == randomized."
+        ),
+        "power_iteration_normalizer": (
+            "Power iteration normalizer for the global randomized SVD solver."
+        ),
+        "random_state": (
+            "Controls the randomness when the global PCA uses the arpack or "
+            "randomized solvers."
+        ),
+    },
+    output_descriptions={"mfa_results": "MFA results."},
     name="Multiple Factor Analysis (MFA)",
-    description="Multiple Factor Analysis (MFA) from multiple feature tables. Each "
-    "table is treated as a separate group, and a global PCA is performed "
-    "on the concatenated and weighted groups.",
+    description=(
+        "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
+        "table is treated as a separate group, and a global PCA is performed "
+        "on the concatenated and weighted groups."
+    ),
     citations=[citations["escofier1994multiple"]],
 )

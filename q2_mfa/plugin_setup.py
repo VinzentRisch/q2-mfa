@@ -79,8 +79,7 @@ plugin.methods.register_function(
             | Float % Range(0.0, 1.0, inclusive_start=False)
             | Str % Choices(["mle"])
         ),
-        "svd_solver": Str
-        % Choices(["auto", "full", "covariance_eigh", "arpack", "randomized"]),
+        "svd_solver": Str % Choices(["auto", "full", "arpack", "randomized"]),
         "tol": Float % Range(0.0, None),
         "iterated_power": Int % Range(0, None) | Str % Choices(["auto"]),
         "n_oversamples": Int % Range(1, None),
@@ -90,8 +89,11 @@ plugin.methods.register_function(
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
-        "n_components": "Number of components to keep. If n_components is not "
-        "set all components are kept.",
+        "n_components": "Number of components to keep. An integer keeps that "
+        "many components, a float in (0, 1) keeps enough components to "
+        "explain that fraction of the variance, 'mle' estimates the "
+        "dimensionality automatically using Minka's Maximum Likelihood "
+        "Estimation, and if not set all components are kept.",
         "svd_solver": "Solver to use. auto selects a solver based on X.shape "
         "and n_components: if the input data has fewer than 1000 features and "
         "more than 10 times as many samples, then covariance_eigh is used. "

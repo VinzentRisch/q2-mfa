@@ -37,9 +37,9 @@ plugin.methods.register_function(
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": (
-            "Value used to replace zeros before CLR. If not provided, the "
-            "smallest positive value in the table is used. This parameter is "
-            "only used when replacement_method is 'pseudocount'."
+            "Value used to replace zeros before CLR. If not provided, a "
+            "pseudocount of 1 is used. This parameter is only used when "
+            "replacement_method is 'pseudocount'."
         ),
         "replacement_method": (
             "Method used to handle zeros before CLR. 'multiplicative' replaces "

@@ -21,9 +21,9 @@ class TestTransformCLR(TestPluginBase):
         super().setUp()
 
         self.df = pd.DataFrame(
-            [[0, 1], [2, 3]],
+            [[0, 1, 2], [3, 4, 5]],
             index=["sample-1", "sample-2"],
-            columns=["feature-1", "feature-2"],
+            columns=["feature-1", "feature-2", "feature-3"],
         )
 
     def test_transform_clr_default_pseudocount_is_one(self):
@@ -59,9 +59,9 @@ class TestTransformCLR(TestPluginBase):
 
     def test_multiplicative_all_zero_sample_raises(self):
         df = pd.DataFrame(
-            [[0, 0], [2, 3]],
+            [[0, 0, 0], [2, 3, 4]],
             index=["sample-1", "sample-2"],
-            columns=["feature-1", "feature-2"],
+            columns=["feature-1", "feature-2", "feature-3"],
         )
 
         with self.assertRaisesRegex(ValueError, "all 0"):

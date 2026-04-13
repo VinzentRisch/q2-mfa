@@ -72,7 +72,7 @@ plugin.methods.register_function(
 
 plugin.methods.register_function(
     function=pca,
-    inputs={"table": FeatureTable[Frequency]},
+    inputs={"table": FeatureTable[Unconstrained]},
     parameters={
         "n_components": (
             Int % Range(1, None)

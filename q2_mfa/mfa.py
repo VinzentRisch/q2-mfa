@@ -76,8 +76,8 @@ def mfa(
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
-                f"Dropping samples from '{group_name}' that are not shared across "
-                f"all tables: {', '.join(dropped_samples)}",
+                f"Dropping samples from group '{group_name}' that are not shared "
+                f"across all tables: {', '.join(dropped_samples)}",
                 UserWarning,
             )
 

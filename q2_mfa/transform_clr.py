@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2026, QIIME 2 development team..
+# Copyright (c) 2026, Bokulich Laboratories.
 #
 # Distributed under the terms of the Modified BSD License.
 #
@@ -11,7 +11,7 @@ from skbio.stats.composition import clr, multi_replace
 
 def transform_clr(
     table: pd.DataFrame,
-    pseudocount: float = None,
+    pseudocount: float = 1.0,
     replacement_method: str = "multiplicative",
     delta: float = None,
 ) -> pd.DataFrame:
@@ -22,9 +22,8 @@ def transform_clr(
         table (pd.DataFrame): feature table with samples as rows and features as
             columns containing non-negative values
         pseudocount (float): Value used to replace zeros before CLR. If not
-            provided, the smallest positive value in the table is used. This
-            parameter is used only when
-            ``replacement_method='pseudocount'``.
+            provided, a pseudocount of 1 is used. This parameter is used only
+            when ``replacement_method='pseudocount'``.
         replacement_method (str): Zero-handling strategy to use before CLR.
             ``'multiplicative'`` applies multiplicative replacement and is the
             default. ``'pseudocount'`` adds the pseudocount to the table.
@@ -42,9 +41,6 @@ def transform_clr(
         ValueError: If ``replacement_method='multiplicative'`` and at least one
             sample contains only zeros. In that case, the feature table should
             be filtered before applying CLR.
-        ValueError: If ``replacement_method='pseudocount'``,
-            ``pseudocount=None``, and the table does not contain any positive
-            values to infer a pseudocount from.
     """
     if replacement_method == "multiplicative":
         # Raise error if one sample is complete 0
@@ -54,14 +50,6 @@ def transform_clr(
             )
         transformed = multi_replace(table, delta=delta)
     else:
-        if pseudocount is None:
-            positive_values = table[table > 0].stack()
-            if positive_values.empty:
-                raise ValueError(
-                    "The feature table does not contain any positive values to "
-                    "infer a pseudocount from."
-                )
-            pseudocount = positive_values.min()
         transformed = table + pseudocount
 
     transformed = clr(transformed)

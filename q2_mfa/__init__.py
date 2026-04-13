@@ -1,6 +1,6 @@
 # flake8: noqa
 # ----------------------------------------------------------------------------
-# Copyright (c) 2026, QIIME 2 development team..
+# Copyright (c) 2026, Bokulich Laboratories.
 #
 # Distributed under the terms of the Modified BSD License.
 #

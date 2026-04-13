@@ -56,10 +56,10 @@ class TestMFA(TestPluginBase):
         self.assertListEqual(
             list(obs.features.index),
             [
-                "metabolome:feature-a1",
-                "metabolome:feature-a2",
-                "microbiome:feature-b1",
-                "microbiome:feature-b2",
+                "feature-a1",
+                "feature-a2",
+                "feature-b1",
+                "feature-b2",
             ],
         )
 
@@ -72,12 +72,8 @@ class TestMFA(TestPluginBase):
         )
         weighted = pd.concat(
             [
-                self.table_a.div(lambda_a**0.5).rename(
-                    columns=lambda c: f"metabolome:{c}"
-                ),
-                reordered_b.div(lambda_b**0.5).rename(
-                    columns=lambda c: f"microbiome:{c}"
-                ),
+                self.table_a.div(lambda_a**0.5),
+                reordered_b.div(lambda_b**0.5),
             ],
             axis=1,
         )
@@ -193,12 +189,8 @@ class TestMFA(TestPluginBase):
         )
         weighted = pd.concat(
             [
-                self.table_a.div(lambda_a**0.5).rename(
-                    columns=lambda c: f"metabolome:{c}"
-                ),
-                reordered_b.div(lambda_b**0.5).rename(
-                    columns=lambda c: f"microbiome:{c}"
-                ),
+                self.table_a.div(lambda_a**0.5),
+                reordered_b.div(lambda_b**0.5),
             ],
             axis=1,
         )
@@ -216,4 +208,39 @@ class TestMFA(TestPluginBase):
         pd.testing.assert_series_equal(
             obs.eigvals.set_axis(exp.eigvals.index),
             exp.eigvals,
+        )
+
+    def test_mfa_appends_group_name_only_for_duplicate_features(self):
+        duplicate_a = pd.DataFrame(
+            [[1.0, 3.0], [2.0, 5.0], [4.0, 6.0]],
+            index=["sample-1", "sample-2", "sample-3"],
+            columns=["shared-feature", "feature-a2"],
+        )
+        duplicate_b = pd.DataFrame(
+            [[10.0, 7.0], [8.0, 3.0], [6.0, 1.0]],
+            index=["sample-3", "sample-1", "sample-2"],
+            columns=["shared-feature", "feature-b2"],
+        )
+
+        obs_artifact = mfa(
+            self.ctx,
+            {
+                "metabolome": Artifact.import_data(
+                    "FeatureTable[Frequency]", duplicate_a
+                ),
+                "microbiome": Artifact.import_data(
+                    "FeatureTable[Frequency]", duplicate_b
+                ),
+            },
+        )
+        obs = obs_artifact.view(OrdinationResults)
+
+        self.assertListEqual(
+            list(obs.features.index),
+            [
+                "shared-feature:metabolome",
+                "feature-a2",
+                "shared-feature:microbiome",
+                "feature-b2",
+            ],
         )

@@ -104,7 +104,7 @@ def mfa(
     # Run the global ordination on the weighted multi-block feature table.
     weighted_table = pd.concat(weighted_tables, axis=1)
     weighted_table_artifact = ctx.make_artifact(
-        "FeatureTable[Frequency]", weighted_table
+        "FeatureTable[Unconstrained]", weighted_table
     )
 
     (global_pca,) = pca_action(

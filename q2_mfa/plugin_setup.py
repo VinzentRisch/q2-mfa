@@ -10,9 +10,7 @@ from q2_types.ordination import PCoAResults
 from rachis.core.type import Choices, Collection, Float, Int, Properties, Range, Str
 from rachis.plugin import Citations, Plugin
 
-from q2_mfa import __version__, transform_clr
-from q2_mfa.mfa import mfa
-from q2_mfa.pca import pca
+from q2_mfa import __version__, mfa, pca, transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 

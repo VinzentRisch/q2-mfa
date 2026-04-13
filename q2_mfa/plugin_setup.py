@@ -145,7 +145,7 @@ mfa_parameter_descriptions = {
 
 plugin.methods.register_function(
     function=pca,
-    inputs={"table": FeatureTable[Frequency]},
+    inputs={"table": FeatureTable[Unconstrained]},
     parameters=ordination_parameters,
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},

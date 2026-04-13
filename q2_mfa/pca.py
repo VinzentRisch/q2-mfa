@@ -22,7 +22,7 @@ def pca(
     iterated_power: int | str = "auto",
     n_oversamples: int = 10,
     power_iteration_normalizer: str = "auto",
-    random_state: CaptureHolder = None,
+    random_state: CaptureHolder[int] = None,
 ) -> skbio.OrdinationResults:
     """
     Perform principal component analysis with sklearn and return ordination results.

@@ -5,8 +5,11 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import secrets
+
 import pandas as pd
 import skbio
+from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 from sklearn.decomposition import PCA
 
@@ -19,7 +22,7 @@ def pca(
     iterated_power: int | str = "auto",
     n_oversamples: int = 10,
     power_iteration_normalizer: str = "auto",
-    random_state: int | None = None,
+    random_state: CaptureHolder[int] = None,
 ) -> skbio.OrdinationResults:
     """
     Perform principal component analysis with sklearn and return ordination results.
@@ -39,12 +42,16 @@ def pca(
             solver.
         power_iteration_normalizer (str): Power iteration normalizer used by
             the randomized solver.
-        random_state (int | None): Random seed used by stochastic solvers.
+        random_state (CaptureHolder[int] | int | None): Random seed used by
+            stochastic solvers. If not provided, a seed is generated and
+            captured by Rachis.
 
     Returns:
         skbio.OrdinationResults: PCA results containing sample scores, feature
             loadings, eigenvalues, and proportion of variance explained.
     """
+    random_int = CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+
     pca = PCA(
         n_components=n_components,
         svd_solver=svd_solver,
@@ -52,7 +59,7 @@ def pca(
         iterated_power=iterated_power,
         n_oversamples=n_oversamples,
         power_iteration_normalizer=power_iteration_normalizer,
-        random_state=random_state,
+        random_state=random_int,
     )
     try:
         table_pca = pca.fit_transform(table)

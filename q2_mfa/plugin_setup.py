@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2026, QIIME 2 development team..
+# Copyright (c) 2026, Bokulich Laboratories.
 #
 # Distributed under the terms of the Modified BSD License.
 #
@@ -38,9 +38,9 @@ plugin.methods.register_function(
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": (
-            "Value used to replace zeros before CLR. If not provided, the "
-            "smallest positive value in the table is used. This parameter is "
-            "only used when replacement_method is 'pseudocount'."
+            "Value used to replace zeros before CLR. If not provided, a "
+            "pseudocount of 1 is used. This parameter is only used when "
+            "replacement_method is 'pseudocount'."
         ),
         "replacement_method": (
             "Method used to handle zeros before CLR. 'multiplicative' replaces "
@@ -61,7 +61,8 @@ plugin.methods.register_function(
         "table contains real-valued coordinates in Euclidean space, removing the "
         "constant-sum constraint of compositional data. Zeros can be handled "
         "either by additive pseudocount replacement or multiplicative "
-        "replacement before the CLR is applied."
+        "replacement before the CLR is applied. For more information on the "
+        "implementations or the parameters please consult the scikit-bio documentation."
     ),
     citations=[
         citations["martin2003dealing"],

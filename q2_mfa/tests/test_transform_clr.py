@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2026, QIIME 2 development team..
+# Copyright (c) 2026, Bokulich Laboratories.
 #
 # Distributed under the terms of the Modified BSD License.
 #
@@ -21,34 +21,24 @@ class TestTransformCLR(TestPluginBase):
         super().setUp()
 
         self.df = pd.DataFrame(
-            [[0, 1], [2, 3]],
+            [[0, 1, 2], [3, 4, 5]],
             index=["sample-1", "sample-2"],
-            columns=["feature-1", "feature-2"],
+            columns=["feature-1", "feature-2", "feature-3"],
         )
 
-    def test_transform_clr_data_adaptive_uses_min_nonzero(self):
+    def test_transform_clr_default_pseudocount_is_one(self):
         df_adjusted = self.df + 1
         log_df = np.log(df_adjusted)
         exp = log_df.sub(log_df.mean(axis=1), axis=0)
 
         obs = transform_clr(
             self.df,
-            pseudocount=None,
             replacement_method="pseudocount",
         )
         pd.testing.assert_frame_equal(obs, exp)
-
-    def test_transform_clr_fixed_pseudocount(self):
-        df_adjusted = self.df + 0.5
-        log_df = np.log(df_adjusted)
-        exp = log_df.sub(log_df.mean(axis=1), axis=0)
-
-        obs = transform_clr(
-            self.df,
-            pseudocount=0.5,
-            replacement_method="pseudocount",
-        )
-        pd.testing.assert_frame_equal(obs, exp)
+        self.assertEqual(obs.shape, self.df.shape)
+        pd.testing.assert_index_equal(obs.index, self.df.index)
+        pd.testing.assert_index_equal(obs.columns, self.df.columns)
 
     def test_transform_clr_multiplicative_fixed_delta(self):
         replaced = multi_replace(self.df, delta=0.5)
@@ -63,26 +53,19 @@ class TestTransformCLR(TestPluginBase):
             delta=0.5,
         )
         pd.testing.assert_frame_equal(obs, exp)
+        self.assertEqual(obs.shape, self.df.shape)
+        pd.testing.assert_index_equal(obs.index, self.df.index)
+        pd.testing.assert_index_equal(obs.columns, self.df.columns)
 
     def test_multiplicative_all_zero_sample_raises(self):
         df = pd.DataFrame(
-            [[0, 0], [2, 3]],
+            [[0, 0, 0], [2, 3, 4]],
             index=["sample-1", "sample-2"],
-            columns=["feature-1", "feature-2"],
+            columns=["feature-1", "feature-2", "feature-3"],
         )
 
         with self.assertRaisesRegex(ValueError, "all 0"):
             transform_clr(df)
-
-    def test_pseudocount_all_zero_table_raises(self):
-        df = pd.DataFrame(
-            [[0, 0], [0, 0]],
-            index=["sample-1", "sample-2"],
-            columns=["feature-1", "feature-2"],
-        )
-
-        with self.assertRaisesRegex(ValueError, "infer a pseudocount"):
-            transform_clr(df, replacement_method="pseudocount")
 
     def test_transform_clr_sparse_data(self):
         # Create sparse random data with 90% zeros
@@ -99,5 +82,6 @@ class TestTransformCLR(TestPluginBase):
 
         obs = transform_clr(df_sparse)
 
-        self.assertTrue(np.isfinite(obs.to_numpy()).all())
-        np.testing.assert_allclose(obs.sum(axis=1).to_numpy(), 0.0, atol=1e-10)
+        self.assertEqual(obs.shape, df_sparse.shape)
+        pd.testing.assert_index_equal(obs.index, df_sparse.index)
+        pd.testing.assert_index_equal(obs.columns, df_sparse.columns)

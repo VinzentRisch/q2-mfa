@@ -164,7 +164,7 @@ plugin.methods.register_function(
 
 plugin.pipelines.register_function(
     function=mfa,
-    inputs={"feature_tables": Collection[FeatureTable[Frequency]]},
+    inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
     outputs=[("mfa_results", PCoAResults % Properties("mfa"))],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},

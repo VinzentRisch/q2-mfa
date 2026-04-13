@@ -83,8 +83,10 @@ def mfa(
 
         table = table.loc[consensus_samples]
 
-        table_artifact = ctx.make_artifact(table_artifact.type, table)
-        (group_pca,) = pca_action(table=table_artifact)
+        table_artifact = ctx.make_artifact("FeatureTable[Unconstrained]", table)
+        (group_pca,) = pca_action(
+            table=table_artifact, n_components=1, svd_solver="full"
+        )
         group_ordination = group_pca.view(OrdinationResults)
         first_eigenvalue = float(group_ordination.eigvals.iloc[0])
 
@@ -102,9 +104,8 @@ def mfa(
         weighted_tables.append(weighted_group)
 
     # Run the global ordination on the weighted multi-block feature table.
-    weighted_table = pd.concat(weighted_tables, axis=1)
     weighted_table_artifact = ctx.make_artifact(
-        "FeatureTable[Unconstrained]", weighted_table
+        "FeatureTable[Unconstrained]", pd.concat(weighted_tables, axis=1)
     )
 
     (global_pca,) = pca_action(

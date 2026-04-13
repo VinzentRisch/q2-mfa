@@ -8,6 +8,7 @@
 import pandas as pd
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
+from sklearn.decomposition import PCA as SklearnPCA
 
 from q2_mfa.pca import pca
 
@@ -21,22 +22,43 @@ class TestPCA(TestPluginBase):
             self.get_data_path("random_data.txt"), sep="\t", index_col=0
         )
 
-    def test_shapes_and_labels(self):
-        ordn = pca(self.table)
+    def test_pca_matches_sklearn_outputs(self):
+        ordn = pca(self.table, n_components=2, svd_solver="full")
 
         self.assertIsInstance(ordn, OrdinationResults)
 
-        # Indices preserved
-        self.assertListEqual(list(ordn.samples.index), list(self.table.index))
-        self.assertListEqual(list(ordn.features.index), list(self.table.columns))
+        sklearn_pca = SklearnPCA(
+            n_components=2,
+            svd_solver="full",
+        )
+        transformed = sklearn_pca.fit_transform(self.table)
+        expected_cols = ["PC1", "PC2"]
 
-        # Axis naming
-        n_components_expected = min(self.table.shape[0], self.table.shape[1])
-        expected_cols = [f"PC{i + 1}" for i in range(n_components_expected)]
-        self.assertListEqual(list(ordn.samples.columns), expected_cols)
-        self.assertListEqual(list(ordn.features.columns), expected_cols)
-        self.assertListEqual(list(ordn.eigvals.index), expected_cols)
-        self.assertListEqual(list(ordn.proportion_explained.index), expected_cols)
+        expected_samples = pd.DataFrame(
+            transformed,
+            index=self.table.index,
+            columns=expected_cols,
+        )
+        expected_features = pd.DataFrame(
+            sklearn_pca.components_.T,
+            index=self.table.columns,
+            columns=expected_cols,
+        )
+        expected_eigvals = pd.Series(
+            sklearn_pca.explained_variance_,
+            index=expected_cols,
+        )
+        expected_proportion_explained = pd.Series(
+            sklearn_pca.explained_variance_ratio_,
+            index=expected_cols,
+        )
+
+        pd.testing.assert_frame_equal(ordn.samples, expected_samples)
+        pd.testing.assert_frame_equal(ordn.features, expected_features)
+        pd.testing.assert_series_equal(ordn.eigvals, expected_eigvals)
+        pd.testing.assert_series_equal(
+            ordn.proportion_explained, expected_proportion_explained
+        )
 
     def test_invalid_parameter_combination_raises_value_error(self):
         with self.assertRaisesRegex(

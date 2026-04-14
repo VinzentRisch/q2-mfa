@@ -19,7 +19,7 @@ class TestPCA(TestPluginBase):
     def setUp(self):
         super().setUp()
         self.table = pd.read_csv(
-            self.get_data_path("random_data.txt"), sep="\t", index_col=0
+            self.get_data_path("pca/random_data.txt"), sep="\t", index_col=0
         )
 
     def test_pca_matches_sklearn_outputs(self):

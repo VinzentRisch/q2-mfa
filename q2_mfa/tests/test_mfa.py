@@ -23,12 +23,12 @@ class TestMFA(TestPluginBase):
     @classmethod
     def setUpClass(cls):
         instance = cls()
-        cls.table_a = instance._load_table("mfa_table_a.tsv")
-        cls.table_b = instance._load_table("mfa_table_b.tsv")
-        cls.mismatched = instance._load_table("mfa_mismatched.tsv")
-        cls.disjoint = instance._load_table("mfa_disjoint.tsv")
-        cls.duplicate_a = instance._load_table("mfa_duplicate_a.tsv")
-        cls.duplicate_b = instance._load_table("mfa_duplicate_b.tsv")
+        cls.table_a = instance._load_table("mfa/mfa_table_a.tsv")
+        cls.table_b = instance._load_table("mfa/mfa_table_b.tsv")
+        cls.mismatched = instance._load_table("mfa/mfa_mismatched.tsv")
+        cls.disjoint = instance._load_table("mfa/mfa_disjoint.tsv")
+        cls.duplicate_a = instance._load_table("mfa/mfa_duplicate_a.tsv")
+        cls.duplicate_b = instance._load_table("mfa/mfa_duplicate_b.tsv")
 
         cls.artifact_a = Artifact.import_data(
             "FeatureTable[Unconstrained]", cls.table_a
@@ -54,11 +54,8 @@ class TestMFA(TestPluginBase):
                 "ord_group_a",
                 "ord_group_b",
                 "ord_global",
-                "ord_group_a_shared",
                 "ord_group_other_shared",
                 "ord_nonpositive",
-                "ord_dup_group_a",
-                "ord_dup_group_b",
             ]
         }
 
@@ -80,7 +77,7 @@ class TestMFA(TestPluginBase):
         return (
             Artifact.import_data(
                 PCoAResults % Properties("pca"),
-                self.get_data_path(f"{prefix}.ordination"),
+                self.get_data_path(f"mfa/{prefix}.ordination"),
                 view_type=OrdinationFormat,
             ),
         )
@@ -128,7 +125,7 @@ class TestMFA(TestPluginBase):
         )
         self.pca_action.side_effect = [
             self.ordination_artifacts[name]
-            for name in ["ord_group_a_shared", "ord_group_other_shared", "ord_global"]
+            for name in ["ord_group_a", "ord_group_other_shared", "ord_global"]
         ]
 
         with warnings.catch_warnings(record=True) as observed:
@@ -189,7 +186,7 @@ class TestMFA(TestPluginBase):
     def test_mfa_appends_group_name_only_for_duplicate_features(self):
         self.pca_action.side_effect = [
             self.ordination_artifacts[name]
-            for name in ["ord_dup_group_a", "ord_dup_group_b", "ord_global"]
+            for name in ["ord_group_a", "ord_group_b", "ord_global"]
         ]
 
         mfa(

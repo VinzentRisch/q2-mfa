@@ -13,6 +13,9 @@ from q2_types.ordination import PCoAResults
 from rachis.core.type import Properties
 from skbio import OrdinationResults
 
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+
 
 def mfa(
     ctx,
@@ -76,8 +79,8 @@ def mfa(
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
-                f"Dropping samples from group '{group_name}' that are not shared "
-                f"across all tables: {', '.join(dropped_samples)}",
+                f"\n{YELLOW}Dropping samples from group '{group_name}' that are not "
+                f"shared across all tables:\n{', '.join(dropped_samples)}{RESET}",
                 UserWarning,
             )
 

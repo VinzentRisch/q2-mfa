@@ -13,9 +13,6 @@ from q2_types.ordination import PCoAResults
 from rachis.core.type import Properties
 from skbio import OrdinationResults
 
-YELLOW = "\033[93m"
-RESET = "\033[0m"
-
 
 def mfa(
     ctx,
@@ -39,13 +36,17 @@ def mfa(
     Parameters:
         ctx : qiime2.sdk.Context
             Plugin execution context used to access registered actions.
-        feature_tables : Collection[FeatureTable[Frequency]]
+        feature_tables : Collection[FeatureTable[Unconstrained]]
             Collection of feature tables keyed by group name.
 
     Returns:
         qiime2.Artifact
             An artifact containing the global MFA ordination result.
     """
+    global_pca_kwargs = {
+        k: v for k, v in locals().items() if k not in {"ctx", "feature_tables"}
+    }
+
     pca_action = ctx.get_action("mfa", "pca")
     feature_tables = getattr(feature_tables, "collection", feature_tables)
 
@@ -79,8 +80,8 @@ def mfa(
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
-                f"\n{YELLOW}Dropping samples from group '{group_name}' that are not "
-                f"shared across all tables:\n{', '.join(dropped_samples)}{RESET}",
+                f"\n\033[93mDropping samples from group '{group_name}' that are not "
+                f"shared across all tables:\n{', '.join(dropped_samples)}\033[0m",
                 UserWarning,
             )
 
@@ -106,20 +107,14 @@ def mfa(
         ]
         weighted_tables.append(weighted_group)
 
-    # Run the global ordination on the weighted multi-block feature table.
     weighted_table_artifact = ctx.make_artifact(
         "FeatureTable[Unconstrained]", pd.concat(weighted_tables, axis=1)
     )
 
+    # Run the global ordination on the weighted multi-block feature table.
     (global_pca,) = pca_action(
-        weighted_table_artifact,
-        n_components=n_components,
-        svd_solver=svd_solver,
-        tol=tol,
-        iterated_power=iterated_power,
-        n_oversamples=n_oversamples,
-        power_iteration_normalizer=power_iteration_normalizer,
-        random_state=random_state,
+        table=weighted_table_artifact,
+        **global_pca_kwargs,
     )
 
     # Recreate artifact with mfa property

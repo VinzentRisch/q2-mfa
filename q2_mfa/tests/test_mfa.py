@@ -6,241 +6,218 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
+from unittest.mock import MagicMock
 
 import pandas as pd
+from q2_types.ordination import OrdinationFormat, PCoAResults
 from rachis import Artifact
+from rachis.core.type import Properties
 from rachis.plugin.testing import TestPluginBase
-from skbio import OrdinationResults
 
 from q2_mfa.mfa import mfa
-from q2_mfa.pca import pca
-
-
-class _FakeContext:
-    def make_artifact(self, semantic_type, view, view_type=None):
-        return Artifact.import_data(semantic_type, view, view_type=view_type)
 
 
 class TestMFA(TestPluginBase):
     package = "q2_mfa.tests"
 
+    @classmethod
+    def setUpClass(cls):
+        instance = cls()
+        cls.table_a = instance._load_table("mfa_table_a.tsv")
+        cls.table_b = instance._load_table("mfa_table_b.tsv")
+        cls.mismatched = instance._load_table("mfa_mismatched.tsv")
+        cls.disjoint = instance._load_table("mfa_disjoint.tsv")
+        cls.duplicate_a = instance._load_table("mfa_duplicate_a.tsv")
+        cls.duplicate_b = instance._load_table("mfa_duplicate_b.tsv")
+
+        cls.artifact_a = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.table_a
+        )
+        cls.artifact_b = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.table_b
+        )
+        cls.mismatched_artifact = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.mismatched
+        )
+        cls.disjoint_artifact = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.disjoint
+        )
+        cls.duplicate_a_artifact = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.duplicate_a
+        )
+        cls.duplicate_b_artifact = Artifact.import_data(
+            "FeatureTable[Unconstrained]", cls.duplicate_b
+        )
+        cls.ordination_artifacts = {
+            name: instance._load_ordination_artifact(name)
+            for name in [
+                "ord_group_a",
+                "ord_group_b",
+                "ord_global",
+                "ord_group_a_shared",
+                "ord_group_other_shared",
+                "ord_nonpositive",
+                "ord_dup_group_a",
+                "ord_dup_group_b",
+            ]
+        }
+
     def setUp(self):
         super().setUp()
-        self.ctx = _FakeContext()
-
-        self.table_a = pd.DataFrame(
-            [[1.0, 3.0], [2.0, 5.0], [4.0, 6.0]],
-            index=["sample-1", "sample-2", "sample-3"],
-            columns=["feature-a1", "feature-a2"],
-        )
-        self.table_b = pd.DataFrame(
-            [[10.0, 7.0], [8.0, 3.0], [6.0, 1.0]],
-            index=["sample-3", "sample-1", "sample-2"],
-            columns=["feature-b1", "feature-b2"],
-        )
-        self.artifact_a = Artifact.import_data("FeatureTable[Frequency]", self.table_a)
-        self.artifact_b = Artifact.import_data("FeatureTable[Frequency]", self.table_b)
-
-    def test_mfa_matches_classical_weighted_global_pca(self):
-        obs_artifact = mfa(
-            self.ctx,
-            {
-                "metabolome": self.artifact_a,
-                "microbiome": self.artifact_b,
-            },
-        )
-        obs = obs_artifact.view(OrdinationResults)
-
-        self.assertIsInstance(obs, OrdinationResults)
-        self.assertListEqual(list(obs.samples.index), list(self.table_a.index))
-        self.assertListEqual(
-            list(obs.features.index),
-            [
-                "feature-a1",
-                "feature-a2",
-                "feature-b1",
-                "feature-b2",
-            ],
+        self.pca_action = MagicMock()
+        self.ctx = MagicMock(
+            get_action=MagicMock(return_value=self.pca_action),
+            make_artifact=MagicMock(side_effect=self._make_artifact),
         )
 
+    def _make_artifact(self, semantic_type, view, view_type=None):
+        return Artifact.import_data(semantic_type, view, view_type=view_type)
+
+    def _load_table(self, filename):
+        return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
+
+    def _load_ordination_artifact(self, prefix):
+        return (
+            Artifact.import_data(
+                PCoAResults % Properties("pca"),
+                self.get_data_path(f"{prefix}.ordination"),
+                view_type=OrdinationFormat,
+            ),
+        )
+
+    def _table_from_call(self, call_index):
+        return (
+            self.pca_action.call_args_list[call_index]
+            .kwargs["table"]
+            .view(pd.DataFrame)
+        )
+
+    def _assert_table_call_equal(self, call_index, expected):
+        expected = expected.rename_axis(None)
+        pd.testing.assert_frame_equal(self._table_from_call(call_index), expected)
+
+    def test_mfa_orders_and_weights_tables(self):
         reordered_b = self.table_b.loc[self.table_a.index]
-        lambda_a = float(
-            pca(self.table_a, n_components=1, svd_solver="full").eigvals.iloc[0]
+        expected_weighted = pd.concat(
+            [self.table_a.div(4.0**0.5), reordered_b.div(9.0**0.5)], axis=1
         )
-        lambda_b = float(
-            pca(reordered_b, n_components=1, svd_solver="full").eigvals.iloc[0]
+        self.pca_action.side_effect = [
+            self.ordination_artifacts[name]
+            for name in ["ord_group_a", "ord_group_b", "ord_global"]
+        ]
+
+        mfa(
+            self.ctx,
+            {"metabolome": self.artifact_a, "microbiome": self.artifact_b},
         )
-        weighted = pd.concat(
+
+        self.ctx.get_action.assert_called_once_with("mfa", "pca")
+        self.assertEqual(self.pca_action.call_count, 3)
+        self._assert_table_call_equal(0, self.table_a)
+        self._assert_table_call_equal(1, reordered_b)
+        self._assert_table_call_equal(2, expected_weighted)
+
+    def test_mfa_drops_non_shared_samples_with_warning(self):
+        shared_samples = pd.Index(["sample-1", "sample-3"])
+        expected_weighted = pd.concat(
             [
-                self.table_a.div(lambda_a**0.5),
-                reordered_b.div(lambda_b**0.5),
+                self.table_a.loc[shared_samples].div(4.0**0.5),
+                self.mismatched.loc[shared_samples].div(16.0**0.5),
             ],
             axis=1,
         )
-        exp = pca(weighted)
-
-        self.assertEqual(obs.samples.shape, exp.samples.shape)
-        self.assertEqual(obs.features.shape, exp.features.shape)
-        pd.testing.assert_index_equal(obs.features.index, exp.features.index)
-        pd.testing.assert_frame_equal(
-            obs.samples.set_axis(exp.samples.columns, axis=1),
-            exp.samples,
-        )
-        pd.testing.assert_frame_equal(
-            obs.features.set_axis(exp.features.columns, axis=1),
-            exp.features,
-        )
-        pd.testing.assert_series_equal(
-            obs.eigvals.set_axis(exp.eigvals.index),
-            exp.eigvals,
-        )
-        pd.testing.assert_series_equal(
-            obs.proportion_explained.set_axis(exp.proportion_explained.index),
-            exp.proportion_explained,
-        )
-
-    def test_mfa_drops_non_shared_samples_with_warning(self):
-        mismatched = pd.DataFrame(
-            [[1.0, 2.0], [3.0, 4.0], [8.0, 9.0]],
-            index=["sample-1", "sample-3", "sample-x"],
-            columns=["feature-c1", "feature-c2"],
-        )
+        self.pca_action.side_effect = [
+            self.ordination_artifacts[name]
+            for name in ["ord_group_a_shared", "ord_group_other_shared", "ord_global"]
+        ]
 
         with warnings.catch_warnings(record=True) as observed:
             warnings.simplefilter("always")
-            obs_artifact = mfa(
+            mfa(
                 self.ctx,
-                {
-                    "metabolome": self.artifact_a,
-                    "other": Artifact.import_data(
-                        "FeatureTable[Frequency]", mismatched
-                    ),
-                },
+                {"metabolome": self.artifact_a, "other": self.mismatched_artifact},
             )
-        obs = obs_artifact.view(OrdinationResults)
 
         self.assertEqual(len(observed), 2)
-        self.assertIn("sample-2", str(observed[0].message))
-        self.assertIn("sample-x", str(observed[1].message))
-        self.assertListEqual(list(obs.samples.index), ["sample-1", "sample-3"])
+        self.assertEqual(
+            str(observed[0].message),
+            (
+                "\n\033[93mDropping samples from group 'metabolome' that are not "
+                "shared across all tables:\nsample-2\033[0m"
+            ),
+        )
+        self.assertEqual(
+            str(observed[1].message),
+            (
+                "\n\033[93mDropping samples from group 'other' that are not "
+                "shared across all tables:\nsample-x\033[0m"
+            ),
+        )
+        self._assert_table_call_equal(0, self.table_a.loc[shared_samples])
+        self._assert_table_call_equal(1, self.mismatched.loc[shared_samples])
+        self._assert_table_call_equal(2, expected_weighted)
 
     def test_mfa_requires_at_least_two_feature_tables(self):
         with self.assertRaisesRegex(ValueError, "at least two feature tables"):
-            mfa(
-                self.ctx,
-                {
-                    "metabolome": self.artifact_a,
-                },
-            )
+            mfa(self.ctx, {"metabolome": self.artifact_a})
+
+        self.ctx.get_action.assert_called_once_with("mfa", "pca")
+        self.pca_action.assert_not_called()
 
     def test_mfa_raises_when_no_samples_are_shared(self):
-        disjoint = pd.DataFrame(
-            [[1.0, 2.0], [3.0, 4.0]],
-            index=["sample-x", "sample-y"],
-            columns=["feature-c1", "feature-c2"],
-        )
-
         with self.assertRaisesRegex(ValueError, "do not share any sample IDs"):
             mfa(
                 self.ctx,
-                {
-                    "metabolome": self.artifact_a,
-                    "other": Artifact.import_data("FeatureTable[Frequency]", disjoint),
-                },
+                {"metabolome": self.artifact_a, "other": self.disjoint_artifact},
             )
 
+        self.ctx.get_action.assert_called_once_with("mfa", "pca")
+        self.pca_action.assert_not_called()
+
     def test_mfa_raises_when_first_eigenvalue_is_non_positive(self):
-        constant = pd.DataFrame(
-            [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]],
-            index=["sample-1", "sample-2", "sample-3"],
-            columns=["feature-c1", "feature-c2"],
-        )
+        self.pca_action.side_effect = [self.ordination_artifacts["ord_nonpositive"]]
 
         with self.assertRaisesRegex(ValueError, "non-positive first eigenvalue"):
             mfa(
                 self.ctx,
-                {
-                    "metabolome": Artifact.import_data(
-                        "FeatureTable[Frequency]", constant
-                    ),
-                    "microbiome": self.artifact_b,
-                },
+                {"metabolome": self.artifact_a, "microbiome": self.artifact_b},
             )
 
-    def test_mfa_uses_user_parameters_for_global_pca_only(self):
-        obs_artifact = mfa(
-            self.ctx,
-            {
-                "metabolome": self.artifact_a,
-                "microbiome": self.artifact_b,
-            },
-            n_components=1,
-            svd_solver="full",
-            random_state=0,
-        )
-        obs = obs_artifact.view(OrdinationResults)
-
-        reordered_b = self.table_b.loc[self.table_a.index]
-        lambda_a = float(
-            pca(self.table_a, n_components=1, svd_solver="full").eigvals.iloc[0]
-        )
-        lambda_b = float(
-            pca(reordered_b, n_components=1, svd_solver="full").eigvals.iloc[0]
-        )
-        weighted = pd.concat(
-            [
-                self.table_a.div(lambda_a**0.5),
-                reordered_b.div(lambda_b**0.5),
-            ],
-            axis=1,
-        )
-        exp = pca(weighted, n_components=1, svd_solver="full", random_state=0)
-
-        self.assertEqual(obs.samples.shape[1], 1)
-        pd.testing.assert_frame_equal(
-            obs.samples.set_axis(exp.samples.columns, axis=1),
-            exp.samples,
-        )
-        pd.testing.assert_frame_equal(
-            obs.features.set_axis(exp.features.columns, axis=1),
-            exp.features,
-        )
-        pd.testing.assert_series_equal(
-            obs.eigvals.set_axis(exp.eigvals.index),
-            exp.eigvals,
-        )
+        self.ctx.get_action.assert_called_once_with("mfa", "pca")
+        self.assertEqual(self.pca_action.call_count, 1)
 
     def test_mfa_appends_group_name_only_for_duplicate_features(self):
-        duplicate_a = pd.DataFrame(
-            [[1.0, 3.0], [2.0, 5.0], [4.0, 6.0]],
-            index=["sample-1", "sample-2", "sample-3"],
-            columns=["shared-feature", "feature-a2"],
+        self.pca_action.side_effect = [
+            self.ordination_artifacts[name]
+            for name in ["ord_dup_group_a", "ord_dup_group_b", "ord_global"]
+        ]
+
+        mfa(
+            self.ctx,
+            {
+                "metabolome": self.duplicate_a_artifact,
+                "microbiome": self.duplicate_b_artifact,
+            },
         )
-        duplicate_b = pd.DataFrame(
-            [[10.0, 7.0], [8.0, 3.0], [6.0, 1.0]],
-            index=["sample-3", "sample-1", "sample-2"],
-            columns=["shared-feature", "feature-b2"],
-        )
+
+        expected_columns = [
+            "shared-feature:metabolome",
+            "feature-a2",
+            "shared-feature:microbiome",
+            "feature-b2",
+        ]
+        self.assertListEqual(list(self._table_from_call(2).columns), expected_columns)
+        self.assertEqual(self.pca_action.call_count, 3)
+
+    def test_mfa_returns_mfa_typed_artifact(self):
+        self.pca_action.side_effect = [
+            self.ordination_artifacts[name]
+            for name in ["ord_group_a", "ord_group_b", "ord_global"]
+        ]
 
         obs_artifact = mfa(
             self.ctx,
-            {
-                "metabolome": Artifact.import_data(
-                    "FeatureTable[Frequency]", duplicate_a
-                ),
-                "microbiome": Artifact.import_data(
-                    "FeatureTable[Frequency]", duplicate_b
-                ),
-            },
+            {"metabolome": self.artifact_a, "microbiome": self.artifact_b},
         )
-        obs = obs_artifact.view(OrdinationResults)
 
-        self.assertListEqual(
-            list(obs.features.index),
-            [
-                "shared-feature:metabolome",
-                "feature-a2",
-                "shared-feature:microbiome",
-                "feature-b2",
-            ],
-        )
+        self.assertEqual(str(obs_artifact.type), str(PCoAResults % Properties("mfa")))

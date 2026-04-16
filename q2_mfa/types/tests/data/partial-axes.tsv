@@ -1,0 +1,4 @@
+group	partial_axis	global_dim	value
+Climate	1	1	0.98
+Chemistry	1	2	0.76
+Fungi	2	2	0.80

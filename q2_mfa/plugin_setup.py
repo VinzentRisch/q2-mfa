@@ -11,6 +11,13 @@ from rachis.core.type import Choices, Float, Range, Str
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
+from q2_mfa.types import (
+    GroupSummaryFormat,
+    MFAResults,
+    MFAResultsDirFmt,
+    PartialAxesFormat,
+    PartialScoresFormat,
+)
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -23,6 +30,22 @@ plugin = Plugin(
     description="A QIIME 2 plugin for PCA and MFA analysis.",
     short_description="PCA and MFA analysis",
     citations=[],
+)
+
+plugin.register_formats(
+    GroupSummaryFormat,
+    MFAResultsDirFmt,
+    PartialAxesFormat,
+    PartialScoresFormat,
+)
+plugin.register_semantic_types(MFAResults)
+plugin.register_artifact_class(
+    MFAResults,
+    directory_format=MFAResultsDirFmt,
+    description=(
+        "Represents the global MFA ordination together with MFA-specific "
+        "partial scores, partial axes, and group summary tables."
+    ),
 )
 
 plugin.methods.register_function(

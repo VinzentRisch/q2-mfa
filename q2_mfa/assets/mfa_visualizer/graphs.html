@@ -1,0 +1,75 @@
+{% extends 'tab-child.html' %}
+
+{% block head %}
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Q2-MFA</p>
+      <h1 id="visualizer-title">MFA sample scores</h1>
+    </div>
+    <div class="theme-toggle-shell">
+      <label class="theme-toggle" for="dark-mode-toggle">
+        <span>Dark mode</span>
+        <input id="dark-mode-toggle" type="checkbox">
+      </label>
+    </div>
+  </header>
+
+  <section class="control-panel" aria-label="Graph controls">
+    <div class="control-group">
+      <label for="x-dimension">X-axis</label>
+      <select id="x-dimension"></select>
+    </div>
+
+    <div class="control-group">
+      <label for="y-dimension">Y-axis</label>
+      <select id="y-dimension"></select>
+    </div>
+
+    <div class="control-group">
+      <label for="color-by">Color samples</label>
+      <select id="color-by"></select>
+    </div>
+
+    <div class="control-group">
+      <label for="color-palette">Color palette</label>
+      <select id="color-palette"></select>
+    </div>
+
+    <div class="control-group control-group-toggle">
+      <label for="show-barycenter">Barycenter ellipse</label>
+      <label class="toggle-option" for="show-barycenter">
+        <input id="show-barycenter" type="checkbox">
+        <span>Show for visible samples</span>
+      </label>
+    </div>
+
+    <div class="control-group control-group-wide">
+      <label for="filter-by">Filter samples</label>
+      <select id="filter-by"></select>
+    </div>
+
+    <div class="control-group control-group-wide">
+      <div id="filter-controls" class="filter-controls"></div>
+    </div>
+  </section>
+
+  <section class="plot-shell">
+    <div class="plot-status">
+      <span id="sample-count"></span>
+      <span id="filter-summary"></span>
+    </div>
+    <div id="sample-plot" class="plot-canvas"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block footer %}
+<script src="data.js"></script>
+<script src="app.js"></script>
+{% endblock %}

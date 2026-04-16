@@ -1,0 +1,5 @@
+sample-id	body_site	cohort	age	bmi
+sample-1	gut	control	23	20.5
+sample-2	skin	case	35	27.0
+sample-3	gut	case	29	24.2
+sample-extra	oral	control	41	26.8

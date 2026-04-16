@@ -1,0 +1,343 @@
+:root {
+  color-scheme: light;
+  --page-bg: #f4f2eb;
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(41, 47, 54, 0.12);
+  --control-bg: #ffffff;
+  --control-border: rgba(82, 96, 109, 0.24);
+  --filter-bg: rgba(244, 242, 235, 0.75);
+  --text-main: #1f2933;
+  --text-muted: #52606d;
+  --accent: #126782;
+  --accent-soft: rgba(18, 103, 130, 0.12);
+  --shadow: 0 24px 60px rgba(31, 41, 51, 0.08);
+  --plot-font: #1f2933;
+  --plot-grid: rgba(31, 41, 51, 0.12);
+  --plot-zero: rgba(31, 41, 51, 0.24);
+  --plot-annotation: #52606d;
+  --plot-marker-line: #ffffff;
+  --toggle-track: rgba(18, 103, 130, 0.12);
+  --toggle-active: #126782;
+}
+
+body.dark-mode {
+  color-scheme: dark;
+  --page-bg: #16181c;
+  --panel-bg: rgba(28, 30, 35, 0.9);
+  --panel-border: rgba(196, 201, 208, 0.16);
+  --control-bg: rgba(40, 43, 49, 0.98);
+  --control-border: rgba(196, 201, 208, 0.2);
+  --filter-bg: rgba(22, 24, 28, 0.84);
+  --text-main: #edf0f4;
+  --text-muted: #a6adb8;
+  --accent: #c9d0da;
+  --accent-soft: rgba(201, 208, 218, 0.12);
+  --shadow: 0 24px 60px rgba(7, 8, 10, 0.4);
+  --plot-font: #e3e7ec;
+  --plot-grid: rgba(166, 173, 184, 0.16);
+  --plot-zero: rgba(220, 226, 234, 0.3);
+  --plot-annotation: #a6adb8;
+  --plot-marker-line: rgba(237, 240, 244, 0.9);
+  --toggle-track: rgba(201, 208, 218, 0.14);
+  --toggle-active: #dce2ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(18, 103, 130, 0.16), transparent 32%),
+    radial-gradient(circle at top right, rgba(201, 94, 55, 0.14), transparent 28%),
+    var(--page-bg);
+  color: var(--text-main);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+body.dark-mode {
+  background:
+    radial-gradient(circle at top left, rgba(108, 114, 123, 0.22), transparent 34%),
+    radial-gradient(circle at top right, rgba(72, 77, 84, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(24, 26, 31, 0.98), rgba(15, 16, 19, 1)),
+    var(--page-bg);
+}
+
+.page-shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.theme-toggle-shell {
+  display: flex;
+  align-items: center;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+  color: var(--text-main);
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.theme-toggle input {
+  appearance: none;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--toggle-track);
+  border: 1px solid var(--control-border);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.theme-toggle input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--control-bg);
+  box-shadow: 0 2px 8px rgba(15, 23, 38, 0.22);
+  transition: transform 160ms ease;
+}
+
+.theme-toggle input:checked {
+  background: var(--toggle-active);
+  border-color: var(--toggle-active);
+}
+
+.theme-toggle input:checked::after {
+  transform: translateX(20px);
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.92rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.page-copy {
+  max-width: 480px;
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.control-panel,
+.plot-shell {
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+}
+
+.control-panel {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-group-toggle {
+  justify-content: flex-end;
+}
+
+.control-group-wide {
+  grid-column: span 3;
+}
+
+label,
+.filter-heading {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.94rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+select,
+input[type="number"] {
+  min-height: 44px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--control-bg);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.toggle-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--control-bg);
+  color: var(--text-main);
+  font-size: 0.95rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.toggle-option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.filter-controls {
+  min-height: 44px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: var(--filter-bg);
+}
+
+.filter-placeholder,
+.filter-summary-empty {
+  color: var(--text-muted);
+}
+
+.filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+}
+
+.filter-option {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.numeric-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.plot-shell {
+  padding: 18px 18px 10px;
+}
+
+.plot-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.98rem;
+}
+
+.plot-canvas {
+  width: 100%;
+  min-height: 620px;
+}
+
+.js-plotly-plot .plotly .modebar {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+.js-plotly-plot .plotly .modebar-btn path {
+  fill: var(--text-main);
+}
+
+@media (max-width: 1100px) {
+  .control-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-group-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 800px) {
+  .page-shell {
+    padding: 18px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .theme-toggle-shell {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .control-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .control-group-wide {
+    grid-column: span 1;
+  }
+
+  .plot-status,
+  .numeric-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+    display: grid;
+  }
+
+  .plot-canvas {
+    min-height: 520px;
+  }
+}

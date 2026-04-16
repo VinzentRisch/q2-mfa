@@ -1,0 +1,20 @@
+Eigvals	2
+6.0	1.5
+
+Proportion explained	2
+0.8	0.2
+
+Species	4	2
+feature-a1	0.1	0.01
+feature-a2	0.2	0.02
+feature-b1	0.3	0.03
+feature-b2	0.4	0.04
+
+Site	3	2
+sample-1	1.0	0.1
+sample-2	2.0	0.2
+sample-3	3.0	0.3
+
+Biplot	0	0
+
+Site constraints	0	0

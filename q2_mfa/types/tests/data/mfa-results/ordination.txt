@@ -1,0 +1,17 @@
+Eigvals	2
+PC1	0.512
+PC2	0.488
+
+Proportion explained	2
+PC1	0.512
+PC2	0.488
+
+Species	0	2
+
+Site	2	2
+sample_01	0.2	-0.1
+sample_02	-0.2	0.1
+
+Biplot	0	2
+
+Site constraints	0	0

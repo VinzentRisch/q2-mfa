@@ -6,7 +6,6 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
-from collections import Counter
 
 import pandas as pd
 from q2_types.ordination import PCoAResults
@@ -69,10 +68,6 @@ def mfa(
     if consensus_samples.empty:
         raise ValueError("Feature tables do not share any sample IDs.")
 
-    feature_name_counts = Counter()
-    for _, table in tables.values():
-        feature_name_counts.update(table.columns)
-
     weighted_tables = []
 
     # Subset every table to the consensus samples and warn about dropped rows.
@@ -102,8 +97,7 @@ def mfa(
         # Scale each group by the square root of its first eigenvalue.
         weighted_group = table.div(first_eigenvalue**0.5)
         weighted_group.columns = [
-            (f"{feature}:{group_name}" if feature_name_counts[feature] > 1 else feature)
-            for feature in weighted_group.columns
+            f"{group_name}:{feature}" for feature in weighted_group.columns
         ]
         weighted_tables.append(weighted_group)
 

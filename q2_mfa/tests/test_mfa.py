@@ -93,10 +93,19 @@ class TestMFA(TestPluginBase):
         expected = expected.rename_axis(None)
         pd.testing.assert_frame_equal(self._table_from_call(call_index), expected)
 
+    def _prefix_group_columns(self, table, group_name):
+        prefixed = table.copy()
+        prefixed.columns = [f"{group_name}:{feature}" for feature in prefixed.columns]
+        return prefixed
+
     def test_mfa_orders_and_weights_tables(self):
         reordered_b = self.table_b.loc[self.table_a.index]
         expected_weighted = pd.concat(
-            [self.table_a.div(4.0**0.5), reordered_b.div(9.0**0.5)], axis=1
+            [
+                self._prefix_group_columns(self.table_a.div(4.0**0.5), "metabolome"),
+                self._prefix_group_columns(reordered_b.div(9.0**0.5), "microbiome"),
+            ],
+            axis=1,
         )
         self.pca_action.side_effect = [
             self.ordination_artifacts[name]
@@ -118,8 +127,12 @@ class TestMFA(TestPluginBase):
         shared_samples = pd.Index(["sample-1", "sample-3"])
         expected_weighted = pd.concat(
             [
-                self.table_a.loc[shared_samples].div(4.0**0.5),
-                self.mismatched.loc[shared_samples].div(16.0**0.5),
+                self._prefix_group_columns(
+                    self.table_a.loc[shared_samples].div(4.0**0.5), "metabolome"
+                ),
+                self._prefix_group_columns(
+                    self.mismatched.loc[shared_samples].div(16.0**0.5), "other"
+                ),
             ],
             axis=1,
         )
@@ -183,7 +196,7 @@ class TestMFA(TestPluginBase):
         self.ctx.get_action.assert_called_once_with("mfa", "pca")
         self.assertEqual(self.pca_action.call_count, 1)
 
-    def test_mfa_appends_group_name_only_for_duplicate_features(self):
+    def test_mfa_prefixes_all_feature_names_with_group_name(self):
         self.pca_action.side_effect = [
             self.ordination_artifacts[name]
             for name in ["ord_group_a", "ord_group_b", "ord_global"]
@@ -198,10 +211,10 @@ class TestMFA(TestPluginBase):
         )
 
         expected_columns = [
-            "shared-feature:metabolome",
-            "feature-a2",
-            "shared-feature:microbiome",
-            "feature-b2",
+            "metabolome:shared-feature",
+            "metabolome:feature-a2",
+            "microbiome:shared-feature",
+            "microbiome:feature-b2",
         ]
         self.assertListEqual(list(self._table_from_call(2).columns), expected_columns)
         self.assertEqual(self.pca_action.call_count, 3)

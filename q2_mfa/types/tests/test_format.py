@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
+from skbio import OrdinationResults
 
 from q2_mfa.types import (
     GroupSummaryFormat,
@@ -71,3 +72,13 @@ class TestMFAFormats(TestPluginBase):
         fmt = MFAResultsDirFmt(self.get_data_path("mfa-results"), mode="r")
         fmt.validate(level="min")
         fmt.validate(level="max")
+
+    def test_mfa_results_embedded_ordination_uses_prefixed_feature_ids(self):
+        ordination = OrdinationResults.read(
+            self.get_data_path("mfa-results/ordination.txt")
+        )
+
+        self.assertListEqual(
+            list(ordination.features.index),
+            ["Climate:temp_mean", "Fungi:yeast_a"],
+        )

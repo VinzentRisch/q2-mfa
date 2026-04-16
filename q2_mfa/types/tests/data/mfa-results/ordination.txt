@@ -7,6 +7,8 @@ PC1	0.512
 PC2	0.488
 
 Species	0	2
+Climate:temp_mean	0.1	-0.3
+Fungi:yeast_a	0.7	0.2
 
 Site	2	2
 sample_01	0.2	-0.1

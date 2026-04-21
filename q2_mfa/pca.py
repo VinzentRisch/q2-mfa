@@ -16,12 +16,8 @@ from sklearn.decomposition import PCA
 
 def pca(
     table: pd.DataFrame,
-    n_components: int | float | str | None = None,
-    svd_solver: str = "auto",
-    tol: float = 0.0,
-    iterated_power: int | str = "auto",
-    n_oversamples: int = 10,
-    power_iteration_normalizer: str = "auto",
+    n_components: int | None = None,
+    svd_solver: str = "full",
     random_state: CaptureHolder[int] = None,
 ) -> skbio.OrdinationResults:
     """
@@ -30,18 +26,9 @@ def pca(
     Args:
         table (pd.DataFrame): Feature table with samples as rows and features as
             columns.
-        n_components (int | float | str | None): Number of components to keep.
-            Accepts an integer count, a variance fraction in ``(0, 1)``,
-            ``"mle"``, or ``None`` to keep all components.
+        n_components (int | None): Number of components to keep, or ``None`` to
+            keep all components.
         svd_solver (str): Solver used by sklearn PCA.
-        tol (float): Tolerance for singular values when
-            ``svd_solver="arpack"``.
-        iterated_power (int | str): Number of power iterations for
-            ``svd_solver="randomized"``, or ``"auto"``.
-        n_oversamples (int): Additional random vectors used by the randomized
-            solver.
-        power_iteration_normalizer (str): Power iteration normalizer used by
-            the randomized solver.
         random_state (CaptureHolder[int] | int | None): Random seed used by
             stochastic solvers. If not provided, a seed is generated and
             captured by Rachis.
@@ -50,21 +37,19 @@ def pca(
         skbio.OrdinationResults: PCA results containing sample scores, feature
             loadings, eigenvalues, and proportion of variance explained.
     """
-    random_int = CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+    if svd_solver == "randomized":
+        random_state = CaptureHolder.get_or_set(
+            random_state, lambda: secrets.randbits(32)
+        )
+    else:
+        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
 
     pca = PCA(
         n_components=n_components,
         svd_solver=svd_solver,
-        tol=tol,
-        iterated_power=iterated_power,
-        n_oversamples=n_oversamples,
-        power_iteration_normalizer=power_iteration_normalizer,
-        random_state=random_int,
+        random_state=random_state,
     )
-    try:
-        table_pca = pca.fit_transform(table)
-    except ValueError as error:
-        raise ValueError(f"Wrong PCA parameter combination: {error}") from error
+    table_pca = pca.fit_transform(table)
 
     # Build ordination pieces
 

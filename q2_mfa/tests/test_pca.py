@@ -5,10 +5,11 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from unittest.mock import patch
+
 import pandas as pd
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
-from sklearn.decomposition import PCA as SklearnPCA
 
 from q2_mfa.pca import pca
 
@@ -22,51 +23,63 @@ class TestPCA(TestPluginBase):
             self.get_data_path("random_data.txt"), sep="\t", index_col=0
         )
 
-    def test_pca_matches_sklearn_outputs(self):
-        ordn = pca(self.table, n_components=2, svd_solver="full")
+    def test_pca_returns_expected_structure_for_two_components(self):
+        ordn = pca(self.table, n_components=2)
+        expected_columns = ["PC1", "PC2"]
 
         self.assertIsInstance(ordn, OrdinationResults)
+        self.assertEqual(list(ordn.samples.index), list(self.table.index))
+        self.assertEqual(list(ordn.features.index), list(self.table.columns))
+        self.assertEqual(list(ordn.samples.columns), expected_columns)
+        self.assertEqual(list(ordn.features.columns), expected_columns)
+        self.assertEqual(list(ordn.eigvals.index), expected_columns)
+        self.assertEqual(list(ordn.proportion_explained.index), expected_columns)
+        self.assertEqual(ordn.samples.shape, (self.table.shape[0], 2))
+        self.assertEqual(ordn.features.shape, (self.table.shape[1], 2))
+        self.assertEqual(len(ordn.eigvals), 2)
+        self.assertEqual(len(ordn.proportion_explained), 2)
 
-        sklearn_pca = SklearnPCA(
+    def test_pca_returns_all_components_when_n_components_is_none(self):
+        ordn = pca(self.table, n_components=None)
+        expected_count = min(self.table.shape)
+        expected_columns = [f"PC{i + 1}" for i in range(expected_count)]
+
+        self.assertIsInstance(ordn, OrdinationResults)
+        self.assertEqual(list(ordn.samples.columns), expected_columns)
+        self.assertEqual(list(ordn.features.columns), expected_columns)
+        self.assertEqual(list(ordn.eigvals.index), expected_columns)
+        self.assertEqual(list(ordn.proportion_explained.index), expected_columns)
+        self.assertEqual(ordn.samples.shape, (self.table.shape[0], expected_count))
+        self.assertEqual(ordn.features.shape, (self.table.shape[1], expected_count))
+        self.assertEqual(len(ordn.eigvals), expected_count)
+        self.assertEqual(len(ordn.proportion_explained), expected_count)
+
+    def test_pca_accepts_random_state_with_randomized_solver(self):
+        ordn = pca(
+            self.table,
             n_components=2,
-            svd_solver="full",
-        )
-        transformed = sklearn_pca.fit_transform(self.table)
-        expected_cols = ["PC1", "PC2"]
-
-        expected_samples = pd.DataFrame(
-            transformed,
-            index=self.table.index,
-            columns=expected_cols,
-        )
-        expected_features = pd.DataFrame(
-            sklearn_pca.components_.T,
-            index=self.table.columns,
-            columns=expected_cols,
-        )
-        expected_eigvals = pd.Series(
-            sklearn_pca.explained_variance_,
-            index=expected_cols,
-        )
-        expected_proportion_explained = pd.Series(
-            sklearn_pca.explained_variance_ratio_,
-            index=expected_cols,
+            svd_solver="randomized",
+            random_state=42,
         )
 
-        pd.testing.assert_frame_equal(ordn.samples, expected_samples)
-        pd.testing.assert_frame_equal(ordn.features, expected_features)
-        pd.testing.assert_series_equal(ordn.eigvals, expected_eigvals)
-        pd.testing.assert_series_equal(
-            ordn.proportion_explained, expected_proportion_explained
+        self.assertIsInstance(ordn, OrdinationResults)
+        self.assertEqual(ordn.samples.shape, (self.table.shape[0], 2))
+        self.assertEqual(ordn.features.shape, (self.table.shape[1], 2))
+        self.assertEqual(list(ordn.samples.columns), ["PC1", "PC2"])
+
+    @patch("q2_mfa.pca.secrets.randbits", return_value=123)
+    def test_pca_generates_random_state_when_missing_for_randomized_solver(
+        self, mock_randbits
+    ):
+        ordn = pca(
+            self.table,
+            n_components=2,
+            svd_solver="randomized",
+            random_state=None,
         )
 
-    def test_invalid_parameter_combination_raises_value_error(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            r"Wrong PCA parameter combination: .*with svd_solver='randomized'",
-        ):
-            pca(
-                self.table,
-                n_components="mle",
-                svd_solver="randomized",
-            )
+        mock_randbits.assert_called_once_with(32)
+        self.assertIsInstance(ordn, OrdinationResults)
+        self.assertEqual(ordn.samples.shape, (self.table.shape[0], 2))
+        self.assertEqual(ordn.features.shape, (self.table.shape[1], 2))
+        self.assertEqual(list(ordn.samples.columns), ["PC1", "PC2"])

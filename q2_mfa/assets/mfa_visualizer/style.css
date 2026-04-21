@@ -13,6 +13,7 @@
   --shadow: 0 24px 60px rgba(31, 41, 51, 0.08);
   --plot-font: #1f2933;
   --plot-grid: rgba(31, 41, 51, 0.12);
+  --plot-grid-soft: rgba(31, 41, 51, 0.08);
   --plot-zero: rgba(31, 41, 51, 0.24);
   --plot-annotation: #52606d;
   --plot-marker-line: #ffffff;
@@ -35,6 +36,7 @@ body.dark-mode {
   --shadow: 0 24px 60px rgba(7, 8, 10, 0.4);
   --plot-font: #e3e7ec;
   --plot-grid: rgba(166, 173, 184, 0.16);
+  --plot-grid-soft: rgba(166, 173, 184, 0.08);
   --plot-zero: rgba(220, 226, 234, 0.3);
   --plot-annotation: #a6adb8;
   --plot-marker-line: rgba(237, 240, 244, 0.9);
@@ -273,6 +275,12 @@ input[type="number"] {
   padding: 18px 18px 10px;
 }
 
+.plot-grid-secondary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .plot-shell-secondary {
   margin-top: 18px;
 }
@@ -297,9 +305,10 @@ input[type="number"] {
 }
 
 .js-plotly-plot .plotly .modebar {
-  background: var(--panel-bg) !important;
-  border: 1px solid var(--panel-border);
+  background: transparent !important;
+  border: none;
   border-radius: 12px;
+  box-shadow: none;
 }
 
 .js-plotly-plot .plotly .modebar-btn path {
@@ -313,6 +322,10 @@ input[type="number"] {
 
   .control-group-wide {
     grid-column: span 2;
+  }
+
+  .plot-grid-secondary {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

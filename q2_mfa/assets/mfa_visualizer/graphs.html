@@ -67,12 +67,22 @@
     <div id="sample-plot" class="plot-canvas"></div>
   </section>
 
-  <section class="plot-shell plot-shell-secondary">
-    <div class="plot-status">
-      <span>Explained variance by component</span>
-      <span id="variance-summary"></span>
+  <section class="plot-grid-secondary">
+    <div class="plot-shell plot-shell-secondary">
+      <div class="plot-status">
+        <span>Explained variance by component</span>
+        <span id="variance-summary"></span>
+      </div>
+      <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
     </div>
-    <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
+
+    <div class="plot-shell plot-shell-secondary">
+      <div class="plot-status">
+        <span>Cumulative explained variance</span>
+        <span id="cumulative-summary"></span>
+      </div>
+      <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
+    </div>
   </section>
 </div>
 {% endblock %}

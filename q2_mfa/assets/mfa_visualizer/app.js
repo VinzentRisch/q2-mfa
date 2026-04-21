@@ -333,7 +333,7 @@ function renderPlot() {
         name: 'Download SVG',
         icon: Plotly.Icons.camera,
         click: () => {
-          downloadPlotImage('svg');
+          downloadPlotImage('sample-plot', buildDownloadFilename('svg'), 'svg');
         },
       },
     ],
@@ -350,14 +350,22 @@ function buildDownloadFilename(extension) {
   return `mfa-sample-scores-${xLabel}-vs-${yLabel}.${extension}`;
 }
 
-function downloadPlotImage(format) {
-  Plotly.downloadImage('sample-plot', {
+function downloadPlotImage(plotId, filename, format) {
+  Plotly.downloadImage(plotId, {
     format,
-    filename: buildDownloadFilename(format).replace(`.${format}`, ''),
+    filename: filename.replace(`.${format}`, ''),
     width: 1400,
     height: 900,
     scale: 2,
   });
+}
+
+function buildVarianceDownloadFilename(extension) {
+  return `mfa-explained-variance-by-component.${extension}`;
+}
+
+function buildCumulativeVarianceDownloadFilename(extension) {
+  return `mfa-cumulative-explained-variance.${extension}`;
 }
 
 function repopulateColorPaletteOptions() {
@@ -719,8 +727,9 @@ function renderVariancePlot() {
   const themeColors = getThemeColors();
   const hasVariance = components.length > 0;
 
-  const trace = {
+  const barTrace = {
     type: 'bar',
+    name: 'Explained variance',
     x: components.map((component) => component.label),
     y: components.map((component) => component.variance_explained * 100),
     marker: {
@@ -738,16 +747,117 @@ function renderVariancePlot() {
 
   Plotly.react(
     'variance-plot',
-    hasVariance ? [trace] : [],
+    hasVariance ? [barTrace] : [],
     buildVarianceLayout(hasVariance),
     {
       responsive: true,
       displaylogo: false,
-      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'zoom2d', 'pan2d'],
+      toImageButtonOptions: {
+        format: 'png',
+        filename: buildVarianceDownloadFilename('png').replace('.png', ''),
+        width: 1200,
+        height: 700,
+        scale: 2,
+      },
+      modeBarButtonsToAdd: [
+        {
+          name: 'Download SVG',
+          icon: Plotly.Icons.camera,
+          click: () => {
+            downloadPlotImage(
+              'variance-plot',
+              buildVarianceDownloadFilename('svg'),
+              'svg'
+            );
+          },
+        },
+      ],
+      modeBarButtonsToRemove: [
+        'lasso2d',
+        'select2d',
+        'zoom2d',
+        'pan2d',
+        'zoomIn2d',
+        'zoomOut2d',
+        'autoScale2d',
+        'resetScale2d',
+      ],
     }
   );
 
+  renderCumulativeVariancePlot(components, hasVariance, themeColors);
   updateVarianceSummary(components);
+}
+
+function renderCumulativeVariancePlot(components, hasVariance, themeColors) {
+  let cumulativeTotal = 0;
+  const selectedDimensions = new Set([state.xDimension, state.yDimension]);
+  const cumulativeTrace = {
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Cumulative explained variance',
+    x: components.map((component) => component.label),
+    y: components.map((component) => {
+      cumulativeTotal += component.variance_explained * 100;
+      return cumulativeTotal;
+    }),
+    line: {
+      color: DEFAULT_MARKER_COLOR,
+      width: 3,
+    },
+    marker: {
+      color: components.map((component) =>
+        selectedDimensions.has(component.key) ? '#C95E37' : DEFAULT_MARKER_COLOR
+      ),
+      size: 8,
+      line: {
+        color: themeColors.markerLine,
+        width: 1,
+      },
+    },
+    hovertemplate: '%{x}: %{y:.2f}% cumulative<extra></extra>',
+  };
+
+  Plotly.react(
+    'cumulative-variance-plot',
+    hasVariance ? [cumulativeTrace] : [],
+    buildCumulativeVarianceLayout(hasVariance),
+    {
+      responsive: true,
+      displaylogo: false,
+      toImageButtonOptions: {
+        format: 'png',
+        filename: buildCumulativeVarianceDownloadFilename('png').replace('.png', ''),
+        width: 1200,
+        height: 700,
+        scale: 2,
+      },
+      modeBarButtonsToAdd: [
+        {
+          name: 'Download SVG',
+          icon: Plotly.Icons.camera,
+          click: () => {
+            downloadPlotImage(
+              'cumulative-variance-plot',
+              buildCumulativeVarianceDownloadFilename('svg'),
+              'svg'
+            );
+          },
+        },
+      ],
+      modeBarButtonsToRemove: [
+        'lasso2d',
+        'select2d',
+        'zoom2d',
+        'pan2d',
+        'zoomIn2d',
+        'zoomOut2d',
+        'autoScale2d',
+        'resetScale2d',
+      ],
+    }
+  );
+  updateCumulativeSummary(components);
 }
 
 function buildVarianceLayout(hasVariance) {
@@ -762,10 +872,6 @@ function buildVarianceLayout(hasVariance) {
     },
     bargap: 0.24,
     xaxis: {
-      title: {
-        text: 'Component',
-        font: { color: themeColors.font },
-      },
       tickfont: { color: themeColors.font },
     },
     yaxis: {
@@ -794,11 +900,55 @@ function buildVarianceLayout(hasVariance) {
   };
 }
 
+function buildCumulativeVarianceLayout(hasVariance) {
+  const themeColors = getThemeColors();
+  return {
+    paper_bgcolor: 'rgba(0, 0, 0, 0)',
+    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+    margin: { t: 28, r: 56, b: 60, l: 80 },
+    font: {
+      color: themeColors.font,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    xaxis: {
+      showgrid: true,
+      gridcolor: themeColors.gridSoft,
+      gridwidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    yaxis: {
+      title: {
+        text: 'Cumulative explained variance (%)',
+        font: { color: themeColors.font },
+      },
+      range: [0, 104],
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      tickfont: { color: themeColors.font },
+      zeroline: false,
+    },
+    annotations: hasVariance
+      ? []
+      : [
+          {
+            text: 'Explained variance values are not available.',
+            showarrow: false,
+            xref: 'paper',
+            yref: 'paper',
+            x: 0.5,
+            y: 0.5,
+            font: { size: 16, color: themeColors.annotation },
+          },
+        ],
+  };
+}
+
 function getThemeColors() {
   const styles = getComputedStyle(document.body);
   return {
     font: styles.getPropertyValue('--plot-font').trim(),
     grid: styles.getPropertyValue('--plot-grid').trim(),
+    gridSoft: styles.getPropertyValue('--plot-grid-soft').trim(),
     zeroline: styles.getPropertyValue('--plot-zero').trim(),
     annotation: styles.getPropertyValue('--plot-annotation').trim(),
     markerLine: styles.getPropertyValue('--plot-marker-line').trim(),
@@ -855,6 +1005,15 @@ function updateVarianceSummary(components) {
   document.getElementById('variance-summary').textContent = components.length
     ? `${formatValue(totalExplained * 100)}% across ${components.length} components`
     : 'Variance unavailable';
+}
+
+function updateCumulativeSummary(components) {
+  const finalValue = components.length
+    ? components.reduce((sum, component) => sum + component.variance_explained, 0) * 100
+    : null;
+  document.getElementById('cumulative-summary').textContent = finalValue === null
+    ? 'Cumulative variance unavailable'
+    : `${formatValue(finalValue)}% at component ${components.length}`;
 }
 
 function formatMetadataValue(value) {

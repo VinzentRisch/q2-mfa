@@ -141,10 +141,16 @@ plugin.pipelines.register_function(
     function=mfa,
     inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
-    outputs=[("mfa_results", PCoAResults % Properties("mfa"))],
+    outputs=[("mfa_results", MFAResults)],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
     parameter_descriptions=ordination_parameter_descriptions,
-    output_descriptions={"mfa_results": "MFA results."},
+    output_descriptions={
+        "mfa_results": (
+            "MFA results containing the global ordination together with "
+            "partial sample coordinates, partial axes summary, and group "
+            "summary tables."
+        )
+    },
     name="Multiple Factor Analysis (MFA)",
     description=(
         "Multiple Factor Analysis (MFA) from multiple feature tables. Each "

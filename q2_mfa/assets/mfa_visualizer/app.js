@@ -340,6 +340,7 @@ function renderPlot() {
     modeBarButtonsToRemove: ['lasso2d', 'select2d'],
   });
 
+  renderVariancePlot();
   updateStatus(filteredSamples);
 }
 
@@ -710,6 +711,89 @@ function buildLayout(isEmpty) {
   };
 }
 
+function renderVariancePlot() {
+  const components = payload.component_variance.filter(
+    (component) => component.variance_explained !== null
+  );
+  const selectedDimensions = new Set([state.xDimension, state.yDimension]);
+  const themeColors = getThemeColors();
+  const hasVariance = components.length > 0;
+
+  const trace = {
+    type: 'bar',
+    x: components.map((component) => component.label),
+    y: components.map((component) => component.variance_explained * 100),
+    marker: {
+      color: components.map((component) =>
+        selectedDimensions.has(component.key) ? '#C95E37' : DEFAULT_MARKER_COLOR
+      ),
+      line: {
+        color: themeColors.markerLine,
+        width: 1,
+      },
+    },
+    customdata: components.map((component) => [component.variance_explained * 100]),
+    hovertemplate: '%{x}: %{customdata[0]:.2f}% explained<extra></extra>',
+  };
+
+  Plotly.react(
+    'variance-plot',
+    hasVariance ? [trace] : [],
+    buildVarianceLayout(hasVariance),
+    {
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'zoom2d', 'pan2d'],
+    }
+  );
+
+  updateVarianceSummary(components);
+}
+
+function buildVarianceLayout(hasVariance) {
+  const themeColors = getThemeColors();
+  return {
+    paper_bgcolor: 'rgba(0, 0, 0, 0)',
+    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+    margin: { t: 20, r: 20, b: 60, l: 80 },
+    font: {
+      color: themeColors.font,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    bargap: 0.24,
+    xaxis: {
+      title: {
+        text: 'Component',
+        font: { color: themeColors.font },
+      },
+      tickfont: { color: themeColors.font },
+    },
+    yaxis: {
+      title: {
+        text: 'Explained variance (%)',
+        font: { color: themeColors.font },
+      },
+      rangemode: 'tozero',
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    annotations: hasVariance
+      ? []
+      : [
+          {
+            text: 'Explained variance values are not available.',
+            showarrow: false,
+            xref: 'paper',
+            yref: 'paper',
+            x: 0.5,
+            y: 0.5,
+            font: { size: 16, color: themeColors.annotation },
+          },
+        ],
+  };
+}
+
 function getThemeColors() {
   const styles = getComputedStyle(document.body);
   return {
@@ -761,6 +845,16 @@ function updateStatus(filteredSamples) {
   const upperBound = state.numericFilterMax ?? column.max;
   document.getElementById('filter-summary').textContent =
     `Filter: ${state.filterBy} from ${formatValue(lowerBound)} to ${formatValue(upperBound)}`;
+}
+
+function updateVarianceSummary(components) {
+  const totalExplained = components.reduce(
+    (sum, component) => sum + component.variance_explained,
+    0
+  );
+  document.getElementById('variance-summary').textContent = components.length
+    ? `${formatValue(totalExplained * 100)}% across ${components.length} components`
+    : 'Variance unavailable';
 }
 
 function formatMetadataValue(value) {

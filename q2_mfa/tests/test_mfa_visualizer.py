@@ -77,6 +77,21 @@ class TestMFAVisualizer(TestPluginBase):
             [dimension["label"] for dimension in payload["dimensions"]],
             ["Dim 1", "Dim 2"],
         )
+        self.assertEqual(
+            payload["component_variance"],
+            [
+                {
+                    "key": "Dim 1",
+                    "label": "Dim 1",
+                    "variance_explained": 0.8,
+                },
+                {
+                    "key": "Dim 2",
+                    "label": "Dim 2",
+                    "variance_explained": 0.2,
+                },
+            ],
+        )
 
         metadata_columns = {
             column["name"]: column for column in payload["metadata_columns"]

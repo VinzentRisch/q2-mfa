@@ -273,6 +273,10 @@ input[type="number"] {
   padding: 18px 18px 10px;
 }
 
+.plot-shell-secondary {
+  margin-top: 18px;
+}
+
 .plot-status {
   display: flex;
   justify-content: space-between;
@@ -286,6 +290,10 @@ input[type="number"] {
 .plot-canvas {
   width: 100%;
   min-height: 620px;
+}
+
+.plot-canvas-secondary {
+  min-height: 320px;
 }
 
 .js-plotly-plot .plotly .modebar {
@@ -339,5 +347,9 @@ input[type="number"] {
 
   .plot-canvas {
     min-height: 520px;
+  }
+
+  .plot-canvas-secondary {
+    min-height: 280px;
   }
 }

@@ -79,6 +79,14 @@ def _build_payload(
         "default_x": dimensions[0]["key"],
         "default_y": dimensions[1]["key"],
         "dimensions": dimensions,
+        "component_variance": [
+            {
+                "key": dimension["key"],
+                "label": dimension["label"],
+                "variance_explained": dimension["variance_explained"],
+            }
+            for dimension in dimensions
+        ],
         "metadata_columns": metadata_columns,
         "samples": samples,
     }

@@ -24,16 +24,23 @@ def mfa(
     Run Multiple Factor Analysis on a collection of feature tables.
 
     Each input table is analyzed with a PCA using the user-specified
-    ``n_components`` and ``svd_solver="full"`` to obtain the first eigenvalue
-    used for classical MFA block weighting. The weighted tables are then
-    concatenated and a global PCA is performed on the combined matrix using the
-    remaining user-specified PCA parameters.
+    ``n_components``, ``svd_solver``, and ``random_state`` to obtain the first
+    eigenvalue used for classical MFA block weighting. The weighted tables are
+    then concatenated and a global PCA is performed on the combined matrix
+    using the same PCA parameters.
 
     Parameters:
         ctx : qiime2.sdk.Context
             Plugin execution context used to access registered actions.
         feature_tables : Collection[FeatureTable[Unconstrained]]
             Collection of feature tables keyed by group name.
+        n_components : int | None
+            Number of components to keep for both the per-group and global
+            PCAs, or ``None`` to keep all components.
+        svd_solver : str
+            SVD solver to use for both the per-group and global PCAs.
+        random_state : int | None
+            Random seed forwarded to PCA when using stochastic solvers.
 
     Returns:
         qiime2.Artifact

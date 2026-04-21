@@ -17,11 +17,7 @@ def mfa(
     ctx,
     feature_tables,
     n_components=None,
-    svd_solver="auto",
-    tol=0.0,
-    iterated_power="auto",
-    n_oversamples=10,
-    power_iteration_normalizer="auto",
+    svd_solver="full",
     random_state=None,
 ):
     """
@@ -31,7 +27,7 @@ def mfa(
     ``n_components`` and ``svd_solver="full"`` to obtain the first eigenvalue
     used for classical MFA block weighting. The weighted tables are then
     concatenated and a global PCA is performed on the combined matrix using the
-    user-specified PCA parameters.
+    remaining user-specified PCA parameters.
 
     Parameters:
         ctx : qiime2.sdk.Context
@@ -43,10 +39,6 @@ def mfa(
         qiime2.Artifact
             An artifact containing the global MFA ordination result.
     """
-    global_pca_kwargs = {
-        k: v for k, v in locals().items() if k not in {"ctx", "feature_tables"}
-    }
-
     pca_action = ctx.get_action("mfa", "pca")
     feature_tables = getattr(feature_tables, "collection", feature_tables)
 
@@ -87,7 +79,8 @@ def mfa(
         (group_pca,) = pca_action(
             table=table_artifact,
             n_components=n_components,
-            svd_solver="full",
+            svd_solver=svd_solver,
+            random_state=random_state,
         )
         group_ordination = group_pca.view(OrdinationResults)
         first_eigenvalue = float(group_ordination.eigvals.iloc[0])
@@ -111,7 +104,9 @@ def mfa(
     # Run the global ordination on the weighted multi-block feature table.
     (global_pca,) = pca_action(
         table=weighted_table_artifact,
-        **global_pca_kwargs,
+        n_components=n_components,
+        svd_solver=svd_solver,
+        random_state=random_state,
     )
 
     # Recreate artifact with mfa property

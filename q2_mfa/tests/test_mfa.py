@@ -219,6 +219,24 @@ class TestMFA(TestPluginBase):
         self.assertListEqual(list(self._table_from_call(2).columns), expected_columns)
         self.assertEqual(self.pca_action.call_count, 3)
 
+    def test_mfa_uses_n_components_for_group_and_global_pcas(self):
+        self.pca_action.side_effect = [
+            self.ordination_artifacts[name]
+            for name in ["ord_group_a", "ord_group_b", "ord_global"]
+        ]
+
+        mfa(
+            self.ctx,
+            {"metabolome": self.artifact_a, "microbiome": self.artifact_b},
+            n_components=2,
+        )
+
+        self.assertEqual(self.pca_action.call_args_list[0].kwargs["n_components"], 2)
+        self.assertEqual(self.pca_action.call_args_list[1].kwargs["n_components"], 2)
+        self.assertEqual(self.pca_action.call_args_list[2].kwargs["n_components"], 2)
+        self.assertEqual(self.pca_action.call_args_list[0].kwargs["svd_solver"], "full")
+        self.assertEqual(self.pca_action.call_args_list[1].kwargs["svd_solver"], "full")
+
     def test_mfa_returns_mfa_typed_artifact(self):
         self.pca_action.side_effect = [
             self.ordination_artifacts[name]

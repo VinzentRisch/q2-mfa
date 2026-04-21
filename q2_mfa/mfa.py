@@ -27,10 +27,11 @@ def mfa(
     """
     Run Multiple Factor Analysis on a collection of feature tables.
 
-    Each input table is analyzed with an exact one-component PCA to obtain the
-    first eigenvalue used for classical MFA block weighting. The weighted tables
-    are then concatenated and a global PCA is performed on the combined matrix
-    using the user-specified PCA parameters.
+    Each input table is analyzed with a PCA using the user-specified
+    ``n_components`` and ``svd_solver="full"`` to obtain the first eigenvalue
+    used for classical MFA block weighting. The weighted tables are then
+    concatenated and a global PCA is performed on the combined matrix using the
+    user-specified PCA parameters.
 
     Parameters:
         ctx : qiime2.sdk.Context
@@ -84,7 +85,9 @@ def mfa(
 
         table_artifact = ctx.make_artifact("FeatureTable[Unconstrained]", table)
         (group_pca,) = pca_action(
-            table=table_artifact, n_components=1, svd_solver="full"
+            table=table_artifact,
+            n_components=n_components,
+            svd_solver="full",
         )
         group_ordination = group_pca.view(OrdinationResults)
         first_eigenvalue = float(group_ordination.eigvals.iloc[0])

@@ -157,14 +157,14 @@ ordination_parameter_descriptions = {
 mfa_parameter_descriptions = {
     **ordination_parameter_descriptions,
     "n_components": (
-        f"{ordination_parameter_descriptions['n_components']} This applies only "
-        "to the global PCA; the per-group weighting PCAs always use one component "
-        "with svd_solver == 'full'."
+        f"{ordination_parameter_descriptions['n_components']} This value is used "
+        "for both the per-group weighting PCAs and the global PCA. The per-group "
+        "weighting PCAs always use svd_solver == 'full'."
     ),
     "svd_solver": (
         f"{ordination_parameter_descriptions['svd_solver']} This applies only "
         "to the global PCA; the per-group weighting PCAs always use "
-        "svd_solver == 'full' with one component."
+        "svd_solver == 'full'."
     ),
 }
 

@@ -37,12 +37,17 @@ def pca(
         skbio.OrdinationResults: PCA results containing sample scores, feature
             loadings, eigenvalues, and proportion of variance explained.
     """
-    random_int = CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+    if svd_solver == "randomized":
+        random_state = CaptureHolder.get_or_set(
+            random_state, lambda: secrets.randbits(32)
+        )
+    else:
+        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
 
     pca = PCA(
         n_components=n_components,
         svd_solver=svd_solver,
-        random_state=random_int,
+        random_state=random_state,
     )
     table_pca = pca.fit_transform(table)
 

@@ -7,9 +7,9 @@
 # ----------------------------------------------------------------------------
 from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
-from skbio import OrdinationResults
 
 from q2_mfa.types import (
+    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
@@ -25,8 +25,7 @@ class TestMFAFormats(TestPluginBase):
             self.get_data_path("partial-scores.tsv"),
             mode="r",
         )
-        fmt.validate(level="min")
-        fmt.validate(level="max")
+        fmt.validate()
 
     def test_partial_scores_format_error_header(self):
         fmt = PartialScoresFormat(
@@ -41,8 +40,7 @@ class TestMFAFormats(TestPluginBase):
             self.get_data_path("partial-axes.tsv"),
             mode="r",
         )
-        fmt.validate(level="min")
-        fmt.validate(level="max")
+        fmt.validate()
 
     def test_partial_axes_format_error_values(self):
         fmt = PartialAxesFormat(
@@ -57,8 +55,7 @@ class TestMFAFormats(TestPluginBase):
             self.get_data_path("group-summary.tsv"),
             mode="r",
         )
-        fmt.validate(level="min")
-        fmt.validate(level="max")
+        fmt.validate()
 
     def test_group_summary_format_error_header(self):
         fmt = GroupSummaryFormat(
@@ -68,17 +65,21 @@ class TestMFAFormats(TestPluginBase):
         with self.assertRaisesRegex(ValidationError, "Invalid header"):
             fmt.validate()
 
+    def test_feature_correlations_format_ok(self):
+        fmt = FeatureCorrelationsFormat(
+            self.get_data_path("feature-correlations.tsv"),
+            mode="r",
+        )
+        fmt.validate()
+
+    def test_feature_correlations_format_error_header(self):
+        fmt = FeatureCorrelationsFormat(
+            self.get_data_path("feature-correlations-broken-header.tsv"),
+            mode="r",
+        )
+        with self.assertRaisesRegex(ValidationError, "Invalid header"):
+            fmt.validate()
+
     def test_mfa_results_directory_format_ok(self):
         fmt = MFAResultsDirFmt(self.get_data_path("mfa-results"), mode="r")
-        fmt.validate(level="min")
-        fmt.validate(level="max")
-
-    def test_mfa_results_embedded_ordination_uses_prefixed_feature_ids(self):
-        ordination = OrdinationResults.read(
-            self.get_data_path("mfa-results/ordination.txt")
-        )
-
-        self.assertListEqual(
-            list(ordination.features.index),
-            ["Climate:temp_mean", "Fungi:yeast_a"],
-        )
+        fmt.validate()

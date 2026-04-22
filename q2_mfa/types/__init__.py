@@ -6,6 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from ._format import (
+    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
@@ -14,6 +15,7 @@ from ._format import (
 from ._type import MFAResults
 
 __all__ = [
+    "FeatureCorrelationsFormat",
     "GroupSummaryFormat",
     "MFAResults",
     "MFAResultsDirFmt",

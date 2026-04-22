@@ -15,6 +15,7 @@ from q2_mfa._mfa_visualizer import mfa_visualizer
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
 from q2_mfa.types import (
+    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResults,
     MFAResultsDirFmt,
@@ -35,6 +36,7 @@ plugin = Plugin(
 )
 
 plugin.register_formats(
+    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
@@ -46,7 +48,8 @@ plugin.register_artifact_class(
     directory_format=MFAResultsDirFmt,
     description=(
         "Represents the global MFA ordination together with MFA-specific "
-        "partial scores, partial axes, and group summary tables."
+        "partial scores, partial axes, group summary, and feature "
+        "correlation tables."
     ),
 )
 
@@ -147,8 +150,8 @@ plugin.pipelines.register_function(
     output_descriptions={
         "mfa_results": (
             "MFA results containing the global ordination together with "
-            "partial sample coordinates, partial axes summary, and group "
-            "summary tables."
+            "partial sample coordinates, partial axes summary, group "
+            "summary, and feature correlation tables."
         )
     },
     name="Multiple Factor Analysis (MFA)",

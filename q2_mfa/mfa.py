@@ -9,6 +9,7 @@ import tempfile
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from skbio import OrdinationResults
 
@@ -164,12 +165,66 @@ def _compute_group_summary(group_results, global_ordination):
     return pd.DataFrame(rows)
 
 
+def _compute_feature_correlations(weighted_tables, global_ordination):
+    """
+    Compute wide feature-to-component correlations for the MFA global solution.
+
+    This returns the wide-format table written to ``feature-correlations.tsv``
+    with one row per feature and one dimension column per retained global MFA
+    component.
+
+    The implementation follows the same quantity exposed by
+    ``prince.MFA.column_correlations``: for each feature and retained
+    component, it reports the Pearson correlation between the variable and the
+    global component scores. In Prince this is the inherited PCA
+    ``column_correlations`` quantity and is used for variable correlation
+    circles. The same result can be obtained directly here by correlating the
+    MFA analysis matrix columns with the global sample scores.
+    """
+    weighted_table = pd.concat(weighted_tables, axis=1)
+    global_scores = global_ordination.samples
+
+    centered_features = weighted_table - weighted_table.mean(axis=0)
+    centered_scores = global_scores - global_scores.mean(axis=0)
+
+    feature_std = centered_features.std(axis=0, ddof=1)
+    score_std = centered_scores.std(axis=0, ddof=1)
+
+    feature_std = feature_std.replace(0, np.nan)
+    score_std = score_std.replace(0, np.nan)
+
+    standardized_features = centered_features.divide(feature_std, axis=1).fillna(0.0)
+    standardized_scores = centered_scores.divide(score_std, axis=1).fillna(0.0)
+
+    correlation_values = (
+        standardized_features.to_numpy().T @ standardized_scores.to_numpy()
+    ) / (len(weighted_table.index) - 1)
+    correlations = pd.DataFrame(
+        correlation_values,
+        index=weighted_table.columns,
+        columns=range(1, global_scores.shape[1] + 1),
+    )
+    correlations.index.name = "feature_id"
+    correlations = correlations.reset_index()
+    correlations["group"] = correlations["feature_id"].str.split(":", n=1).str[0]
+    correlations["feature_name"] = correlations["feature_id"].str.split(":", n=1).str[1]
+
+    ordered_columns = [
+        "feature_id",
+        "group",
+        "feature_name",
+        *range(1, global_scores.shape[1] + 1),
+    ]
+    return correlations[ordered_columns]
+
+
 def _create_mfa_results_artifact(
     ctx,
     global_ordination,
     partial_scores,
     partial_axes,
     group_summary,
+    feature_correlations,
 ):
     """
     Build the composite ``MFAResults`` artifact from the computed MFA outputs.
@@ -180,6 +235,7 @@ def _create_mfa_results_artifact(
     - ``partial-scores.tsv``
     - ``partial-axes.tsv``
     - ``group-summary.tsv``
+    - ``feature-correlations.tsv``
 
     It does not implement MFA mathematics itself; it is only responsible for
     packaging the already computed outputs into the registered
@@ -192,6 +248,9 @@ def _create_mfa_results_artifact(
         partial_scores.to_csv(temp_dir / "partial-scores.tsv", sep="\t", index=False)
         partial_axes.to_csv(temp_dir / "partial-axes.tsv", sep="\t", index=False)
         group_summary.to_csv(temp_dir / "group-summary.tsv", sep="\t", index=False)
+        feature_correlations.to_csv(
+            temp_dir / "feature-correlations.tsv", sep="\t", index=False
+        )
         return ctx.make_artifact(MFAResults, temp_dir, view_type=MFAResultsDirFmt)
 
 
@@ -316,12 +375,16 @@ def mfa(
     )
     partial_axes = _compute_partial_axes_summary(group_results, global_ordination)
     group_summary = _compute_group_summary(group_results, global_ordination)
+    feature_correlations = _compute_feature_correlations(
+        weighted_tables, global_ordination
+    )
     mfa_results = _create_mfa_results_artifact(
         ctx,
         global_ordination,
         partial_scores,
         partial_axes,
         group_summary,
+        feature_correlations,
     )
 
     return mfa_results

@@ -193,8 +193,8 @@ def _compute_feature_correlations(weighted_tables, global_ordination):
     feature_std = feature_std.replace(0, np.nan)
     score_std = score_std.replace(0, np.nan)
 
-    standardized_features = centered_features.divide(feature_std, axis=1).fillna(0.0)
-    standardized_scores = centered_scores.divide(score_std, axis=1).fillna(0.0)
+    standardized_features = centered_features.divide(feature_std, axis=1)
+    standardized_scores = centered_scores.divide(score_std, axis=1)
 
     correlation_values = (
         standardized_features.to_numpy().T @ standardized_scores.to_numpy()

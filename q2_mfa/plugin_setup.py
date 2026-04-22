@@ -165,9 +165,14 @@ plugin.pipelines.register_function(
 
 plugin.visualizers.register_function(
     function=mfa_visualizer,
-    inputs={"mfa_results": PCoAResults % Properties("mfa")},
+    inputs={"mfa_results": MFAResults},
     parameters={"sample_metadata": Metadata},
-    input_descriptions={"mfa_results": "The MFA ordination results."},
+    input_descriptions={
+        "mfa_results": (
+            "The MFA results containing the global ordination and MFA-specific "
+            "support tables."
+        )
+    },
     parameter_descriptions={
         "sample_metadata": (
             "Sample metadata used for live coloring and filtering in the browser."

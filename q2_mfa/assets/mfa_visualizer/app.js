@@ -56,6 +56,7 @@ const state = {
   colorBy: '',
   colorPalette: 'Plotly',
   showBarycenter: false,
+  showPartialOverlay: false,
   filterBy: '',
   categoricalFilterValues: new Set(),
   numericFilterMin: null,
@@ -98,6 +99,7 @@ function populateColorControls() {
 
   repopulateColorPaletteOptions();
   document.getElementById('show-barycenter').checked = state.showBarycenter;
+  document.getElementById('show-partial-overlay').checked = state.showPartialOverlay;
 }
 
 function populateFilterSelector() {
@@ -132,6 +134,11 @@ function bindEvents() {
 
   document.getElementById('show-barycenter').addEventListener('change', (event) => {
     state.showBarycenter = event.target.checked;
+    renderPlot();
+  });
+
+  document.getElementById('show-partial-overlay').addEventListener('change', (event) => {
+    state.showPartialOverlay = event.target.checked;
     renderPlot();
   });
 
@@ -340,6 +347,8 @@ function renderPlot() {
     modeBarButtonsToRemove: ['lasso2d', 'select2d'],
   });
 
+  renderGroupPlot();
+  renderPartialAxesPlot();
   renderVariancePlot();
   updateStatus(filteredSamples);
 }
@@ -394,23 +403,188 @@ function getActivePaletteKind() {
 
 function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
+  const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
   if (!colorColumn) {
-    const traces = [buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples')];
+    const traces = [...partialOverlayTraces, buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples')];
     return appendBarycenterTraces(traces, samples, colorColumn);
   }
 
   if (colorColumn.type === 'numeric') {
-    return appendBarycenterTraces(buildNumericTraces(samples, colorColumn), samples, colorColumn);
+    return appendBarycenterTraces(
+      [...partialOverlayTraces, ...buildNumericTraces(samples, colorColumn)],
+      samples,
+      colorColumn
+    );
   }
 
-  return appendBarycenterTraces(buildCategoricalTraces(samples, colorColumn), samples, colorColumn);
+  return appendBarycenterTraces(
+    [...partialOverlayTraces, ...buildCategoricalTraces(samples, colorColumn)],
+    samples,
+    colorColumn
+  );
 }
 
-function buildSingleTrace(samples, color, name) {
+function buildPartialOverlayTraces(samples, colorColumn) {
+  if (
+    !state.showPartialOverlay ||
+    !payload.partial_samples?.length ||
+    !payload.partial_groups?.length
+  ) {
+    return [];
+  }
+
+  const visibleSampleIds = new Set(samples.map((sample) => sample.sample_id));
+  const visibleSamplesById = Object.fromEntries(
+    samples.map((sample) => [sample.sample_id, sample])
+  );
+  const visiblePartialSamples = payload.partial_samples.filter(
+    (entry) =>
+      visibleSampleIds.has(entry.sample_id) &&
+      entry.coords[state.xDimension] !== undefined &&
+      entry.coords[state.yDimension] !== undefined
+  );
+
+  if (!visiblePartialSamples.length) {
+    return [];
+  }
+
+  const palette = COLOR_PALETTES.Earth.colors;
+  const traces = [];
+
+  if (colorColumn?.type === 'categorical') {
+    const orderedCategories = [...colorColumn.values];
+    if (colorColumn.has_missing) {
+      orderedCategories.push(MISSING_VALUE_TOKEN);
+    }
+
+    orderedCategories.forEach((category) => {
+      const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
+      const categorySamples = samples.filter((sample) => {
+        const value = sample.metadata[colorColumn.name];
+        return category === MISSING_VALUE_TOKEN ? value === null : value === category;
+      });
+      if (!categorySamples.length) {
+        return;
+      }
+
+      const categorySampleIds = new Set(categorySamples.map((sample) => sample.sample_id));
+      payload.partial_groups.forEach((group, index) => {
+        const groupEntries = visiblePartialSamples.filter(
+          (entry) => entry.group === group && categorySampleIds.has(entry.sample_id)
+        );
+        if (!groupEntries.length) {
+          return;
+        }
+
+        const color = palette[index % palette.length];
+        traces.push(
+          buildPartialConnectorTrace(
+            groupEntries,
+            visibleSamplesById,
+            color,
+            group,
+            `metadata:${label}`
+          )
+        );
+        traces.push(
+          buildPartialPointTrace(
+            groupEntries,
+            color,
+            group,
+            `metadata:${label}`,
+            false
+          )
+        );
+      });
+    });
+
+    return traces;
+  }
+
+  payload.partial_groups.forEach((group, index) => {
+    const groupEntries = visiblePartialSamples.filter((entry) => entry.group === group);
+    if (!groupEntries.length) {
+      return;
+    }
+
+    const color = palette[index % palette.length];
+    traces.push(
+      buildPartialConnectorTrace(
+        groupEntries,
+        visibleSamplesById,
+        color,
+        group,
+        `partial:${group}`
+      )
+    );
+    traces.push(
+      buildPartialPointTrace(groupEntries, color, group, `partial:${group}`, true)
+    );
+  });
+
+  return traces;
+}
+
+function buildPartialConnectorTrace(
+  groupEntries,
+  visibleSamplesById,
+  color,
+  group,
+  legendgroup
+) {
+  const x = [];
+  const y = [];
+
+  groupEntries.forEach((entry) => {
+    const sample = visibleSamplesById[entry.sample_id];
+    x.push(sample.coords[state.xDimension], entry.coords[state.xDimension], null);
+    y.push(sample.coords[state.yDimension], entry.coords[state.yDimension], null);
+  });
+
+  return {
+    type: 'scattergl',
+    mode: 'lines',
+    name: `${group} connectors`,
+    legendgroup,
+    x,
+    y,
+    line: {
+      color: withAlpha(color, 0.4),
+      width: 1.5,
+    },
+    hoverinfo: 'skip',
+    showlegend: false,
+  };
+}
+
+function buildPartialPointTrace(groupEntries, color, group, legendgroup, showlegend) {
+  return {
+    type: 'scattergl',
+    mode: 'markers',
+    name: `${group} partial`,
+    legendgroup,
+    showlegend,
+    x: groupEntries.map((entry) => entry.coords[state.xDimension]),
+    y: groupEntries.map((entry) => entry.coords[state.yDimension]),
+    text: groupEntries.map(buildPartialHoverText),
+    hovertemplate: '%{text}<extra></extra>',
+    marker: {
+      color,
+      size: 8,
+      opacity: 0.9,
+      symbol: 'diamond-open',
+      line: { color, width: 2 },
+    },
+  };
+}
+
+function buildSingleTrace(samples, color, name, options = {}) {
   return {
     type: 'scattergl',
     mode: 'markers',
     name,
+    legendgroup: options.legendgroup,
+    showlegend: options.showlegend ?? true,
     x: samples.map((sample) => sample.coords[state.xDimension]),
     y: samples.map((sample) => sample.coords[state.yDimension]),
     text: samples.map(buildHoverText),
@@ -489,7 +663,9 @@ function buildCategoricalTraces(samples, colorColumn) {
       }
 
       const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
-      return buildSingleTrace(subset, palette[index % palette.length], label);
+      return buildSingleTrace(subset, palette[index % palette.length], label, {
+        legendgroup: `metadata:${label}`,
+      });
     })
     .filter(Boolean);
 }
@@ -513,7 +689,12 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
       });
 
       const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
-      const ellipseTrace = buildBarycenterEllipseTrace(subset, palette[index], label);
+      const ellipseTrace = buildBarycenterEllipseTrace(
+        subset,
+        palette[index],
+        label,
+        `metadata:${label}`
+      );
       if (ellipseTrace) {
         traces.push(ellipseTrace);
       }
@@ -524,14 +705,19 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
   const ellipseColor = colorColumn?.type === 'numeric'
     ? getCategoricalColors(1)[0]
     : DEFAULT_MARKER_COLOR;
-  const ellipseTrace = buildBarycenterEllipseTrace(samples, ellipseColor, 'Visible samples');
+  const ellipseTrace = buildBarycenterEllipseTrace(
+    samples,
+    ellipseColor,
+    'Visible samples',
+    'visible-samples'
+  );
   if (ellipseTrace) {
     traces.push(ellipseTrace);
   }
   return traces;
 }
 
-function buildBarycenterEllipseTrace(samples, color, label) {
+function buildBarycenterEllipseTrace(samples, color, label, legendgroup) {
   const ellipsePoints = computeEllipsePoints(samples);
   if (!ellipsePoints) {
     return null;
@@ -541,6 +727,7 @@ function buildBarycenterEllipseTrace(samples, color, label) {
     type: 'scatter',
     mode: 'lines',
     name: `${label} barycenter`,
+    legendgroup,
     x: ellipsePoints.x,
     y: ellipsePoints.y,
     line: {
@@ -673,6 +860,7 @@ function buildLayout(isEmpty) {
     },
     legend: {
       orientation: 'h',
+      groupclick: 'togglegroup',
       yanchor: 'bottom',
       y: 1.02,
       xanchor: 'left',
@@ -717,6 +905,356 @@ function buildLayout(isEmpty) {
         ]
       : [],
   };
+}
+
+function renderGroupPlot() {
+  const themeColors = getThemeColors();
+  const groups = (payload.group_summary ?? []).filter(
+    (entry) =>
+      entry.coords[state.xDimension] !== undefined &&
+      entry.coords[state.yDimension] !== undefined
+  );
+  const hasGroups = groups.length > 0;
+
+  const trace = {
+    type: 'scatter',
+    mode: 'markers+text',
+    name: 'Groups',
+    x: groups.map((entry) => entry.coords[state.xDimension]),
+    y: groups.map((entry) => entry.coords[state.yDimension]),
+    text: groups.map((entry) => entry.group),
+    textposition: 'top center',
+    textfont: {
+      color: themeColors.font,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      size: 12,
+    },
+    hovertemplate: '%{text}<br>%{customdata}<extra></extra>',
+    customdata: groups.map(buildGroupHoverText),
+    marker: {
+      color: groups.map(
+        (_, index) => COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length]
+      ),
+      size: 14,
+      symbol: 'diamond',
+      line: {
+        color: themeColors.markerLine,
+        width: 1.5,
+      },
+    },
+  };
+
+  Plotly.react(
+    'group-plot',
+    hasGroups ? [trace] : [],
+    buildGroupLayout(hasGroups),
+    {
+      responsive: true,
+      displaylogo: false,
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'mfa-group-partial-inertia',
+        width: 1200,
+        height: 700,
+        scale: 2,
+      },
+      modeBarButtonsToAdd: [
+        {
+          name: 'Download SVG',
+          icon: Plotly.Icons.camera,
+          click: () => {
+            downloadPlotImage('group-plot', 'mfa-group-partial-inertia.svg', 'svg');
+          },
+        },
+      ],
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    }
+  );
+
+  updateGroupSummary(groups);
+}
+
+function buildGroupHoverText(entry) {
+  return [
+    `${dimensionsByKey[state.xDimension].label} partial inertia: ${formatValue(entry.coords[state.xDimension])}`,
+    `${dimensionsByKey[state.yDimension].label} partial inertia: ${formatValue(entry.coords[state.yDimension])}`,
+    `${dimensionsByKey[state.xDimension].label} contribution: ${formatValue(entry.contribution[state.xDimension])}`,
+    `${dimensionsByKey[state.yDimension].label} contribution: ${formatValue(entry.contribution[state.yDimension])}`,
+    `${dimensionsByKey[state.xDimension].label} cos2: ${formatValue(entry.cos2[state.xDimension])}`,
+    `${dimensionsByKey[state.yDimension].label} cos2: ${formatValue(entry.cos2[state.yDimension])}`,
+    `First eigenvalue: ${formatValue(entry.first_eigenvalue)}`,
+    `Weight: ${formatValue(entry.weight)}`,
+  ].join('<br>');
+}
+
+function buildGroupLayout(hasGroups) {
+  const themeColors = getThemeColors();
+  return {
+    paper_bgcolor: 'rgba(0, 0, 0, 0)',
+    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+    margin: { t: 20, r: 20, b: 70, l: 90 },
+    font: {
+      color: themeColors.font,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    xaxis: {
+      title: {
+        text: `${dimensionsByKey[state.xDimension].label} partial inertia`,
+        font: { color: themeColors.font },
+      },
+      rangemode: 'tozero',
+      zeroline: true,
+      zerolinecolor: themeColors.zeroline,
+      zerolinewidth: 1,
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    yaxis: {
+      title: {
+        text: `${dimensionsByKey[state.yDimension].label} partial inertia`,
+        font: { color: themeColors.font },
+      },
+      rangemode: 'tozero',
+      zeroline: true,
+      zerolinecolor: themeColors.zeroline,
+      zerolinewidth: 1,
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    annotations: hasGroups
+      ? []
+      : [
+          {
+            text: 'Group summary values are not available.',
+            showarrow: false,
+            xref: 'paper',
+            yref: 'paper',
+            x: 0.5,
+            y: 0.5,
+            font: { size: 16, color: themeColors.annotation },
+          },
+        ],
+  };
+}
+
+function updateGroupSummary(groups) {
+  const target = document.getElementById('group-summary-text');
+  if (!groups.length) {
+    target.textContent = '';
+    return;
+  }
+
+  target.textContent = `${groups.length} groups shown`;
+}
+
+function renderPartialAxesPlot() {
+  const themeColors = getThemeColors();
+  const partialAxes = (payload.partial_axes ?? []).filter(
+    (entry) => entry.partial_axis === 1 || entry.partial_axis === 2
+  );
+  const hasPartialAxes = partialAxes.length > 0;
+  const seriesKeys = [...new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`))];
+  const palette = COLOR_PALETTES.Earth.colors;
+
+  const traces = seriesKeys.map((seriesKey, index) => {
+    const [group, partialAxisText] = seriesKey.split('::');
+    const partialAxis = Number(partialAxisText);
+    const seriesEntries = partialAxes.filter(
+      (entry) => entry.group === group && entry.partial_axis === partialAxis
+    );
+    const vector = buildPartialAxesVector(seriesEntries);
+    if (!vector) {
+      return null;
+    }
+
+    const label = `Dim${partialAxis}.${group}`;
+
+    return {
+      type: 'scatter',
+      mode: 'lines+markers+text',
+      name: label,
+      legendgroup: `axes:${seriesKey}`,
+      x: [0, vector.x],
+      y: [0, vector.y],
+      text: ['', label],
+      textposition: 'top center',
+      textfont: {
+        color: palette[index % palette.length],
+        size: 12,
+        family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      },
+      customdata: [
+        '',
+        seriesEntries
+          .map(
+            (entry) =>
+              `${entry.group}<br>Partial axis ${entry.partial_axis}<br>${entry.global_dim}: ${formatValue(entry.value)}`
+          )
+          .join('<br>'),
+      ],
+      hovertemplate: '%{customdata}<extra></extra>',
+      marker: {
+        color: palette[index % palette.length],
+        size: [0, 9],
+        symbol: 'circle',
+        line: {
+          color: themeColors.markerLine,
+          width: 1,
+        },
+      },
+      line: {
+        color: withAlpha(palette[index % palette.length], 0.7),
+        width: 2,
+      },
+    };
+  }).filter(Boolean);
+
+  if (hasPartialAxes) {
+    traces.unshift(buildPartialAxesCircleBoundary());
+  }
+
+  Plotly.react(
+    'partial-axes-plot',
+    hasPartialAxes ? traces : [],
+    buildPartialAxesLayout(hasPartialAxes),
+    {
+      responsive: true,
+      displaylogo: false,
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'mfa-partial-axes',
+        width: 1200,
+        height: 700,
+        scale: 2,
+      },
+      modeBarButtonsToAdd: [
+        {
+          name: 'Download SVG',
+          icon: Plotly.Icons.camera,
+          click: () => {
+            downloadPlotImage('partial-axes-plot', 'mfa-partial-axes.svg', 'svg');
+          },
+        },
+      ],
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    }
+  );
+
+  updatePartialAxesSummary(partialAxes);
+}
+
+function buildPartialAxesVector(groupEntries) {
+  const xEntry = groupEntries.find((entry) => entry.global_dim === state.xDimension);
+  const yEntry = groupEntries.find((entry) => entry.global_dim === state.yDimension);
+  if (!xEntry || !yEntry) {
+    return null;
+  }
+
+  return {
+    x: xEntry.value,
+    y: yEntry.value,
+  };
+}
+
+function buildPartialAxesCircleBoundary() {
+  const x = [];
+  const y = [];
+  for (let step = 0; step <= 120; step += 1) {
+    const theta = (step / 120) * Math.PI * 2;
+    x.push(Math.cos(theta));
+    y.push(Math.sin(theta));
+  }
+
+  return {
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Unit circle',
+    x,
+    y,
+    line: {
+      color: withAlpha('#4B5563', 0.55),
+      width: 2,
+    },
+    hoverinfo: 'skip',
+    showlegend: false,
+  };
+}
+
+function buildPartialAxesLayout(hasPartialAxes) {
+  const themeColors = getThemeColors();
+  return {
+    paper_bgcolor: 'rgba(0, 0, 0, 0)',
+    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+    margin: { t: 20, r: 20, b: 70, l: 80 },
+    font: {
+      color: themeColors.font,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    legend: {
+      orientation: 'h',
+      groupclick: 'togglegroup',
+      yanchor: 'bottom',
+      y: 1.02,
+      xanchor: 'left',
+      x: 0,
+      font: { color: themeColors.font },
+    },
+    xaxis: {
+      title: {
+        text: dimensionsByKey[state.xDimension].label,
+        font: { color: themeColors.font },
+      },
+      range: [-1.05, 1.05],
+      scaleanchor: 'y',
+      scaleratio: 1,
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      zeroline: true,
+      zerolinecolor: themeColors.zeroline,
+      zerolinewidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    yaxis: {
+      title: {
+        text: dimensionsByKey[state.yDimension].label,
+        font: { color: themeColors.font },
+      },
+      range: [-1.05, 1.05],
+      gridcolor: themeColors.grid,
+      gridwidth: 1,
+      zeroline: true,
+      zerolinecolor: themeColors.zeroline,
+      zerolinewidth: 1,
+      tickfont: { color: themeColors.font },
+    },
+    annotations: hasPartialAxes
+      ? []
+      : [
+          {
+            text: 'Partial axes values are not available.',
+            showarrow: false,
+            xref: 'paper',
+            yref: 'paper',
+            x: 0.5,
+            y: 0.5,
+            font: { size: 16, color: themeColors.annotation },
+          },
+        ],
+  };
+}
+
+function updatePartialAxesSummary(partialAxes) {
+  const target = document.getElementById('partial-axes-summary');
+  if (!partialAxes.length) {
+    target.textContent = '';
+    return;
+  }
+
+  const groups = new Set(partialAxes.map((entry) => entry.group));
+  const axes = new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`));
+  target.textContent = `${axes.size} partial axes across ${groups.size} groups`;
 }
 
 function renderVariancePlot() {
@@ -967,6 +1505,15 @@ function buildHoverText(sample) {
   });
 
   return lines.join('<br>');
+}
+
+function buildPartialHoverText(entry) {
+  return [
+    `<b>${entry.sample_id}</b>`,
+    `Group: ${entry.group}`,
+    `${dimensionsByKey[state.xDimension].label}: ${formatValue(entry.coords[state.xDimension])}`,
+    `${dimensionsByKey[state.yDimension].label}: ${formatValue(entry.coords[state.yDimension])}`,
+  ].join('<br>');
 }
 
 function updateStatus(filteredSamples) {

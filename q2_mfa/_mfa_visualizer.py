@@ -16,26 +16,84 @@ import q2templates
 from rachis import Metadata
 from skbio import OrdinationResults
 
+from q2_mfa.types import MFAResultsDirFmt
+
 _TEMPLATE_FILES = ("index.html", "graphs.html")
 _STATIC_ASSET_FILES = ("style.css", "app.js")
 
 
 def mfa_visualizer(
-    output_dir: str, mfa_results: OrdinationResults, sample_metadata: Metadata
+    output_dir: str, mfa_results: MFAResultsDirFmt, sample_metadata: Metadata
 ):
-    sample_coordinates = mfa_results.samples
+    ordination, partial_sample_coordinates, group_summary, partial_axes = (
+        _load_mfa_visualizer_inputs(mfa_results)
+    )
+    sample_coordinates = ordination.samples
     if sample_coordinates is None or sample_coordinates.empty:
         raise ValueError("MFA results must contain sample coordinates.")
 
     if sample_coordinates.shape[1] < 2:
         raise ValueError("MFA visualization requires at least two sample dimensions.")
 
-    payload = _build_payload(mfa_results, sample_metadata)
+    payload = _build_payload(
+        ordination,
+        sample_metadata,
+        partial_sample_coordinates,
+        group_summary,
+        partial_axes,
+    )
     _write_visualization(output_dir, payload)
 
 
+def _load_mfa_visualizer_inputs(
+    mfa_results,
+) -> tuple[
+    OrdinationResults,
+    pd.DataFrame | None,
+    pd.DataFrame | None,
+    pd.DataFrame | None,
+]:
+    if isinstance(mfa_results, OrdinationResults):
+        return mfa_results, None, None, None
+
+    if isinstance(mfa_results, MFAResultsDirFmt):
+        ordination = OrdinationResults.read(str(mfa_results.path / "ordination.txt"))
+        partial_scores = pd.read_csv(mfa_results.path / "partial-scores.tsv", sep="\t")
+        group_summary = pd.read_csv(mfa_results.path / "group-summary.tsv", sep="\t")
+        partial_axes = pd.read_csv(mfa_results.path / "partial-axes.tsv", sep="\t")
+        return ordination, partial_scores, group_summary, partial_axes
+
+    if hasattr(mfa_results, "path"):
+        path = Path(mfa_results.path)
+        ordination_path = path / "ordination.txt"
+        partial_scores_path = path / "partial-scores.tsv"
+        if ordination_path.exists():
+            ordination = OrdinationResults.read(str(ordination_path))
+            partial_scores = None
+            if partial_scores_path.exists():
+                partial_scores = pd.read_csv(partial_scores_path, sep="\t")
+            group_summary = None
+            group_summary_path = path / "group-summary.tsv"
+            if group_summary_path.exists():
+                group_summary = pd.read_csv(group_summary_path, sep="\t")
+            partial_axes = None
+            partial_axes_path = path / "partial-axes.tsv"
+            if partial_axes_path.exists():
+                partial_axes = pd.read_csv(partial_axes_path, sep="\t")
+            return ordination, partial_scores, group_summary, partial_axes
+
+    raise TypeError(
+        "mfa_results must be an OrdinationResults object or an MFAResults directory "
+        "view."
+    )
+
+
 def _build_payload(
-    ordination: OrdinationResults, sample_metadata: Metadata
+    ordination: OrdinationResults,
+    sample_metadata: Metadata,
+    partial_sample_coordinates: pd.DataFrame | None = None,
+    group_summary: pd.DataFrame | None = None,
+    partial_axes: pd.DataFrame | None = None,
 ) -> dict[str, object]:
     sample_coordinates = ordination.samples.copy()
     sample_coordinates.index = sample_coordinates.index.astype(str)
@@ -50,6 +108,13 @@ def _build_payload(
         dimension["source_key"]: dimension["key"] for dimension in dimensions
     }
     metadata_columns, metadata_types = _build_metadata_columns(metadata)
+    partial_samples, partial_groups = _build_partial_sample_payload(
+        partial_sample_coordinates,
+        sample_coordinates.index,
+        dimensions,
+    )
+    group_summary_payload = _build_group_summary_payload(group_summary, dimensions)
+    partial_axes_payload = _build_partial_axes_payload(partial_axes, dimensions)
 
     included_columns = [column["name"] for column in metadata_columns]
     samples = []
@@ -89,7 +154,118 @@ def _build_payload(
         ],
         "metadata_columns": metadata_columns,
         "samples": samples,
+        "partial_groups": partial_groups,
+        "partial_samples": partial_samples,
+        "group_summary": group_summary_payload,
+        "partial_axes": partial_axes_payload,
     }
+
+
+def _build_partial_sample_payload(
+    partial_sample_coordinates: pd.DataFrame | None,
+    sample_ids: pd.Index,
+    dimensions: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[str]]:
+    if partial_sample_coordinates is None or partial_sample_coordinates.empty:
+        return [], []
+
+    partial_scores = partial_sample_coordinates.copy()
+    partial_scores["sample_id"] = partial_scores["sample_id"].astype(str)
+    partial_scores["group"] = partial_scores["group"].astype(str)
+
+    dim_lookup = {
+        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
+    }
+    partial_scores = partial_scores[partial_scores["dim"].isin(dim_lookup)]
+    if partial_scores.empty:
+        return [], []
+
+    partial_scores["dimension_key"] = partial_scores["dim"].map(dim_lookup)
+    grouped = {}
+    for row in partial_scores.itertuples(index=False):
+        grouped.setdefault((row.sample_id, row.group), {})[row.dimension_key] = float(
+            row.coordinate
+        )
+
+    partial_samples = []
+    for sample_id in sample_ids:
+        for group in sorted(partial_scores["group"].unique()):
+            coords = grouped.get((sample_id, group))
+            if coords is None:
+                continue
+            partial_samples.append(
+                {
+                    "sample_id": sample_id,
+                    "group": group,
+                    "coords": coords,
+                }
+            )
+
+    return partial_samples, sorted(partial_scores["group"].unique())
+
+
+def _build_group_summary_payload(
+    group_summary: pd.DataFrame | None,
+    dimensions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if group_summary is None or group_summary.empty:
+        return []
+
+    dim_lookup = {
+        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
+    }
+    summary = group_summary.copy()
+    summary["group"] = summary["group"].astype(str)
+    summary = summary[summary["dim"].isin(dim_lookup)]
+    if summary.empty:
+        return []
+
+    grouped = {}
+    for row in summary.itertuples(index=False):
+        group_entry = grouped.setdefault(
+            row.group,
+            {
+                "group": row.group,
+                "coords": {},
+                "contribution": {},
+                "cos2": {},
+                "first_eigenvalue": float(row.first_eigenvalue),
+                "weight": float(row.weight),
+            },
+        )
+        dim_key = dim_lookup[row.dim]
+        group_entry["coords"][dim_key] = float(row.coordinate)
+        group_entry["contribution"][dim_key] = float(row.contribution)
+        group_entry["cos2"][dim_key] = float(row.cos2)
+
+    return [grouped[group] for group in sorted(grouped)]
+
+
+def _build_partial_axes_payload(
+    partial_axes: pd.DataFrame | None,
+    dimensions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if partial_axes is None or partial_axes.empty:
+        return []
+
+    dim_lookup = {
+        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
+    }
+    axes = partial_axes.copy()
+    axes["group"] = axes["group"].astype(str)
+    axes = axes[axes["global_dim"].isin(dim_lookup)]
+    if axes.empty:
+        return []
+
+    return [
+        {
+            "group": str(row.group),
+            "partial_axis": int(row.partial_axis),
+            "global_dim": dim_lookup[row.global_dim],
+            "value": float(row.value),
+        }
+        for row in axes.itertuples(index=False)
+    ]
 
 
 def _build_dimensions(

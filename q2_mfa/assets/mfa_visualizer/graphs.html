@@ -49,6 +49,14 @@
       </label>
     </div>
 
+    <div class="control-group control-group-toggle">
+      <label for="show-partial-overlay">Partial overlay</label>
+      <label class="toggle-option" for="show-partial-overlay">
+        <input id="show-partial-overlay" type="checkbox">
+        <span>Show group partial coordinates</span>
+      </label>
+    </div>
+
     <div class="control-group control-group-wide">
       <label for="filter-by">Filter samples</label>
       <select id="filter-by"></select>
@@ -82,6 +90,22 @@
         <span id="cumulative-summary"></span>
       </div>
       <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
+    </div>
+
+    <div class="plot-shell plot-shell-secondary">
+      <div class="plot-status">
+        <span>Group partial inertia</span>
+        <span id="group-summary-text"></span>
+      </div>
+      <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
+    </div>
+
+    <div class="plot-shell plot-shell-secondary">
+      <div class="plot-status">
+        <span>Partial axes</span>
+        <span id="partial-axes-summary"></span>
+      </div>
+      <div id="partial-axes-plot" class="plot-canvas plot-canvas-secondary"></div>
     </div>
   </section>
 </div>

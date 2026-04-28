@@ -424,25 +424,26 @@ function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
   const featureCorrelationTraces = buildFeatureCorrelationTraces();
+
   if (!colorColumn) {
     const traces = [
-      ...featureCorrelationTraces,
-      ...partialOverlayTraces,
       buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples'),
+      ...partialOverlayTraces,
+      ...featureCorrelationTraces,
     ];
     return appendBarycenterTraces(traces, samples, colorColumn);
   }
 
   if (colorColumn.type === 'numeric') {
     return appendBarycenterTraces(
-      [...featureCorrelationTraces, ...partialOverlayTraces, ...buildNumericTraces(samples, colorColumn)],
+      [...buildNumericTraces(samples, colorColumn), ...partialOverlayTraces, ...featureCorrelationTraces],
       samples,
       colorColumn
     );
   }
 
   return appendBarycenterTraces(
-    [...featureCorrelationTraces, ...partialOverlayTraces, ...buildCategoricalTraces(samples, colorColumn)],
+    [...buildCategoricalTraces(samples, colorColumn), ...partialOverlayTraces, ...featureCorrelationTraces],
     samples,
     colorColumn
   );
@@ -485,37 +486,44 @@ function buildFeatureCorrelationTraces() {
     groupOrder.map((group, index) => [group, COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length]])
   );
 
-  const lineX = [];
-  const lineY = [];
-  rankedFeatures.forEach((feature) => {
-    lineX.push(0, feature.x, null);
-    lineY.push(0, feature.y, null);
-  });
+  const traces = [];
+  groupOrder.forEach((group) => {
+    const groupFeatures = rankedFeatures.filter((feature) => feature.group === group);
+    if (!groupFeatures.length) {
+      return;
+    }
 
-  return [
-    {
+    const lineX = [];
+    const lineY = [];
+    groupFeatures.forEach((feature) => {
+      lineX.push(0, feature.x, null);
+      lineY.push(0, feature.y, null);
+    });
+
+    traces.push({
       type: 'scatter',
       mode: 'lines',
-      name: 'Feature correlations',
-      legendgroup: 'feature-correlations',
+      name: `${group} feature vectors`,
+      legendgroup: `feature-correlations:${group}`,
       x: lineX,
       y: lineY,
       line: {
-        color: withAlpha('#475569', 0.65),
+        color: withAlpha(groupColors[group], 0.65),
         width: 1.5,
       },
       hoverinfo: 'skip',
-      showlegend: true,
-    },
-    {
+      showlegend: false,
+    });
+
+    traces.push({
       type: 'scattergl',
       mode: 'markers+text',
-      name: 'Feature correlations',
-      legendgroup: 'feature-correlations',
-      showlegend: false,
-      x: rankedFeatures.map((feature) => feature.x),
-      y: rankedFeatures.map((feature) => feature.y),
-      text: rankedFeatures.map((feature) => feature.feature_name),
+      name: group,
+      legendgroup: `feature-correlations:${group}`,
+      showlegend: true,
+      x: groupFeatures.map((feature) => feature.x),
+      y: groupFeatures.map((feature) => feature.y),
+      text: groupFeatures.map((feature) => feature.feature_name),
       textposition: 'top center',
       textfont: {
         color: getThemeColors().font,
@@ -528,23 +536,25 @@ function buildFeatureCorrelationTraces() {
         `${state.xDimension}: %{x:.3f}<br>` +
         `${state.yDimension}: %{y:.3f}<br>` +
         'Plane magnitude: %{customdata[2]:.3f}<extra></extra>',
-      customdata: rankedFeatures.map((feature) => [
+      customdata: groupFeatures.map((feature) => [
         feature.feature_id,
         feature.group,
         feature.rankingScore,
       ]),
       marker: {
-        color: rankedFeatures.map((feature) => groupColors[feature.group]),
+        color: groupColors[group],
         size: 9,
         opacity: 0.95,
         symbol: 'circle-open',
         line: {
-          color: rankedFeatures.map((feature) => groupColors[feature.group]),
+          color: groupColors[group],
           width: 2,
         },
       },
-    },
-  ];
+    });
+  });
+
+  return traces;
 }
 
 function buildPartialOverlayTraces(samples, colorColumn) {
@@ -579,9 +589,9 @@ function buildPartialOverlayTraces(samples, colorColumn) {
     if (colorColumn.has_missing) {
       orderedCategories.push(MISSING_VALUE_TOKEN);
     }
+    const partialLegendGroupsShown = new Set();
 
     orderedCategories.forEach((category) => {
-      const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
       const categorySamples = samples.filter((sample) => {
         const value = sample.metadata[colorColumn.name];
         return category === MISSING_VALUE_TOKEN ? value === null : value === category;
@@ -600,13 +610,16 @@ function buildPartialOverlayTraces(samples, colorColumn) {
         }
 
         const color = palette[index % palette.length];
+        const partialLegendGroup = `partial:${group}`;
+        const showPartialLegend = !partialLegendGroupsShown.has(group);
+        partialLegendGroupsShown.add(group);
         traces.push(
           buildPartialConnectorTrace(
             groupEntries,
             visibleSamplesById,
             color,
             group,
-            `metadata:${label}`
+            partialLegendGroup
           )
         );
         traces.push(
@@ -614,8 +627,8 @@ function buildPartialOverlayTraces(samples, colorColumn) {
             groupEntries,
             color,
             group,
-            `metadata:${label}`,
-            false
+            partialLegendGroup,
+            showPartialLegend
           )
         );
       });
@@ -973,6 +986,7 @@ function withAlpha(hexColor, alpha) {
 
 function buildLayout(isEmpty) {
   const themeColors = getThemeColors();
+
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',

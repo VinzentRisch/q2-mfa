@@ -44,10 +44,6 @@ const SELECTED_DIMENSION_COLOR = '#083D5B';
 const ELLIPSE_SCALE = 2.4477;
 const PARTIAL_AXES_X_RANGE = [-1.08, 1.3];
 const PARTIAL_AXES_Y_RANGE = [-1.16, 1.16];
-const PARTIAL_AXES_LABEL_FONT_SIZE = 12;
-const PARTIAL_AXES_LABEL_PLOT_WIDTH = 520;
-const PARTIAL_AXES_LABEL_PLOT_HEIGHT = 460;
-const PARTIAL_AXES_POINT_CLEARANCE_PX = 14;
 const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 
@@ -1502,8 +1498,8 @@ function renderPartialAxesPlot() {
   const traces = vectorSeries.flatMap((series) => [
     buildPartialAxesVectorTrace(series, themeColors),
   ]);
-  traces.push(...buildPartialAxesLabelConnectorTraces(labelPlacement));
-  const labelTrace = buildPartialAxesLabelTrace(labelPlacement);
+  traces.push(...buildPlotLabelConnectorTraces(labelPlacement));
+  const labelTrace = buildPlotLabelTrace(labelPlacement, 12);
   if (labelTrace) {
     traces.push(labelTrace);
   }
@@ -1577,183 +1573,22 @@ function buildPartialAxesVectorTrace(series, themeColors) {
   };
 }
 
-function buildPartialAxesLabelConnectorTraces(labelPlacement) {
-  const displacedLabels = labelPlacement.filter((label) => label.connector);
-  if (!displacedLabels.length) {
-    return [];
-  }
-
-  return displacedLabels.map((label) => ({
-    type: 'scatter',
-    mode: 'lines',
-    name: `${label.text} label connector`,
-    x: [label.anchorX, label.x],
-    y: [label.anchorY, label.y],
-    line: {
-      color: withAlpha(label.color, 0.65),
-      width: 1,
-      dash: 'dot',
-    },
-    hoverinfo: 'skip',
-    showlegend: false,
-  }));
-}
-
-function buildPartialAxesLabelTrace(labelPlacement) {
-  if (!labelPlacement.length) {
-    return null;
-  }
-
-  return {
-    type: 'scatter',
-    mode: 'text',
-    name: 'Partial-axis labels',
-    x: labelPlacement.map((label) => label.x),
-    y: labelPlacement.map((label) => label.y),
-    text: labelPlacement.map((label) => label.text),
-    textposition: 'middle center',
-    textfont: {
-      color: labelPlacement.map((label) => label.color),
-      size: PARTIAL_AXES_LABEL_FONT_SIZE,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
-    },
-    customdata: labelPlacement.map((label) => label.hoverText),
-    hovertemplate: '%{customdata}<extra></extra>',
-    hoverlabel: {
-      namelength: 0,
-    },
-    cliponaxis: false,
-    showlegend: false,
-  };
-}
-
 function placePartialAxesLabels(vectorSeries) {
-  const placed = [];
-  const pointBoxes = vectorSeries.map((series) =>
-    buildPartialAxesPointBox(series.vector.x, series.vector.y)
-  );
-  vectorSeries
-    .slice()
-    .sort((left, right) => {
-      const leftMagnitude = Math.hypot(left.vector.x, left.vector.y);
-      const rightMagnitude = Math.hypot(right.vector.x, right.vector.y);
-      return rightMagnitude - leftMagnitude || left.label.localeCompare(right.label);
-    })
-    .forEach((series, index) => {
-      const candidates = buildPartialAxesLabelCandidates(series, index);
-      const firstBox = buildPartialAxesLabelBox(
-        series.label,
-        candidates[0].x,
-        candidates[0].y
-      );
-      const firstLabelOverlap = placed.some((label) =>
-        labelBoxOverlapArea(firstBox, label.box) > 0
-      );
-      let bestCandidate = candidates[0];
-      let bestPenalty = Infinity;
-
-      candidates.forEach((candidate) => {
-        const box = buildPartialAxesLabelBox(series.label, candidate.x, candidate.y);
-        const overlapPenalty = placed.reduce(
-          (penalty, label) => penalty + labelBoxOverlapArea(box, label.box),
-          0
-        );
-        const pointPenalty = pointBoxes.reduce(
-          (penalty, pointBox) => penalty + labelBoxOverlapArea(box, pointBox) * 50,
-          0
-        );
-        const distancePenalty = Math.hypot(
-          candidate.x - series.vector.x,
-          candidate.y - series.vector.y
-        ) * 0.01;
-        const penalty = overlapPenalty + pointPenalty + distancePenalty;
-        if (penalty < bestPenalty) {
-          bestCandidate = { ...candidate, box, overlapPenalty };
-          bestPenalty = penalty;
-        }
-      });
-
-      placed.push({
-        anchorX: series.vector.x,
-        anchorY: series.vector.y,
-        box: bestCandidate.box,
-        color: series.color,
-        connector: firstLabelOverlap || bestCandidate.overlapPenalty > 0,
-        hoverText: series.hoverText,
-        text: series.label,
-        x: bestCandidate.x,
-        y: bestCandidate.y,
-      });
-    });
-
-  return placed;
-}
-
-function buildPartialAxesLabelCandidates(series, seriesIndex) {
-  const vector = series.vector;
-  const magnitude = Math.hypot(vector.x, vector.y);
-  const directionX = magnitude > 1e-8 ? vector.x / magnitude : 1;
-  const directionY = magnitude > 1e-8 ? vector.y / magnitude : 0;
-  const tangentX = -directionY;
-  const tangentY = directionX;
-  const lateralSign = seriesIndex % 2 === 0 ? 1 : -1;
-  const candidates = [];
-
-  for (let ring = 0; ring <= 12; ring += 1) {
-    const radialOffset = 0.08 + ring * 0.055;
-    const lateralOffsets = ring === 0
-      ? [0]
-      : [0, lateralSign * ring * 0.04, -lateralSign * ring * 0.04];
-
-    lateralOffsets.forEach((lateralOffset) => {
-      const x = clamp(
-        vector.x + directionX * radialOffset + tangentX * lateralOffset,
-        PARTIAL_AXES_X_RANGE[0] + 0.04,
-        PARTIAL_AXES_X_RANGE[1] - 0.04
-      );
-      const y = clamp(
-        vector.y + directionY * radialOffset + tangentY * lateralOffset,
-        PARTIAL_AXES_Y_RANGE[0] + 0.04,
-        PARTIAL_AXES_Y_RANGE[1] - 0.04
-      );
-      candidates.push({
-        x,
-        y,
-      });
-    });
-  }
-
-  return candidates;
-}
-
-function buildPartialAxesLabelBox(text, x, y) {
-  const xSpan = PARTIAL_AXES_X_RANGE[1] - PARTIAL_AXES_X_RANGE[0];
-  const ySpan = PARTIAL_AXES_Y_RANGE[1] - PARTIAL_AXES_Y_RANGE[0];
-  const width = ((text.length * PARTIAL_AXES_LABEL_FONT_SIZE * 0.58) + 12) /
-    PARTIAL_AXES_LABEL_PLOT_WIDTH * xSpan;
-  const height = (PARTIAL_AXES_LABEL_FONT_SIZE + 8) /
-    PARTIAL_AXES_LABEL_PLOT_HEIGHT * ySpan;
-
-  return {
-    bottom: y - height / 2,
-    left: x - width / 2,
-    right: x + width / 2,
-    top: y + height / 2,
-  };
-}
-
-function buildPartialAxesPointBox(x, y) {
-  const xSpan = PARTIAL_AXES_X_RANGE[1] - PARTIAL_AXES_X_RANGE[0];
-  const ySpan = PARTIAL_AXES_Y_RANGE[1] - PARTIAL_AXES_Y_RANGE[0];
-  const width = PARTIAL_AXES_POINT_CLEARANCE_PX / PARTIAL_AXES_LABEL_PLOT_WIDTH * xSpan;
-  const height = PARTIAL_AXES_POINT_CLEARANCE_PX / PARTIAL_AXES_LABEL_PLOT_HEIGHT * ySpan;
-
-  return {
-    bottom: y - height / 2,
-    left: x - width / 2,
-    right: x + width / 2,
-    top: y + height / 2,
-  };
+  const items = vectorSeries.map((series) => ({
+    anchorX: series.vector.x,
+    anchorY: series.vector.y,
+    color: series.color,
+    hoverText: series.hoverText,
+    text: series.label,
+  }));
+  return placePlotLabels(items, {
+    xRange: [PARTIAL_AXES_X_RANGE[0] + 0.04, PARTIAL_AXES_X_RANGE[1] - 0.04],
+    yRange: [PARTIAL_AXES_Y_RANGE[0] + 0.04, PARTIAL_AXES_Y_RANGE[1] - 0.04],
+    fontSize: 12,
+    pointClearancePx: 14,
+    plotWidth: 520,
+    plotHeight: 460,
+  });
 }
 
 function labelBoxOverlapArea(left, right) {

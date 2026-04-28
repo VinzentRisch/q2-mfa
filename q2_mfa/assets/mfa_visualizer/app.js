@@ -42,6 +42,14 @@ const MISSING_VALUE_TOKEN = '__MISSING__';
 const DEFAULT_MARKER_COLOR = '#126782';
 const SELECTED_DIMENSION_COLOR = '#083D5B';
 const ELLIPSE_SCALE = 2.4477;
+const PARTIAL_AXES_X_RANGE = [-1.08, 1.3];
+const PARTIAL_AXES_Y_RANGE = [-1.16, 1.16];
+const PARTIAL_AXES_LABEL_FONT_SIZE = 12;
+const PARTIAL_AXES_LABEL_PLOT_WIDTH = 520;
+const PARTIAL_AXES_LABEL_PLOT_HEIGHT = 460;
+const PARTIAL_AXES_POINT_CLEARANCE_PX = 14;
+const DEFAULT_LABEL_PLOT_WIDTH = 560;
+const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
@@ -420,6 +428,32 @@ function getActivePaletteKind() {
   return colorColumn?.type === 'numeric' ? 'numeric' : 'categorical';
 }
 
+function getOrderedGroupNames() {
+  if (payload.partial_groups?.length) {
+    return payload.partial_groups;
+  }
+
+  if (payload.group_summary?.length) {
+    return payload.group_summary.map((entry) => entry.group);
+  }
+
+  if (payload.partial_axes?.length) {
+    return [...new Set(payload.partial_axes.map((entry) => entry.group))];
+  }
+
+  return [];
+}
+
+function getGroupColorMap(groups = getOrderedGroupNames()) {
+  const orderedGroups = [...new Set(groups)];
+  return Object.fromEntries(
+    orderedGroups.map((group, index) => [
+      group,
+      COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length],
+    ])
+  );
+}
+
 function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
@@ -482,11 +516,11 @@ function buildFeatureCorrelationTraces() {
   }
 
   const groupOrder = [...new Set(rankedFeatures.map((feature) => feature.group))].sort();
-  const groupColors = Object.fromEntries(
-    groupOrder.map((group, index) => [group, COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length]])
-  );
+  const groupColors = getGroupColorMap(groupOrder);
+  const labelPlacement = placeFeatureCorrelationLabels(rankedFeatures, groupColors);
 
   const traces = [];
+  traces.push(...buildPlotLabelConnectorTraces(labelPlacement));
   groupOrder.forEach((group) => {
     const groupFeatures = rankedFeatures.filter((feature) => feature.group === group);
     if (!groupFeatures.length) {
@@ -517,19 +551,12 @@ function buildFeatureCorrelationTraces() {
 
     traces.push({
       type: 'scattergl',
-      mode: 'markers+text',
+      mode: 'markers',
       name: group,
       legendgroup: `feature-correlations:${group}`,
       showlegend: true,
       x: groupFeatures.map((feature) => feature.x),
       y: groupFeatures.map((feature) => feature.y),
-      text: groupFeatures.map((feature) => feature.feature_name),
-      textposition: 'top center',
-      textfont: {
-        color: getThemeColors().font,
-        size: 11,
-      },
-      texttemplate: '%{text}',
       hovertemplate:
         '<b>%{customdata[0]}</b><br>' +
         'Group: %{customdata[1]}<br>' +
@@ -553,6 +580,10 @@ function buildFeatureCorrelationTraces() {
       },
     });
   });
+  const labelTrace = buildPlotLabelTrace(labelPlacement, 11);
+  if (labelTrace) {
+    traces.push(labelTrace);
+  }
 
   return traces;
 }
@@ -581,7 +612,7 @@ function buildPartialOverlayTraces(samples, colorColumn) {
     return [];
   }
 
-  const palette = COLOR_PALETTES.Earth.colors;
+  const groupColors = getGroupColorMap();
   const traces = [];
 
   if (colorColumn?.type === 'categorical') {
@@ -601,7 +632,7 @@ function buildPartialOverlayTraces(samples, colorColumn) {
       }
 
       const categorySampleIds = new Set(categorySamples.map((sample) => sample.sample_id));
-      payload.partial_groups.forEach((group, index) => {
+      payload.partial_groups.forEach((group) => {
         const groupEntries = visiblePartialSamples.filter(
           (entry) => entry.group === group && categorySampleIds.has(entry.sample_id)
         );
@@ -609,7 +640,7 @@ function buildPartialOverlayTraces(samples, colorColumn) {
           return;
         }
 
-        const color = palette[index % palette.length];
+        const color = groupColors[group];
         const partialLegendGroup = `partial:${group}`;
         const showPartialLegend = !partialLegendGroupsShown.has(group);
         partialLegendGroupsShown.add(group);
@@ -637,13 +668,13 @@ function buildPartialOverlayTraces(samples, colorColumn) {
     return traces;
   }
 
-  payload.partial_groups.forEach((group, index) => {
+  payload.partial_groups.forEach((group) => {
     const groupEntries = visiblePartialSamples.filter((entry) => entry.group === group);
     if (!groupEntries.length) {
       return;
     }
 
-    const color = palette[index % palette.length];
+    const color = groupColors[group];
     traces.push(
       buildPartialConnectorTrace(
         groupEntries,
@@ -1053,30 +1084,21 @@ function renderGroupPlot() {
       entry.coords[state.xDimension] !== undefined &&
       entry.coords[state.yDimension] !== undefined
   );
+  const groupColors = getGroupColorMap(groups.map((entry) => entry.group));
   const hasGroups = groups.length > 0;
+  const labelPlacement = placeGroupInertiaLabels(groups, groupColors);
 
   const trace = {
     type: 'scatter',
-    mode: 'markers+text',
+    mode: 'markers',
     name: 'Groups',
     x: groups.map((entry) => entry.coords[state.xDimension]),
     y: groups.map((entry) => entry.coords[state.yDimension]),
     text: groups.map((entry) => entry.group),
-    textposition: groups.map((entry) =>
-      entry.coords[state.xDimension] >= 0 ? 'middle left' : 'middle right'
-    ),
-    cliponaxis: false,
-    textfont: {
-      color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
-      size: 12,
-    },
     hovertemplate: '%{text}<br>%{customdata}<extra></extra>',
     customdata: groups.map(buildGroupHoverText),
     marker: {
-      color: groups.map(
-        (_, index) => COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length]
-      ),
+      color: groups.map((entry) => groupColors[entry.group]),
       size: 14,
       symbol: 'diamond',
       line: {
@@ -1085,10 +1107,18 @@ function renderGroupPlot() {
       },
     },
   };
+  const traces = hasGroups ? [
+    trace,
+    ...buildPlotLabelConnectorTraces(labelPlacement),
+  ] : [];
+  const labelTrace = buildPlotLabelTrace(labelPlacement, 12);
+  if (labelTrace) {
+    traces.push(labelTrace);
+  }
 
   Plotly.react(
     'group-plot',
-    hasGroups ? [trace] : [],
+    traces,
     buildGroupLayout(hasGroups),
     {
       responsive: true,
@@ -1136,6 +1166,236 @@ function buildGroupHoverText(entry) {
     `First eigenvalue: ${formatValue(entry.first_eigenvalue)}`,
     `Weight: ${formatValue(entry.weight)}`,
   ].join('<br>');
+}
+
+function placeGroupInertiaLabels(groups, groupColors) {
+  const items = groups.map((entry) => ({
+    anchorX: entry.coords[state.xDimension],
+    anchorY: entry.coords[state.yDimension],
+    color: groupColors[entry.group],
+    hoverText: `${entry.group}<br>${buildGroupHoverText(entry)}`,
+    text: entry.group,
+  }));
+  return placePlotLabels(items, {
+    xRange: computeLabelRange(items.map((item) => item.anchorX), true),
+    yRange: computeLabelRange(items.map((item) => item.anchorY), true),
+    fontSize: 12,
+    pointClearancePx: 16,
+    plotWidth: DEFAULT_LABEL_PLOT_WIDTH,
+    plotHeight: DEFAULT_LABEL_PLOT_HEIGHT,
+  });
+}
+
+function placeFeatureCorrelationLabels(features, groupColors) {
+  const items = features.map((feature) => ({
+    anchorX: feature.x,
+    anchorY: feature.y,
+    color: groupColors[feature.group],
+    hoverText:
+      `<b>${feature.feature_id}</b><br>` +
+      `Group: ${feature.group}<br>` +
+      `${state.xDimension}: ${formatValue(feature.x)}<br>` +
+      `${state.yDimension}: ${formatValue(feature.y)}<br>` +
+      `Plane magnitude: ${formatValue(feature.rankingScore)}`,
+    text: feature.feature_name,
+  }));
+  return placePlotLabels(items, {
+    xRange: computeLabelRange([...items.map((item) => item.anchorX), 0], false),
+    yRange: computeLabelRange([...items.map((item) => item.anchorY), 0], false),
+    fontSize: 11,
+    pointClearancePx: 14,
+    plotWidth: DEFAULT_LABEL_PLOT_WIDTH,
+    plotHeight: DEFAULT_LABEL_PLOT_HEIGHT,
+  });
+}
+
+function placePlotLabels(items, options) {
+  const placed = [];
+  const pointBoxes = items.map((item) =>
+    buildPlotPointBox(item.anchorX, item.anchorY, options)
+  );
+
+  items
+    .slice()
+    .sort((left, right) => {
+      const leftMagnitude = Math.hypot(left.anchorX, left.anchorY);
+      const rightMagnitude = Math.hypot(right.anchorX, right.anchorY);
+      return rightMagnitude - leftMagnitude || left.text.localeCompare(right.text);
+    })
+    .forEach((item, index) => {
+      const candidates = buildPlotLabelCandidates(item, index, options);
+      const firstBox = buildPlotLabelBox(item.text, candidates[0].x, candidates[0].y, options);
+      const firstLabelOverlap = placed.some((label) =>
+        labelBoxOverlapArea(firstBox, label.box) > 0
+      );
+      let bestCandidate = candidates[0];
+      let bestPenalty = Infinity;
+
+      candidates.forEach((candidate) => {
+        const box = buildPlotLabelBox(item.text, candidate.x, candidate.y, options);
+        const overlapPenalty = placed.reduce(
+          (penalty, label) => penalty + labelBoxOverlapArea(box, label.box),
+          0
+        );
+        const pointPenalty = pointBoxes.reduce(
+          (penalty, pointBox) => penalty + labelBoxOverlapArea(box, pointBox) * 50,
+          0
+        );
+        const distancePenalty = Math.hypot(
+          candidate.x - item.anchorX,
+          candidate.y - item.anchorY
+        ) * 0.01;
+        const penalty = overlapPenalty + pointPenalty + distancePenalty;
+        if (penalty < bestPenalty) {
+          bestCandidate = { ...candidate, box, overlapPenalty };
+          bestPenalty = penalty;
+        }
+      });
+
+      placed.push({
+        anchorX: item.anchorX,
+        anchorY: item.anchorY,
+        box: bestCandidate.box,
+        color: item.color,
+        connector: firstLabelOverlap || bestCandidate.overlapPenalty > 0,
+        hoverText: item.hoverText,
+        text: item.text,
+        x: bestCandidate.x,
+        y: bestCandidate.y,
+      });
+    });
+
+  return placed;
+}
+
+function buildPlotLabelCandidates(item, itemIndex, options) {
+  const xSpan = options.xRange[1] - options.xRange[0];
+  const ySpan = options.yRange[1] - options.yRange[0];
+  const unit = Math.max(Math.min(xSpan, ySpan), 1e-8);
+  const magnitude = Math.hypot(item.anchorX, item.anchorY);
+  const directionX = magnitude > 1e-8 ? item.anchorX / magnitude : 1;
+  const directionY = magnitude > 1e-8 ? item.anchorY / magnitude : 0;
+  const tangentX = -directionY;
+  const tangentY = directionX;
+  const lateralSign = itemIndex % 2 === 0 ? 1 : -1;
+  const candidates = [];
+
+  for (let ring = 0; ring <= 12; ring += 1) {
+    const radialOffset = unit * (0.034 + ring * 0.024);
+    const lateralOffsets = ring === 0
+      ? [0]
+      : [0, lateralSign * ring * unit * 0.017, -lateralSign * ring * unit * 0.017];
+
+    lateralOffsets.forEach((lateralOffset) => {
+      const x = clamp(
+        item.anchorX + directionX * radialOffset + tangentX * lateralOffset,
+        options.xRange[0],
+        options.xRange[1]
+      );
+      const y = clamp(
+        item.anchorY + directionY * radialOffset + tangentY * lateralOffset,
+        options.yRange[0],
+        options.yRange[1]
+      );
+      candidates.push({ x, y });
+    });
+  }
+
+  return candidates;
+}
+
+function buildPlotLabelBox(text, x, y, options) {
+  const xSpan = options.xRange[1] - options.xRange[0];
+  const ySpan = options.yRange[1] - options.yRange[0];
+  const width = ((text.length * options.fontSize * 0.58) + 12) /
+    options.plotWidth * xSpan;
+  const height = (options.fontSize + 8) / options.plotHeight * ySpan;
+
+  return {
+    bottom: y - height / 2,
+    left: x - width / 2,
+    right: x + width / 2,
+    top: y + height / 2,
+  };
+}
+
+function buildPlotPointBox(x, y, options) {
+  const xSpan = options.xRange[1] - options.xRange[0];
+  const ySpan = options.yRange[1] - options.yRange[0];
+  const width = options.pointClearancePx / options.plotWidth * xSpan;
+  const height = options.pointClearancePx / options.plotHeight * ySpan;
+
+  return {
+    bottom: y - height / 2,
+    left: x - width / 2,
+    right: x + width / 2,
+    top: y + height / 2,
+  };
+}
+
+function buildPlotLabelConnectorTraces(labelPlacement) {
+  return labelPlacement
+    .filter((label) => label.connector)
+    .map((label) => ({
+      type: 'scatter',
+      mode: 'lines',
+      name: `${label.text} label connector`,
+      x: [label.anchorX, label.x],
+      y: [label.anchorY, label.y],
+      line: {
+        color: withAlpha(label.color, 0.65),
+        width: 1,
+        dash: 'dot',
+      },
+      hoverinfo: 'skip',
+      showlegend: false,
+    }));
+}
+
+function buildPlotLabelTrace(labelPlacement, fontSize) {
+  if (!labelPlacement.length) {
+    return null;
+  }
+
+  return {
+    type: 'scatter',
+    mode: 'text',
+    name: 'Labels',
+    x: labelPlacement.map((label) => label.x),
+    y: labelPlacement.map((label) => label.y),
+    text: labelPlacement.map((label) => label.text),
+    textposition: 'middle center',
+    textfont: {
+      color: labelPlacement.map((label) => label.color),
+      size: fontSize,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    customdata: labelPlacement.map((label) => label.hoverText),
+    hovertemplate: '%{customdata}<extra></extra>',
+    cliponaxis: false,
+    showlegend: false,
+  };
+}
+
+function computeLabelRange(values, includeZero) {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (includeZero) {
+    finiteValues.push(0);
+  }
+  if (!finiteValues.length) {
+    return [-1, 1];
+  }
+
+  let min = Math.min(...finiteValues);
+  let max = Math.max(...finiteValues);
+  if (min === max) {
+    const delta = Math.max(Math.abs(min) * 0.2, 0.1);
+    min -= delta;
+    max += delta;
+  }
+
+  const padding = (max - min) * 0.18;
+  return [min - padding, max + padding];
 }
 
 function buildGroupLayout(hasGroups) {
@@ -1209,9 +1469,9 @@ function renderPartialAxesPlot() {
   );
   const hasPartialAxes = partialAxes.length > 0;
   const seriesKeys = [...new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`))];
-  const palette = COLOR_PALETTES.Earth.colors;
+  const groupColors = getGroupColorMap();
 
-  const traces = seriesKeys.map((seriesKey, index) => {
+  const vectorSeries = seriesKeys.map((seriesKey) => {
     const [group, partialAxisText] = seriesKey.split('::');
     const partialAxis = Number(partialAxisText);
     const seriesEntries = partialAxes.filter(
@@ -1222,48 +1482,31 @@ function renderPartialAxesPlot() {
       return null;
     }
 
-    const label = `Dim${partialAxis}.${group}`;
+    const label = `Dim ${partialAxis} ${group}`;
+    const color = groupColors[group];
 
     return {
-      type: 'scatter',
-      mode: 'lines+markers+text',
-      name: label,
-      legendgroup: `axes:${seriesKey}`,
-      x: [0, vector.x],
-      y: [0, vector.y],
-      text: ['', label],
-      textposition: vector.x >= 0 ? 'middle right' : 'middle left',
-      cliponaxis: false,
-      textfont: {
-        color: palette[index % palette.length],
-        size: 12,
-        family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
-      },
-      customdata: [
-        '',
-        seriesEntries
-          .map(
-            (entry) =>
-              `${entry.group}<br>Partial axis ${entry.partial_axis}<br>${entry.global_dim}: ${formatValue(entry.value)}`
-          )
-          .join('<br>'),
-      ],
-      hovertemplate: '%{customdata}<extra></extra>',
-      marker: {
-        color: palette[index % palette.length],
-        size: [0, 9],
-        symbol: 'circle',
-        line: {
-          color: themeColors.markerLine,
-          width: 1,
-        },
-      },
-      line: {
-        color: withAlpha(palette[index % palette.length], 0.7),
-        width: 2,
-      },
+      color,
+      hoverText: seriesEntries
+        .map(
+          (entry) =>
+            `${entry.group}<br>Partial axis ${entry.partial_axis}<br>${entry.global_dim}: ${formatValue(entry.value)}`
+        )
+        .join('<br>'),
+      label,
+      seriesKey,
+      vector,
     };
   }).filter(Boolean);
+  const labelPlacement = placePartialAxesLabels(vectorSeries);
+  const traces = vectorSeries.flatMap((series) => [
+    buildPartialAxesVectorTrace(series, themeColors),
+  ]);
+  traces.push(...buildPartialAxesLabelConnectorTraces(labelPlacement));
+  const labelTrace = buildPartialAxesLabelTrace(labelPlacement);
+  if (labelTrace) {
+    traces.push(labelTrace);
+  }
 
   if (hasPartialAxes) {
     traces.unshift(buildPartialAxesCircleBoundary());
@@ -1306,6 +1549,221 @@ function renderPartialAxesPlot() {
   );
 
   updatePartialAxesSummary(partialAxes);
+}
+
+function buildPartialAxesVectorTrace(series, themeColors) {
+  return {
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: series.label,
+    legendgroup: `axes:${series.seriesKey}`,
+    x: [0, series.vector.x],
+    y: [0, series.vector.y],
+    customdata: ['', series.hoverText],
+    hovertemplate: '%{customdata}<extra></extra>',
+    marker: {
+      color: series.color,
+      size: [0, 9],
+      symbol: 'circle',
+      line: {
+        color: themeColors.markerLine,
+        width: 1,
+      },
+    },
+    line: {
+      color: withAlpha(series.color, 0.7),
+      width: 2,
+    },
+  };
+}
+
+function buildPartialAxesLabelConnectorTraces(labelPlacement) {
+  const displacedLabels = labelPlacement.filter((label) => label.connector);
+  if (!displacedLabels.length) {
+    return [];
+  }
+
+  return displacedLabels.map((label) => ({
+    type: 'scatter',
+    mode: 'lines',
+    name: `${label.text} label connector`,
+    x: [label.anchorX, label.x],
+    y: [label.anchorY, label.y],
+    line: {
+      color: withAlpha(label.color, 0.65),
+      width: 1,
+      dash: 'dot',
+    },
+    hoverinfo: 'skip',
+    showlegend: false,
+  }));
+}
+
+function buildPartialAxesLabelTrace(labelPlacement) {
+  if (!labelPlacement.length) {
+    return null;
+  }
+
+  return {
+    type: 'scatter',
+    mode: 'text',
+    name: 'Partial-axis labels',
+    x: labelPlacement.map((label) => label.x),
+    y: labelPlacement.map((label) => label.y),
+    text: labelPlacement.map((label) => label.text),
+    textposition: 'middle center',
+    textfont: {
+      color: labelPlacement.map((label) => label.color),
+      size: PARTIAL_AXES_LABEL_FONT_SIZE,
+      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+    },
+    customdata: labelPlacement.map((label) => label.hoverText),
+    hovertemplate: '%{customdata}<extra></extra>',
+    hoverlabel: {
+      namelength: 0,
+    },
+    cliponaxis: false,
+    showlegend: false,
+  };
+}
+
+function placePartialAxesLabels(vectorSeries) {
+  const placed = [];
+  const pointBoxes = vectorSeries.map((series) =>
+    buildPartialAxesPointBox(series.vector.x, series.vector.y)
+  );
+  vectorSeries
+    .slice()
+    .sort((left, right) => {
+      const leftMagnitude = Math.hypot(left.vector.x, left.vector.y);
+      const rightMagnitude = Math.hypot(right.vector.x, right.vector.y);
+      return rightMagnitude - leftMagnitude || left.label.localeCompare(right.label);
+    })
+    .forEach((series, index) => {
+      const candidates = buildPartialAxesLabelCandidates(series, index);
+      const firstBox = buildPartialAxesLabelBox(
+        series.label,
+        candidates[0].x,
+        candidates[0].y
+      );
+      const firstLabelOverlap = placed.some((label) =>
+        labelBoxOverlapArea(firstBox, label.box) > 0
+      );
+      let bestCandidate = candidates[0];
+      let bestPenalty = Infinity;
+
+      candidates.forEach((candidate) => {
+        const box = buildPartialAxesLabelBox(series.label, candidate.x, candidate.y);
+        const overlapPenalty = placed.reduce(
+          (penalty, label) => penalty + labelBoxOverlapArea(box, label.box),
+          0
+        );
+        const pointPenalty = pointBoxes.reduce(
+          (penalty, pointBox) => penalty + labelBoxOverlapArea(box, pointBox) * 50,
+          0
+        );
+        const distancePenalty = Math.hypot(
+          candidate.x - series.vector.x,
+          candidate.y - series.vector.y
+        ) * 0.01;
+        const penalty = overlapPenalty + pointPenalty + distancePenalty;
+        if (penalty < bestPenalty) {
+          bestCandidate = { ...candidate, box, overlapPenalty };
+          bestPenalty = penalty;
+        }
+      });
+
+      placed.push({
+        anchorX: series.vector.x,
+        anchorY: series.vector.y,
+        box: bestCandidate.box,
+        color: series.color,
+        connector: firstLabelOverlap || bestCandidate.overlapPenalty > 0,
+        hoverText: series.hoverText,
+        text: series.label,
+        x: bestCandidate.x,
+        y: bestCandidate.y,
+      });
+    });
+
+  return placed;
+}
+
+function buildPartialAxesLabelCandidates(series, seriesIndex) {
+  const vector = series.vector;
+  const magnitude = Math.hypot(vector.x, vector.y);
+  const directionX = magnitude > 1e-8 ? vector.x / magnitude : 1;
+  const directionY = magnitude > 1e-8 ? vector.y / magnitude : 0;
+  const tangentX = -directionY;
+  const tangentY = directionX;
+  const lateralSign = seriesIndex % 2 === 0 ? 1 : -1;
+  const candidates = [];
+
+  for (let ring = 0; ring <= 12; ring += 1) {
+    const radialOffset = 0.08 + ring * 0.055;
+    const lateralOffsets = ring === 0
+      ? [0]
+      : [0, lateralSign * ring * 0.04, -lateralSign * ring * 0.04];
+
+    lateralOffsets.forEach((lateralOffset) => {
+      const x = clamp(
+        vector.x + directionX * radialOffset + tangentX * lateralOffset,
+        PARTIAL_AXES_X_RANGE[0] + 0.04,
+        PARTIAL_AXES_X_RANGE[1] - 0.04
+      );
+      const y = clamp(
+        vector.y + directionY * radialOffset + tangentY * lateralOffset,
+        PARTIAL_AXES_Y_RANGE[0] + 0.04,
+        PARTIAL_AXES_Y_RANGE[1] - 0.04
+      );
+      candidates.push({
+        x,
+        y,
+      });
+    });
+  }
+
+  return candidates;
+}
+
+function buildPartialAxesLabelBox(text, x, y) {
+  const xSpan = PARTIAL_AXES_X_RANGE[1] - PARTIAL_AXES_X_RANGE[0];
+  const ySpan = PARTIAL_AXES_Y_RANGE[1] - PARTIAL_AXES_Y_RANGE[0];
+  const width = ((text.length * PARTIAL_AXES_LABEL_FONT_SIZE * 0.58) + 12) /
+    PARTIAL_AXES_LABEL_PLOT_WIDTH * xSpan;
+  const height = (PARTIAL_AXES_LABEL_FONT_SIZE + 8) /
+    PARTIAL_AXES_LABEL_PLOT_HEIGHT * ySpan;
+
+  return {
+    bottom: y - height / 2,
+    left: x - width / 2,
+    right: x + width / 2,
+    top: y + height / 2,
+  };
+}
+
+function buildPartialAxesPointBox(x, y) {
+  const xSpan = PARTIAL_AXES_X_RANGE[1] - PARTIAL_AXES_X_RANGE[0];
+  const ySpan = PARTIAL_AXES_Y_RANGE[1] - PARTIAL_AXES_Y_RANGE[0];
+  const width = PARTIAL_AXES_POINT_CLEARANCE_PX / PARTIAL_AXES_LABEL_PLOT_WIDTH * xSpan;
+  const height = PARTIAL_AXES_POINT_CLEARANCE_PX / PARTIAL_AXES_LABEL_PLOT_HEIGHT * ySpan;
+
+  return {
+    bottom: y - height / 2,
+    left: x - width / 2,
+    right: x + width / 2,
+    top: y + height / 2,
+  };
+}
+
+function labelBoxOverlapArea(left, right) {
+  const width = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
+  const height = Math.max(0, Math.min(left.top, right.top) - Math.max(left.bottom, right.bottom));
+  return width * height;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function buildPartialAxesVector(groupEntries) {
@@ -1361,7 +1819,7 @@ function buildPartialAxesLayout(hasPartialAxes) {
         text: dimensionsByKey[state.xDimension].label,
         font: { color: themeColors.font },
       },
-      range: [-1.08, 1.3],
+      range: PARTIAL_AXES_X_RANGE,
       constrain: 'domain',
       scaleanchor: 'y',
       scaleratio: 1,
@@ -1378,7 +1836,7 @@ function buildPartialAxesLayout(hasPartialAxes) {
         text: dimensionsByKey[state.yDimension].label,
         font: { color: themeColors.font },
       },
-      range: [-1.16, 1.16],
+      range: PARTIAL_AXES_Y_RANGE,
       constrain: 'domain',
       automargin: true,
       gridcolor: themeColors.grid,

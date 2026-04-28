@@ -12,7 +12,6 @@ import skbio
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 
 
 def pca(
@@ -20,7 +19,6 @@ def pca(
     n_components: int | None = None,
     svd_solver: str = "full",
     random_state: CaptureHolder[int] = None,
-    scale_std: bool = False,
 ) -> skbio.OrdinationResults:
     """
     Perform principal component analysis with sklearn and return ordination results.
@@ -34,8 +32,6 @@ def pca(
         random_state (CaptureHolder[int] | int | None): Random seed used by
             stochastic solvers. If not provided, a seed is generated and
             captured by Rachis.
-        scale_std (bool): If ``True``, scale features to unit variance with
-            ``StandardScaler(with_mean=False, with_std=True)`` before PCA.
 
     Returns:
         skbio.OrdinationResults: PCA results containing sample scores, feature
@@ -47,13 +43,6 @@ def pca(
         )
     else:
         random_state = CaptureHolder.get_or_set(random_state, lambda: None)
-
-    if scale_std:
-        table = pd.DataFrame(
-            StandardScaler(with_mean=False, with_std=True).fit_transform(table),
-            index=table.index,
-            columns=table.columns,
-        )
 
     pca = PCA(
         n_components=n_components,

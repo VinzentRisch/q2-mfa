@@ -7,7 +7,7 @@
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from q2_types.ordination import PCoAResults
-from rachis.core.type import Bool, Choices, Float, Int, Properties, Range, Str
+from rachis.core.type import Choices, Float, Int, Properties, Range, Str
 from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -77,7 +77,6 @@ plugin.methods.register_function(
         "n_components": Int % Range(1, None),
         "svd_solver": Str % Choices(["full", "randomized"]),
         "random_state": Int,
-        "scale_std": Bool,
     },
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
@@ -95,10 +94,6 @@ plugin.methods.register_function(
         "random_state": (
             "Random seed. Used by the randomized solver. Pass an int for "
             "reproducible results across multiple function calls."
-        ),
-        "scale_std": (
-            "If true, scale features to unit variance with "
-            "StandardScaler(with_mean=False, with_std=True) before PCA."
         ),
     },
     output_descriptions={"pca_results": "The PCA results."},

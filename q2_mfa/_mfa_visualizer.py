@@ -18,16 +18,20 @@ from skbio import OrdinationResults
 
 from q2_mfa.types import MFAResultsDirFmt
 
-_TEMPLATE_FILES = ("index.html", "graphs.html")
+_TEMPLATE_FILES = ("index.html",)
 _STATIC_ASSET_FILES = ("style.css", "app.js")
 
 
 def mfa_visualizer(
     output_dir: str, mfa_results: MFAResultsDirFmt, sample_metadata: Metadata
 ):
-    ordination, partial_sample_coordinates, group_summary, partial_axes = (
-        _load_mfa_visualizer_inputs(mfa_results)
-    )
+    (
+        ordination,
+        partial_sample_coordinates,
+        group_summary,
+        partial_axes,
+        feature_correlations,
+    ) = _load_mfa_visualizer_inputs(mfa_results)
     sample_coordinates = ordination.samples
     if sample_coordinates is None or sample_coordinates.empty:
         raise ValueError("MFA results must contain sample coordinates.")
@@ -41,6 +45,7 @@ def mfa_visualizer(
         partial_sample_coordinates,
         group_summary,
         partial_axes,
+        feature_correlations,
     )
     _write_visualization(output_dir, payload)
 
@@ -52,16 +57,26 @@ def _load_mfa_visualizer_inputs(
     pd.DataFrame | None,
     pd.DataFrame | None,
     pd.DataFrame | None,
+    pd.DataFrame | None,
 ]:
     if isinstance(mfa_results, OrdinationResults):
-        return mfa_results, None, None, None
+        return mfa_results, None, None, None, None
 
     if isinstance(mfa_results, MFAResultsDirFmt):
         ordination = OrdinationResults.read(str(mfa_results.path / "ordination.txt"))
         partial_scores = pd.read_csv(mfa_results.path / "partial-scores.tsv", sep="\t")
         group_summary = pd.read_csv(mfa_results.path / "group-summary.tsv", sep="\t")
         partial_axes = pd.read_csv(mfa_results.path / "partial-axes.tsv", sep="\t")
-        return ordination, partial_scores, group_summary, partial_axes
+        feature_correlations = pd.read_csv(
+            mfa_results.path / "feature-correlations.tsv", sep="\t"
+        )
+        return (
+            ordination,
+            partial_scores,
+            group_summary,
+            partial_axes,
+            feature_correlations,
+        )
 
     if hasattr(mfa_results, "path"):
         path = Path(mfa_results.path)
@@ -80,7 +95,17 @@ def _load_mfa_visualizer_inputs(
             partial_axes_path = path / "partial-axes.tsv"
             if partial_axes_path.exists():
                 partial_axes = pd.read_csv(partial_axes_path, sep="\t")
-            return ordination, partial_scores, group_summary, partial_axes
+            feature_correlations = None
+            feature_correlations_path = path / "feature-correlations.tsv"
+            if feature_correlations_path.exists():
+                feature_correlations = pd.read_csv(feature_correlations_path, sep="\t")
+            return (
+                ordination,
+                partial_scores,
+                group_summary,
+                partial_axes,
+                feature_correlations,
+            )
 
     raise TypeError(
         "mfa_results must be an OrdinationResults object or an MFAResults directory "
@@ -94,6 +119,7 @@ def _build_payload(
     partial_sample_coordinates: pd.DataFrame | None = None,
     group_summary: pd.DataFrame | None = None,
     partial_axes: pd.DataFrame | None = None,
+    feature_correlations: pd.DataFrame | None = None,
 ) -> dict[str, object]:
     sample_coordinates = ordination.samples.copy()
     sample_coordinates.index = sample_coordinates.index.astype(str)
@@ -115,6 +141,9 @@ def _build_payload(
     )
     group_summary_payload = _build_group_summary_payload(group_summary, dimensions)
     partial_axes_payload = _build_partial_axes_payload(partial_axes, dimensions)
+    feature_correlation_payload = _build_feature_correlation_payload(
+        feature_correlations, dimensions
+    )
 
     included_columns = [column["name"] for column in metadata_columns]
     samples = []
@@ -139,8 +168,6 @@ def _build_payload(
 
     return {
         "title": "MFA sample scores",
-        "tabs": [{"url": "graphs.html", "title": "Graphs"}],
-        "default_tab": "graphs",
         "default_x": dimensions[0]["key"],
         "default_y": dimensions[1]["key"],
         "dimensions": dimensions,
@@ -158,6 +185,7 @@ def _build_payload(
         "partial_samples": partial_samples,
         "group_summary": group_summary_payload,
         "partial_axes": partial_axes_payload,
+        "feature_correlations": feature_correlation_payload,
     }
 
 
@@ -268,6 +296,46 @@ def _build_partial_axes_payload(
     ]
 
 
+def _build_feature_correlation_payload(
+    feature_correlations: pd.DataFrame | None,
+    dimensions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if feature_correlations is None or feature_correlations.empty:
+        return []
+
+    correlation_table = feature_correlations.copy()
+    dimension_columns = {
+        str(index + 1): dimension["key"] for index, dimension in enumerate(dimensions)
+    }
+    available_dimension_columns = [
+        column for column in dimension_columns if column in correlation_table.columns
+    ]
+    if not available_dimension_columns:
+        return []
+
+    correlation_table["feature_id"] = correlation_table["feature_id"].astype(str)
+    correlation_table["group"] = correlation_table["group"].astype(str)
+    correlation_table["feature_name"] = correlation_table["feature_name"].astype(str)
+
+    payload = []
+    for _, row in correlation_table.iterrows():
+        coords = {}
+        for column in available_dimension_columns:
+            value = row[column]
+            coords[dimension_columns[column]] = None if pd.isna(value) else float(value)
+
+        payload.append(
+            {
+                "feature_id": row["feature_id"],
+                "group": row["group"],
+                "feature_name": row["feature_name"],
+                "coords": coords,
+            }
+        )
+
+    return payload
+
+
 def _build_dimensions(
     sample_coordinates: pd.DataFrame, proportion_explained: pd.Series | None
 ) -> list[dict[str, object]]:
@@ -356,7 +424,7 @@ def _write_visualization(output_dir: str, payload: dict[str, object]):
         q2templates.render(
             template_paths,
             output_dir,
-            context={"tabs": payload["tabs"]},
+            context={},
         )
 
     for asset_name in _STATIC_ASSET_FILES:

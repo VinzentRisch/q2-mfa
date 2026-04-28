@@ -57,6 +57,19 @@
       </label>
     </div>
 
+    <div class="control-group control-group-toggle">
+      <label for="show-feature-correlations">Feature correlations</label>
+      <label class="toggle-option" for="show-feature-correlations">
+        <input id="show-feature-correlations" type="checkbox">
+        <span>Overlay top correlated features</span>
+      </label>
+    </div>
+
+    <div class="control-group">
+      <label for="top-feature-count">Top features</label>
+      <input id="top-feature-count" type="number" min="1" step="1" value="10">
+    </div>
+
     <div class="control-group control-group-wide">
       <label for="filter-by">Filter samples</label>
       <select id="filter-by"></select>

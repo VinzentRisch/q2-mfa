@@ -1,1 +1,128 @@
-{% extends 'tab-parent.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MFA sample scores</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Q2-MFA</p>
+        <h1 id="visualizer-title">MFA sample scores</h1>
+      </div>
+      <div class="theme-toggle-shell">
+        <label class="theme-toggle" for="dark-mode-toggle">
+          <span>Dark mode</span>
+          <input id="dark-mode-toggle" type="checkbox">
+        </label>
+      </div>
+    </header>
+
+    <section class="control-panel" aria-label="Graph controls">
+      <div class="control-group">
+        <label for="x-dimension">X-axis</label>
+        <select id="x-dimension"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="y-dimension">Y-axis</label>
+        <select id="y-dimension"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="color-by">Color by metadata</label>
+        <select id="color-by"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="color-palette">Color palette</label>
+        <select id="color-palette"></select>
+      </div>
+
+      <div class="control-group control-group-toggle">
+        <label class="toggle-option" for="show-barycenter">
+          <input id="show-barycenter" type="checkbox">
+          <span>Barycenter ellipse</span>
+        </label>
+      </div>
+
+      <div class="control-group control-group-toggle">
+        <label class="toggle-option" for="show-partial-overlay">
+          <input id="show-partial-overlay" type="checkbox">
+          <span>Partial coordinates</span>
+        </label>
+      </div>
+
+      <div class="control-group control-group-toggle control-group-feature-correlations">
+        <label class="toggle-option" for="show-feature-correlations">
+          <input id="show-feature-correlations" type="checkbox">
+          <span>Feature correlations</span>
+        </label>
+      </div>
+
+      <div class="control-group control-group-top-features">
+        <label for="top-feature-count">Top features</label>
+        <input id="top-feature-count" type="number" min="1" step="1" value="10">
+      </div>
+
+      <div class="control-group">
+        <label for="filter-by">Filter samples</label>
+        <select id="filter-by"></select>
+      </div>
+
+      <div class="control-group control-group-wide">
+        <div id="filter-controls" class="filter-controls"></div>
+      </div>
+    </section>
+
+    <section class="plot-shell">
+      <div class="plot-status">
+        <span id="sample-count"></span>
+        <span id="filter-summary"></span>
+      </div>
+      <div id="sample-plot" class="plot-canvas"></div>
+    </section>
+
+    <section class="plot-grid-secondary">
+      <div class="plot-shell plot-shell-secondary">
+        <div class="plot-status">
+          <span>Explained variance by component</span>
+          <span id="variance-summary"></span>
+        </div>
+        <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
+      </div>
+
+      <div class="plot-shell plot-shell-secondary">
+        <div class="plot-status">
+          <span>Cumulative explained variance</span>
+          <span id="cumulative-summary"></span>
+        </div>
+        <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
+      </div>
+
+      <div class="plot-shell plot-shell-secondary">
+        <div class="plot-status">
+          <span>Group partial inertia</span>
+          <span id="group-summary-text"></span>
+        </div>
+        <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
+      </div>
+
+      <div class="plot-shell plot-shell-secondary">
+        <div class="plot-status">
+          <span>Partial axes</span>
+          <span id="partial-axes-summary"></span>
+        </div>
+        <div id="partial-axes-plot" class="plot-canvas plot-canvas-secondary"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

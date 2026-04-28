@@ -57,7 +57,6 @@ class TestMFAVisualizer(TestPluginBase):
 
             for filename in (
                 "index.html",
-                "graphs.html",
                 "style.css",
                 "app.js",
                 "data.js",
@@ -66,13 +65,8 @@ class TestMFAVisualizer(TestPluginBase):
 
             payload = self._load_payload(output_dir)
 
-        self.assertEqual(payload["default_tab"], "graphs")
         self.assertEqual(payload["default_x"], "Dim 1")
         self.assertEqual(payload["default_y"], "Dim 2")
-        self.assertEqual(
-            payload["tabs"],
-            [{"url": "graphs.html", "title": "Graphs"}],
-        )
         self.assertEqual(
             [dimension["label"] for dimension in payload["dimensions"]],
             ["Dim 1", "Dim 2"],

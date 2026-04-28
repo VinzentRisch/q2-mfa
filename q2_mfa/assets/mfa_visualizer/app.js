@@ -40,6 +40,7 @@ const COLOR_PALETTES = {
 
 const MISSING_VALUE_TOKEN = '__MISSING__';
 const DEFAULT_MARKER_COLOR = '#126782';
+const SELECTED_DIMENSION_COLOR = '#083D5B';
 const ELLIPSE_SCALE = 2.4477;
 
 const payload = window.MFA_VISUALIZER_DATA;
@@ -57,6 +58,8 @@ const state = {
   colorPalette: 'Plotly',
   showBarycenter: false,
   showPartialOverlay: false,
+  showFeatureCorrelations: false,
+  topFeatureCount: 10,
   filterBy: '',
   categoricalFilterValues: new Set(),
   numericFilterMin: null,
@@ -100,6 +103,8 @@ function populateColorControls() {
   repopulateColorPaletteOptions();
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-partial-overlay').checked = state.showPartialOverlay;
+  document.getElementById('show-feature-correlations').checked = state.showFeatureCorrelations;
+  document.getElementById('top-feature-count').value = state.topFeatureCount;
 }
 
 function populateFilterSelector() {
@@ -139,6 +144,20 @@ function bindEvents() {
 
   document.getElementById('show-partial-overlay').addEventListener('change', (event) => {
     state.showPartialOverlay = event.target.checked;
+    renderPlot();
+  });
+
+  document.getElementById('show-feature-correlations').addEventListener('change', (event) => {
+    state.showFeatureCorrelations = event.target.checked;
+    renderPlot();
+  });
+
+  document.getElementById('top-feature-count').addEventListener('input', (event) => {
+    const nextValue = Number(event.target.value);
+    if (!Number.isFinite(nextValue) || nextValue < 1) {
+      return;
+    }
+    state.topFeatureCount = Math.floor(nextValue);
     renderPlot();
   });
 
@@ -404,24 +423,128 @@ function getActivePaletteKind() {
 function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
+  const featureCorrelationTraces = buildFeatureCorrelationTraces();
   if (!colorColumn) {
-    const traces = [...partialOverlayTraces, buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples')];
+    const traces = [
+      ...featureCorrelationTraces,
+      ...partialOverlayTraces,
+      buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples'),
+    ];
     return appendBarycenterTraces(traces, samples, colorColumn);
   }
 
   if (colorColumn.type === 'numeric') {
     return appendBarycenterTraces(
-      [...partialOverlayTraces, ...buildNumericTraces(samples, colorColumn)],
+      [...featureCorrelationTraces, ...partialOverlayTraces, ...buildNumericTraces(samples, colorColumn)],
       samples,
       colorColumn
     );
   }
 
   return appendBarycenterTraces(
-    [...partialOverlayTraces, ...buildCategoricalTraces(samples, colorColumn)],
+    [...featureCorrelationTraces, ...partialOverlayTraces, ...buildCategoricalTraces(samples, colorColumn)],
     samples,
     colorColumn
   );
+}
+
+function buildFeatureCorrelationTraces() {
+  if (!state.showFeatureCorrelations || !payload.feature_correlations?.length) {
+    return [];
+  }
+
+  const visibleFeatures = payload.feature_correlations
+    .map((feature) => ({
+      ...feature,
+      x: feature.coords[state.xDimension],
+      y: feature.coords[state.yDimension],
+    }))
+    .filter((feature) => feature.x !== null && feature.y !== null);
+
+  if (!visibleFeatures.length) {
+    return [];
+  }
+
+  // Rank by correlation magnitude in the currently displayed 2D plane so the
+  // overlay surfaces the variables best represented in the exact view the user
+  // is inspecting, rather than overemphasizing features strong on only one axis.
+  const rankedFeatures = visibleFeatures
+    .map((feature) => ({
+      ...feature,
+      rankingScore: Math.hypot(feature.x, feature.y),
+    }))
+    .sort((a, b) => b.rankingScore - a.rankingScore)
+    .slice(0, state.topFeatureCount);
+
+  if (!rankedFeatures.length) {
+    return [];
+  }
+
+  const groupOrder = [...new Set(rankedFeatures.map((feature) => feature.group))].sort();
+  const groupColors = Object.fromEntries(
+    groupOrder.map((group, index) => [group, COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length]])
+  );
+
+  const lineX = [];
+  const lineY = [];
+  rankedFeatures.forEach((feature) => {
+    lineX.push(0, feature.x, null);
+    lineY.push(0, feature.y, null);
+  });
+
+  return [
+    {
+      type: 'scatter',
+      mode: 'lines',
+      name: 'Feature correlations',
+      legendgroup: 'feature-correlations',
+      x: lineX,
+      y: lineY,
+      line: {
+        color: withAlpha('#475569', 0.65),
+        width: 1.5,
+      },
+      hoverinfo: 'skip',
+      showlegend: true,
+    },
+    {
+      type: 'scattergl',
+      mode: 'markers+text',
+      name: 'Feature correlations',
+      legendgroup: 'feature-correlations',
+      showlegend: false,
+      x: rankedFeatures.map((feature) => feature.x),
+      y: rankedFeatures.map((feature) => feature.y),
+      text: rankedFeatures.map((feature) => feature.feature_name),
+      textposition: 'top center',
+      textfont: {
+        color: getThemeColors().font,
+        size: 11,
+      },
+      texttemplate: '%{text}',
+      hovertemplate:
+        '<b>%{customdata[0]}</b><br>' +
+        'Group: %{customdata[1]}<br>' +
+        `${state.xDimension}: %{x:.3f}<br>` +
+        `${state.yDimension}: %{y:.3f}<br>` +
+        'Plane magnitude: %{customdata[2]:.3f}<extra></extra>',
+      customdata: rankedFeatures.map((feature) => [
+        feature.feature_id,
+        feature.group,
+        feature.rankingScore,
+      ]),
+      marker: {
+        color: rankedFeatures.map((feature) => groupColors[feature.group]),
+        size: 9,
+        opacity: 0.95,
+        symbol: 'circle-open',
+        line: {
+          color: rankedFeatures.map((feature) => groupColors[feature.group]),
+          width: 2,
+        },
+      },
+    },
+  ];
 }
 
 function buildPartialOverlayTraces(samples, colorColumn) {
@@ -580,15 +703,15 @@ function buildPartialPointTrace(groupEntries, color, group, legendgroup, showleg
 
 function buildSingleTrace(samples, color, name, options = {}) {
   return {
-    type: 'scattergl',
+    type: 'scatter',
     mode: 'markers',
     name,
     legendgroup: options.legendgroup,
     showlegend: options.showlegend ?? true,
     x: samples.map((sample) => sample.coords[state.xDimension]),
     y: samples.map((sample) => sample.coords[state.yDimension]),
-    text: samples.map(buildHoverText),
-    hovertemplate: '%{text}<extra></extra>',
+    customdata: samples.map(buildHoverText),
+    hovertemplate: '%{customdata}<extra></extra>',
     marker: {
       color,
       size: 11,
@@ -610,13 +733,13 @@ function buildNumericTraces(samples, colorColumn) {
   const traces = [];
   if (numericSamples.length) {
     traces.push({
-      type: 'scattergl',
+      type: 'scatter',
       mode: 'markers',
       name: colorColumn.name,
       x: numericSamples.map((sample) => sample.coords[state.xDimension]),
       y: numericSamples.map((sample) => sample.coords[state.yDimension]),
-      text: numericSamples.map(buildHoverText),
-      hovertemplate: '%{text}<extra></extra>',
+      customdata: numericSamples.map(buildHoverText),
+      hovertemplate: '%{customdata}<extra></extra>',
       marker: {
         color: numericSamples.map((sample) => sample.metadata[colorColumn.name]),
         colorscale: getNumericColorscale(state.colorPalette),
@@ -675,6 +798,8 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
     return traces;
   }
 
+  const ellipseTraces = [];
+
   if (colorColumn?.type === 'categorical') {
     const orderedCategories = [...colorColumn.values];
     if (colorColumn.has_missing) {
@@ -696,10 +821,10 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
         `metadata:${label}`
       );
       if (ellipseTrace) {
-        traces.push(ellipseTrace);
+        ellipseTraces.push(ellipseTrace);
       }
     });
-    return traces;
+    return [...ellipseTraces, ...traces];
   }
 
   const ellipseColor = colorColumn?.type === 'numeric'
@@ -712,9 +837,9 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
     'visible-samples'
   );
   if (ellipseTrace) {
-    traces.push(ellipseTrace);
+    ellipseTraces.push(ellipseTrace);
   }
-  return traces;
+  return [...ellipseTraces, ...traces];
 }
 
 function buildBarycenterEllipseTrace(samples, color, label, legendgroup) {
@@ -853,7 +978,7 @@ function buildLayout(isEmpty) {
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
     dragmode: 'zoom',
     hovermode: 'closest',
-    margin: { t: 20, r: 20, b: 70, l: 80 },
+    margin: { t: 104, r: 40, b: 70, l: 80 },
     font: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
@@ -862,7 +987,7 @@ function buildLayout(isEmpty) {
       orientation: 'h',
       groupclick: 'togglegroup',
       yanchor: 'bottom',
-      y: 1.02,
+      y: 1.14,
       xanchor: 'left',
       x: 0,
       font: { color: themeColors.font },
@@ -923,7 +1048,10 @@ function renderGroupPlot() {
     x: groups.map((entry) => entry.coords[state.xDimension]),
     y: groups.map((entry) => entry.coords[state.yDimension]),
     text: groups.map((entry) => entry.group),
-    textposition: 'top center',
+    textposition: groups.map((entry) =>
+      entry.coords[state.xDimension] >= 0 ? 'middle left' : 'middle right'
+    ),
+    cliponaxis: false,
     textfont: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
@@ -967,7 +1095,16 @@ function renderGroupPlot() {
           },
         },
       ],
-      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      modeBarButtonsToRemove: [
+        'lasso2d',
+        'select2d',
+        'zoom2d',
+        'pan2d',
+        'zoomIn2d',
+        'zoomOut2d',
+        'autoScale2d',
+        'resetScale2d',
+      ],
     }
   );
 
@@ -992,7 +1129,7 @@ function buildGroupLayout(hasGroups) {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 20, r: 20, b: 70, l: 90 },
+    margin: { t: 20, r: 56, b: 70, l: 90 },
     font: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
@@ -1003,6 +1140,7 @@ function buildGroupLayout(hasGroups) {
         font: { color: themeColors.font },
       },
       rangemode: 'tozero',
+      automargin: true,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
@@ -1016,6 +1154,7 @@ function buildGroupLayout(hasGroups) {
         font: { color: themeColors.font },
       },
       rangemode: 'tozero',
+      automargin: true,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
@@ -1079,7 +1218,8 @@ function renderPartialAxesPlot() {
       x: [0, vector.x],
       y: [0, vector.y],
       text: ['', label],
-      textposition: 'top center',
+      textposition: vector.x >= 0 ? 'middle right' : 'middle left',
+      cliponaxis: false,
       textfont: {
         color: palette[index % palette.length],
         size: 12,
@@ -1138,7 +1278,16 @@ function renderPartialAxesPlot() {
           },
         },
       ],
-      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      modeBarButtonsToRemove: [
+        'lasso2d',
+        'select2d',
+        'zoom2d',
+        'pan2d',
+        'zoomIn2d',
+        'zoomOut2d',
+        'autoScale2d',
+        'resetScale2d',
+      ],
     }
   );
 
@@ -1187,28 +1336,22 @@ function buildPartialAxesLayout(hasPartialAxes) {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 20, r: 20, b: 70, l: 80 },
+    margin: { t: 20, r: 48, b: 70, l: 80 },
     font: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
     },
-    legend: {
-      orientation: 'h',
-      groupclick: 'togglegroup',
-      yanchor: 'bottom',
-      y: 1.02,
-      xanchor: 'left',
-      x: 0,
-      font: { color: themeColors.font },
-    },
+    showlegend: false,
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].label,
         font: { color: themeColors.font },
       },
-      range: [-1.05, 1.05],
+      range: [-1.08, 1.3],
+      constrain: 'domain',
       scaleanchor: 'y',
       scaleratio: 1,
+      automargin: true,
       gridcolor: themeColors.grid,
       gridwidth: 1,
       zeroline: true,
@@ -1221,7 +1364,9 @@ function buildPartialAxesLayout(hasPartialAxes) {
         text: dimensionsByKey[state.yDimension].label,
         font: { color: themeColors.font },
       },
-      range: [-1.05, 1.05],
+      range: [-1.16, 1.16],
+      constrain: 'domain',
+      automargin: true,
       gridcolor: themeColors.grid,
       gridwidth: 1,
       zeroline: true,
@@ -1272,7 +1417,9 @@ function renderVariancePlot() {
     y: components.map((component) => component.variance_explained * 100),
     marker: {
       color: components.map((component) =>
-        selectedDimensions.has(component.key) ? '#C95E37' : DEFAULT_MARKER_COLOR
+        selectedDimensions.has(component.key)
+          ? SELECTED_DIMENSION_COLOR
+          : DEFAULT_MARKER_COLOR
       ),
       line: {
         color: themeColors.markerLine,
@@ -1345,7 +1492,9 @@ function renderCumulativeVariancePlot(components, hasVariance, themeColors) {
     },
     marker: {
       color: components.map((component) =>
-        selectedDimensions.has(component.key) ? '#C95E37' : DEFAULT_MARKER_COLOR
+        selectedDimensions.has(component.key)
+          ? SELECTED_DIMENSION_COLOR
+          : DEFAULT_MARKER_COLOR
       ),
       size: 8,
       line: {

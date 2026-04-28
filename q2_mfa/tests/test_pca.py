@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pandas as pd
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
+from sklearn.preprocessing import StandardScaler
 
 from q2_mfa.pca import pca
 
@@ -53,6 +54,22 @@ class TestPCA(TestPluginBase):
         self.assertEqual(ordn.features.shape, (self.table.shape[1], expected_count))
         self.assertEqual(len(ordn.eigvals), expected_count)
         self.assertEqual(len(ordn.proportion_explained), expected_count)
+
+    def test_pca_scales_features_when_scale_std_is_true(self):
+        ordn = pca(self.table, n_components=2, scale_std=True)
+        scaled_table = pd.DataFrame(
+            StandardScaler(with_mean=False, with_std=True).fit_transform(self.table),
+            index=self.table.index,
+            columns=self.table.columns,
+        )
+        expected_ordn = pca(scaled_table, n_components=2, scale_std=False)
+
+        pd.testing.assert_frame_equal(ordn.samples, expected_ordn.samples)
+        pd.testing.assert_frame_equal(ordn.features, expected_ordn.features)
+        pd.testing.assert_series_equal(ordn.eigvals, expected_ordn.eigvals)
+        pd.testing.assert_series_equal(
+            ordn.proportion_explained, expected_ordn.proportion_explained
+        )
 
     def test_pca_accepts_random_state_with_randomized_solver(self):
         ordn = pca(

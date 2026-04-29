@@ -47,6 +47,7 @@
         <label class="toggle-option" for="show-barycenter">
           <input id="show-barycenter" type="checkbox">
           <span>Barycenter ellipse</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Barycenter ellipse help" data-tooltip="Shows an ellipse around the visible sample scores. It summarizes the center and spread of the currently displayed samples; wider ellipses indicate more dispersion on the selected MFA axes.">?</span>
         </label>
       </div>
 
@@ -54,6 +55,7 @@
         <label class="toggle-option" for="show-partial-overlay">
           <input id="show-partial-overlay" type="checkbox">
           <span>Partial coordinates</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial coordinates help" data-tooltip="Shows each sample's group-specific partial coordinates and connects them to the global sample score. Long connectors indicate that a group places that sample away from the consensus position.">?</span>
         </label>
       </div>
 
@@ -61,6 +63,7 @@
         <label class="toggle-option" for="show-feature-correlations">
           <input id="show-feature-correlations" type="checkbox">
           <span>Feature correlations</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Feature correlations help" data-tooltip="Overlays the strongest feature correlations for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. The top-feature count controls how many arrows are shown, ordered by two-dimensional correlation magnitude on the current X and Y axes.">?</span>
         </label>
       </div>
 
@@ -90,7 +93,7 @@
     <section class="plot-grid-secondary">
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span>Explained variance by component</span>
+          <span class="plot-title-with-help">Explained variance by component <span class="help-tooltip" tabindex="0" role="button" aria-label="Explained variance help" data-tooltip="Shows how much total variation each MFA component explains. Larger bars indicate axes that capture more structure and are usually better candidates for interpretation.">?</span></span>
           <span id="variance-summary"></span>
         </div>
         <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -98,7 +101,7 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span>Cumulative explained variance</span>
+          <span class="plot-title-with-help">Cumulative explained variance <span class="help-tooltip" tabindex="0" role="button" aria-label="Cumulative variance help" data-tooltip="Shows the running total of variance explained as components are added. Use it to judge how many axes are needed to summarize the dataset.">?</span></span>
           <span id="cumulative-summary"></span>
         </div>
         <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -106,7 +109,7 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span>Group partial inertia</span>
+          <span class="plot-title-with-help">Group partial inertia <span class="help-tooltip" tabindex="0" role="button" aria-label="Group partial inertia help" data-tooltip="Shows how strongly each data group contributes to and is represented by the selected MFA axes. Groups farther from zero are more influential in the displayed dimensions.">?</span></span>
           <span id="group-summary-text"></span>
         </div>
         <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -114,7 +117,7 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span>Partial axes</span>
+          <span class="plot-title-with-help">Partial axes <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial axes help" data-tooltip="Shows how each group-specific axis aligns with the global MFA axes. Vectors pointing in similar directions indicate agreement between groups; vectors near zero are weakly aligned with this view.">?</span></span>
           <span id="partial-axes-summary"></span>
         </div>
         <div id="partial-axes-plot" class="plot-canvas plot-canvas-secondary"></div>

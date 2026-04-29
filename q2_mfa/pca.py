@@ -23,6 +23,12 @@ def pca(
     """
     Perform principal component analysis with sklearn and return ordination results.
 
+    The SVD, sample scores, and feature axes are computed with scikit-learn,
+    but eigenvalues are reported using the weighted-inertia convention used by
+    MFA implementations such as Prince and FactoMineR. With equal sample
+    masses ``1 / n_samples``, this converts scikit-learn's sample-covariance
+    eigenvalues from ``s^2 / (n - 1)`` to ``s^2 / n``.
+
     Args:
         table (pd.DataFrame): Feature table with samples as rows and features as
             columns.
@@ -65,8 +71,13 @@ def pca(
         pca.components_.T, index=table.columns, columns=samples.columns
     )
 
-    # Eigenvalues
-    eigvals = pd.Series(pca.explained_variance_, index=samples.columns)
+    # Eigenvalues use the weighted-inertia convention with equal sample masses
+    # 1 / n_samples, matching Prince/FactoMineR-style factor analysis.
+    n_samples = table.shape[0]
+    eigvals = pd.Series(
+        pca.explained_variance_ * (n_samples - 1) / n_samples,
+        index=samples.columns,
+    )
 
     # Explained variance ratio
     proportion_explained = pd.Series(

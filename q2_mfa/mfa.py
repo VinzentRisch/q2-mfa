@@ -46,11 +46,10 @@ def _compute_partial_sample_coordinates(group_results, global_ordination):
     #   S_g = G * (Z_g Z_g^T) * P
     # where G is the number of groups and P is the global projection matrix.
     #
-    # In the current PCA implementation, the returned sample scores are the
-    # sklearn scores T = U Σ and the reported eigenvalues are λ = Σ² / (n - 1).
-    # Rewriting K P = T with K = X X^T gives the projection matrix in this
-    # convention as P = T Σ⁻² = T / ((n - 1) * λ).
-    projection = global_scores.divide((n_samples - 1) * eigvals, axis=1)
+    # The PCA action reports weighted-inertia eigenvalues λ = Σ² / n. Rewriting
+    # K P = T with K = X X^T and T = UΣ gives the projection matrix as
+    # P = T Σ⁻² = T / (n * λ).
+    projection = global_scores.divide(n_samples * eigvals, axis=1)
     partial_scores = []
 
     for group_result in group_results:

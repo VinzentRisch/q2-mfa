@@ -19,7 +19,12 @@ from skbio import OrdinationResults
 from q2_mfa.types import MFAResultsDirFmt
 
 _TEMPLATE_FILES = ("index.html",)
-_STATIC_ASSET_FILES = ("style.css", "app.js")
+_STATIC_ASSET_FILES = (
+    "style.css",
+    "app.js",
+    "plotly-basic-2.35.2.min.js",
+    "plotly-basic-2.35.2.min.js.LICENSE.txt",
+)
 
 
 def mfa_visualizer(

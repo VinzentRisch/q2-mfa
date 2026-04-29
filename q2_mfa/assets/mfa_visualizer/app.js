@@ -546,7 +546,7 @@ function buildFeatureCorrelationTraces() {
     });
 
     traces.push({
-      type: 'scattergl',
+      type: 'scatter',
       mode: 'markers',
       name: group,
       legendgroup: `feature-correlations:${group}`,
@@ -705,7 +705,7 @@ function buildPartialConnectorTrace(
   });
 
   return {
-    type: 'scattergl',
+    type: 'scatter',
     mode: 'lines',
     name: `${group} connectors`,
     legendgroup,
@@ -722,7 +722,7 @@ function buildPartialConnectorTrace(
 
 function buildPartialPointTrace(groupEntries, color, group, legendgroup, showlegend) {
   return {
-    type: 'scattergl',
+    type: 'scatter',
     mode: 'markers',
     name: `${group} partial`,
     legendgroup,

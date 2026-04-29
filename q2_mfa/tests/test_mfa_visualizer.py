@@ -59,9 +59,18 @@ class TestMFAVisualizer(TestPluginBase):
                 "index.html",
                 "style.css",
                 "app.js",
+                "plotly-basic-2.35.2.min.js",
+                "plotly-basic-2.35.2.min.js.LICENSE.txt",
                 "data.js",
             ):
                 self.assertTrue((Path(output_dir) / filename).exists())
+
+            index_html = (Path(output_dir) / "index.html").read_text(encoding="utf-8")
+            self.assertIn(
+                '<script src="plotly-basic-2.35.2.min.js"></script>',
+                index_html,
+            )
+            self.assertNotIn("https://cdn.plot.ly", index_html)
 
             payload = self._load_payload(output_dir)
 

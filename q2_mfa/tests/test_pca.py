@@ -17,11 +17,9 @@ from q2_mfa.pca import pca
 class TestPCA(TestPluginBase):
     package = "q2_mfa.tests"
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        self = cls()
-        cls.table = pd.read_csv(
+    def setUp(self):
+        super().setUp()
+        self.table = pd.read_csv(
             self.get_data_path("random_data.txt"), sep="\t", index_col=0
         )
 

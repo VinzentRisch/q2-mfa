@@ -27,8 +27,11 @@ class TestPCA(TestPluginBase):
         n_components = 3
         ordn = pca(
             self.table,
+            rescale_with_mean=True,
+            rescale_with_std=False,
             n_components=n_components,
             engine="scipy",
+            random_state=None,
         )
         prince_result = prince.PCA(
             rescale_with_mean=True,

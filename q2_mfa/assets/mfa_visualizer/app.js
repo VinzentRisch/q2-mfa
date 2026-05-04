@@ -373,6 +373,7 @@ function renderPlot() {
   renderGroupPlot();
   renderPartialAxesPlot();
   renderVariancePlot();
+  renderTopFeaturesTable();
   updateStatus(filteredSamples);
 }
 
@@ -484,29 +485,7 @@ function buildFeatureCorrelationTraces() {
     return [];
   }
 
-  const visibleFeatures = payload.feature_correlations
-    .map((feature) => ({
-      ...feature,
-      x: feature.coords[state.xDimension],
-      y: feature.coords[state.yDimension],
-    }))
-    .filter((feature) => feature.x !== null && feature.y !== null);
-
-  if (!visibleFeatures.length) {
-    return [];
-  }
-
-  // Rank by correlation magnitude in the currently displayed 2D plane so the
-  // overlay surfaces the variables best represented in the exact view the user
-  // is inspecting, rather than overemphasizing features strong on only one axis.
-  const rankedFeatures = visibleFeatures
-    .map((feature) => ({
-      ...feature,
-      rankingScore: Math.hypot(feature.x, feature.y),
-    }))
-    .sort((a, b) => b.rankingScore - a.rankingScore)
-    .slice(0, state.topFeatureCount);
-
+  const rankedFeatures = getRankedFeatureCorrelations(state.topFeatureCount);
   if (!rankedFeatures.length) {
     return [];
   }
@@ -582,6 +561,85 @@ function buildFeatureCorrelationTraces() {
   }
 
   return traces;
+}
+
+function getRankedFeatureCorrelations(limit = null) {
+  if (!payload.feature_correlations?.length) {
+    return [];
+  }
+
+  // Rank by correlation magnitude in the currently displayed 2D plane so the
+  // table and overlay surface the variables best represented in the exact view
+  // the user is inspecting.
+  const rankedFeatures = payload.feature_correlations
+    .map((feature) => ({
+      ...feature,
+      x: feature.coords[state.xDimension],
+      y: feature.coords[state.yDimension],
+    }))
+    .filter((feature) => Number.isFinite(feature.x) && Number.isFinite(feature.y))
+    .map((feature) => ({
+      ...feature,
+      rankingScore: Math.hypot(feature.x, feature.y),
+    }))
+    .sort((a, b) =>
+      b.rankingScore - a.rankingScore ||
+      a.group.localeCompare(b.group) ||
+      a.feature_name.localeCompare(b.feature_name)
+    );
+
+  return limit === null ? rankedFeatures : rankedFeatures.slice(0, limit);
+}
+
+function renderTopFeaturesTable() {
+  const body = document.getElementById('top-features-table-body');
+  const empty = document.getElementById('top-features-empty');
+  if (!body || !empty) {
+    return;
+  }
+
+  const xHeading = document.getElementById('feature-table-x-heading');
+  const yHeading = document.getElementById('feature-table-y-heading');
+  if (xHeading) {
+    xHeading.textContent = dimensionsByKey[state.xDimension].label;
+  }
+  if (yHeading) {
+    yHeading.textContent = dimensionsByKey[state.yDimension].label;
+  }
+
+  body.replaceChildren();
+  const features = getRankedFeatureCorrelations();
+  empty.textContent = features.length ? '' : 'Feature correlation values are not available.';
+
+  const fragment = document.createDocumentFragment();
+  features.forEach((feature, index) => {
+    const row = document.createElement('tr');
+    row.appendChild(buildFeatureTableCell(index + 1, 'feature-table-rank'));
+    row.appendChild(buildFeatureNameCell(feature));
+    row.appendChild(buildFeatureTableCell(feature.group));
+    row.appendChild(buildFeatureTableCell(formatValue(feature.x), 'feature-table-number'));
+    row.appendChild(buildFeatureTableCell(formatValue(feature.y), 'feature-table-number'));
+    row.appendChild(
+      buildFeatureTableCell(formatValue(feature.rankingScore), 'feature-table-number')
+    );
+    fragment.appendChild(row);
+  });
+  body.appendChild(fragment);
+}
+
+function buildFeatureNameCell(feature) {
+  const cell = buildFeatureTableCell(feature.feature_name);
+  cell.title = feature.feature_id;
+  return cell;
+}
+
+function buildFeatureTableCell(value, className) {
+  const cell = document.createElement('td');
+  if (className) {
+    cell.className = className;
+  }
+  cell.textContent = value;
+  return cell;
 }
 
 function buildPartialOverlayTraces(samples, colorColumn) {
@@ -1455,6 +1513,9 @@ function buildGroupLayout(hasGroups) {
 
 function updateGroupSummary(groups) {
   const target = document.getElementById('group-summary-text');
+  if (!target) {
+    return;
+  }
   if (!groups.length) {
     target.textContent = '';
     return;
@@ -1704,6 +1765,9 @@ function buildPartialAxesLayout(hasPartialAxes) {
 
 function updatePartialAxesSummary(partialAxes) {
   const target = document.getElementById('partial-axes-summary');
+  if (!target) {
+    return;
+  }
   if (!partialAxes.length) {
     target.textContent = '';
     return;

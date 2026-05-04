@@ -70,6 +70,7 @@ class TestMFAVisualizer(TestPluginBase):
                 '<script src="plotly-basic-2.35.2.min.js"></script>',
                 index_html,
             )
+            self.assertIn('id="top-features-table-body"', index_html)
             self.assertNotIn("https://cdn.plot.ly", index_html)
 
             payload = self._load_payload(output_dir)

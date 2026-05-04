@@ -110,7 +110,6 @@
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
           <span class="plot-title-with-help">Group partial inertia <span class="help-tooltip" tabindex="0" role="button" aria-label="Group partial inertia help" data-tooltip="Shows how strongly each data group contributes to and is represented by the selected MFA axes. Groups farther from zero are more influential in the displayed dimensions.">?</span></span>
-          <span id="group-summary-text"></span>
         </div>
         <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
@@ -118,10 +117,31 @@
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
           <span class="plot-title-with-help">Partial axes <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial axes help" data-tooltip="Shows how each group-specific axis aligns with the global MFA axes. Vectors pointing in similar directions indicate agreement between groups; vectors near zero are weakly aligned with this view.">?</span></span>
-          <span id="partial-axes-summary"></span>
         </div>
         <div id="partial-axes-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
+    </section>
+
+    <section class="feature-table-shell" aria-label="Contributing features">
+      <div class="plot-status">
+        <span class="plot-title-with-help">Contributing features <span class="help-tooltip" tabindex="0" role="button" aria-label="Contributing features help" data-tooltip="Ranks all features by the magnitude of their correlations in the currently selected two-dimensional MFA plane. Larger values indicate features more strongly represented by the selected axes.">?</span></span>
+      </div>
+      <div class="feature-table-wrapper">
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Feature</th>
+              <th>Group</th>
+              <th id="feature-table-x-heading">X</th>
+              <th id="feature-table-y-heading">Y</th>
+              <th>Plane magnitude</th>
+            </tr>
+          </thead>
+          <tbody id="top-features-table-body"></tbody>
+        </table>
+      </div>
+      <div id="top-features-empty" class="feature-table-empty"></div>
     </section>
   </div>
 

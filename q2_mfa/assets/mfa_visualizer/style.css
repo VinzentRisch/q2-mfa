@@ -164,7 +164,8 @@ h1 {
 }
 
 .control-panel,
-.plot-shell {
+.plot-shell,
+.feature-table-shell {
   border: 1px solid var(--panel-border);
   border-radius: 24px;
   background: var(--panel-bg);
@@ -431,6 +432,67 @@ input[type="number"] {
 #partial-axes-plot {
   min-height: 0;
   aspect-ratio: 1 / 1;
+}
+
+.feature-table-shell {
+  margin-top: 16px;
+  padding: 13px;
+}
+
+.feature-table-wrapper {
+  height: 640px;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+}
+
+.feature-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.feature-table th,
+.feature-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--panel-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.feature-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-bg);
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feature-table tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.feature-table-rank,
+.feature-table-number {
+  font-family: "IBM Plex Mono", monospace;
+  white-space: nowrap;
+}
+
+.feature-table-number {
+  text-align: right;
+}
+
+.feature-table-empty {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  padding: 10px 0 2px;
 }
 
 .js-plotly-plot .plotly .modebar {

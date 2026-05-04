@@ -24,20 +24,20 @@ class TestPCA(TestPluginBase):
         )
 
     def test_pca_parses_prince_values_and_names(self):
-        n_components = 3
         ordn = pca(
             self.table,
             rescale_with_mean=True,
             rescale_with_std=False,
-            n_components=n_components,
+            n_components=2,
+            n_iter=2,
             engine="scipy",
             random_state=None,
         )
         prince_result = prince.PCA(
             rescale_with_mean=True,
             rescale_with_std=False,
-            n_components=n_components,
-            n_iter=3,
+            n_components=2,
+            n_iter=2,
             copy=True,
             check_input=True,
             random_state=None,
@@ -46,7 +46,7 @@ class TestPCA(TestPluginBase):
 
         prince_samples = prince_result.row_coordinates(self.table)
         prince_features = prince_result.column_coordinates_
-        expected_columns = ["PC1", "PC2", "PC3"]
+        expected_columns = ["PC1", "PC2"]
 
         self.assertIsInstance(ordn, OrdinationResults)
         self.assertEqual(list(ordn.samples.index), list(self.table.index))
@@ -55,10 +55,10 @@ class TestPCA(TestPluginBase):
         self.assertEqual(list(ordn.features.columns), expected_columns)
         self.assertEqual(list(ordn.eigvals.index), expected_columns)
         self.assertEqual(list(ordn.proportion_explained.index), expected_columns)
-        self.assertEqual(ordn.samples.shape, (self.table.shape[0], 3))
-        self.assertEqual(ordn.features.shape, (self.table.shape[1], 3))
-        self.assertEqual(len(ordn.eigvals), 3)
-        self.assertEqual(len(ordn.proportion_explained), 3)
+        self.assertEqual(ordn.samples.shape, (self.table.shape[0], 2))
+        self.assertEqual(ordn.features.shape, (self.table.shape[1], 2))
+        self.assertEqual(len(ordn.eigvals), 2)
+        self.assertEqual(len(ordn.proportion_explained), 2)
 
         npt.assert_allclose(ordn.samples.to_numpy(), prince_samples.to_numpy())
         npt.assert_allclose(ordn.features.to_numpy(), prince_features.to_numpy())

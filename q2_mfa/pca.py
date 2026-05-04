@@ -8,83 +8,71 @@
 import secrets
 
 import pandas as pd
+import prince
 import skbio
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
-from sklearn.decomposition import PCA
 
 
 def pca(
     table: pd.DataFrame,
-    n_components: int | None = None,
-    svd_solver: str = "full",
+    rescale_with_mean: bool = True,
+    rescale_with_std: bool = False,
+    n_components: int = 2,
+    n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
+    engine: str = "sklearn",
 ) -> skbio.OrdinationResults:
     """
-    Perform principal component analysis with sklearn and return ordination results.
-
-    The SVD, sample scores, and feature axes are computed with scikit-learn,
-    but eigenvalues are reported using the weighted-inertia convention used by
-    MFA implementations such as Prince and FactoMineR. With equal sample
-    masses ``1 / n_samples``, this converts scikit-learn's sample-covariance
-    eigenvalues from ``s^2 / (n - 1)`` to ``s^2 / n``.
+    Perform principal component analysis with prince and return ordination results.
 
     Args:
         table (pd.DataFrame): Feature table with samples as rows and features as
             columns.
-        n_components (int | None): Number of components to keep, or ``None`` to
-            keep all components.
-        svd_solver (str): Solver used by sklearn PCA.
+        rescale_with_mean (bool): Whether to subtract each column's mean before
+            performing SVD.
+        rescale_with_std (bool): Whether to standardize each column before
+            performing SVD.
+        n_components (int): Number of principal components to compute.
+        n_iter (int): Number of iterations used for computing the SVD.
         random_state (CaptureHolder[int] | int | None): Random seed used by
-            stochastic solvers. If not provided, a seed is generated and
-            captured by Rachis.
+            stochastic SVD engines. If not provided for the sklearn engine, a
+            seed is generated and captured in provenance.
+        engine (str): SVD engine used by prince.
 
     Returns:
         skbio.OrdinationResults: PCA results containing sample scores, feature
-            loadings, eigenvalues, and proportion of variance explained.
+            coordinates, eigenvalues, and percentage of variance explained.
     """
-    if svd_solver == "randomized":
+    if engine == "sklearn":
         random_state = CaptureHolder.get_or_set(
             random_state, lambda: secrets.randbits(32)
         )
     else:
         random_state = CaptureHolder.get_or_set(random_state, lambda: None)
 
-    pca = PCA(
+    pca = prince.PCA(
+        rescale_with_mean=rescale_with_mean,
+        rescale_with_std=rescale_with_std,
         n_components=n_components,
-        svd_solver=svd_solver,
+        n_iter=n_iter,
+        copy=True,
+        check_input=True,
         random_state=random_state,
-    )
-    table_pca = pca.fit_transform(table)
+        engine=engine,
+    ).fit(table)
 
-    # Build ordination pieces
+    axis_names = [f"PC{i + 1}" for i in range(pca.n_components)]
 
-    # Sample scores (Site)
-    samples = pd.DataFrame(
-        table_pca,
-        index=table.index,
-        columns=[f"PC{i + 1}" for i in range(pca.n_components_)],
-    )
+    samples = pca.row_coordinates(table).copy()
+    samples.columns = axis_names
 
-    # Feature loadings (Species)
-    features = pd.DataFrame(
-        pca.components_.T, index=table.columns, columns=samples.columns
-    )
+    features = pca.column_coordinates_.copy()
+    features.columns = axis_names
 
-    # Eigenvalues use the weighted-inertia convention with equal sample masses
-    # 1 / n_samples, matching Prince/FactoMineR-style factor analysis.
-    n_samples = table.shape[0]
-    eigvals = pd.Series(
-        pca.explained_variance_ * (n_samples - 1) / n_samples,
-        index=samples.columns,
-    )
+    eigvals = pd.Series(pca.eigenvalues_, index=axis_names)
+    proportion_explained = pd.Series(pca.percentage_of_variance_, index=axis_names)
 
-    # Explained variance ratio
-    proportion_explained = pd.Series(
-        pca.explained_variance_ratio_, index=samples.columns
-    )
-
-    # Create OrdinationResults object
     ordination = OrdinationResults(
         short_method_name="PCA",
         long_method_name="Principal Component Analysis",

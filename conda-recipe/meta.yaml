@@ -29,10 +29,10 @@ requirements:
 test:
   requires:
     - parameterized
-  imports:
-    - q2_mfa
-    - qiime2.plugins.mfa
+    - pip
   commands:
+    - python -m pip install prince
+    - python -c "import q2_mfa; import qiime2.plugins.mfa"
     - pytest --pyargs q2_mfa
 
 about:

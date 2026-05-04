@@ -7,7 +7,7 @@
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from q2_types.ordination import PCoAResults
-from rachis.core.type import Choices, Float, Int, Properties, Range, Str
+from rachis.core.type import Bool, Choices, Float, Int, Properties, Range, Str
 from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -74,36 +74,49 @@ plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
     parameters={
+        "rescale_with_mean": Bool,
+        "rescale_with_std": Bool,
         "n_components": Int % Range(1, None),
-        "svd_solver": Str % Choices(["full", "randomized"]),
+        "n_iter": Int % Range(0, None),
         "random_state": Int,
+        "engine": Str % Choices(["sklearn", "scipy"]),
     },
     outputs=[("pca_results", PCoAResults % Properties("pca"))],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
-        "n_components": (
-            "Number of components to keep. If n_components is not set all "
-            "components are kept: n_components == min(n_samples, n_features)."
+        "n_components": "Number of principal components to compute.",
+        "rescale_with_mean": (
+            "Whether to center each feature by subtracting its mean before "
+            "performing SVD."
         ),
-        "svd_solver": (
-            "SVD solver to use. If full: run exact full SVD using the standard "
-            "LAPACK solver and select the components by postprocessing. If "
-            "randomized: run approximate truncated SVD by the method of Halko "
-            "et al."
+        "rescale_with_std": (
+            "Whether to standardize each feature to unit variance before "
+            "performing SVD."
+        ),
+        "n_iter": (
+            "Number of iterations used by the 'sklearn' randomized SVD "
+            "engine. This parameter is ignored by the 'scipy' engine."
+        ),
+        "engine": (
+            "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy' "
+            "uses SciPy SVD."
         ),
         "random_state": (
-            "Random seed. Used by the randomized solver. Pass an int for "
-            "reproducible results across multiple function calls."
+            "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+            "reproducible results across multiple function calls. This "
+            "parameter is ignored by the 'scipy' engine."
         ),
     },
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
-        "Principal component analysis implementation with scikit-learn. For more "
-        "information about the parameters consult the scikit-learn documentation."
+        "Principal component analysis implementation with the 'prince' package. "
+        "The output is an ordination result: eigenvalues correspond to prince "
+        "eigenvalues, sites correspond to sample scores, species correspond to "
+        "feature coordinates, and proportion explained corresponds to prince "
+        "percentage of variance."
     ),
     citations=[
-        citations["hotelling1933analysis"],
-        citations["pedregosa2011scikit"],
+        citations["Halford_Prince"],
     ],
 )

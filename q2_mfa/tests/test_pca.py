@@ -46,15 +46,13 @@ class TestPCA(TestPluginBase):
 
         prince_samples = prince_result.row_coordinates(self.table)
         prince_features = prince_result.column_coordinates_
-        expected_columns = ["PC1", "PC2"]
-
         self.assertIsInstance(ordn, OrdinationResults)
         self.assertEqual(list(ordn.samples.index), list(self.table.index))
         self.assertEqual(list(ordn.features.index), list(self.table.columns))
-        self.assertEqual(list(ordn.samples.columns), expected_columns)
-        self.assertEqual(list(ordn.features.columns), expected_columns)
-        self.assertEqual(list(ordn.eigvals.index), expected_columns)
-        self.assertEqual(list(ordn.proportion_explained.index), expected_columns)
+        self.assertEqual(list(ordn.samples.columns), list(prince_samples.columns))
+        self.assertEqual(list(ordn.features.columns), list(prince_features.columns))
+        self.assertEqual(list(ordn.eigvals.index), [0, 1])
+        self.assertEqual(list(ordn.proportion_explained.index), [0, 1])
         self.assertEqual(ordn.samples.shape, (self.table.shape[0], 2))
         self.assertEqual(ordn.features.shape, (self.table.shape[1], 2))
         self.assertEqual(len(ordn.eigvals), 2)
@@ -79,5 +77,5 @@ class TestPCA(TestPluginBase):
         self.assertIsInstance(ordn, OrdinationResults)
         self.assertEqual(list(ordn.samples.index), list(self.table.index))
         self.assertEqual(list(ordn.features.index), list(self.table.columns))
-        self.assertEqual(list(ordn.samples.columns), ["PC1", "PC2"])
-        self.assertEqual(list(ordn.features.columns), ["PC1", "PC2"])
+        self.assertEqual(list(ordn.samples.columns), [0, 1])
+        self.assertEqual(list(ordn.features.columns), [0, 1])

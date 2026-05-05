@@ -5,289 +5,19 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import tempfile
+import secrets
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import prince
+from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 
-from q2_mfa.types import MFAResults, MFAResultsDirFmt
+from q2_mfa.types import MFAResultsDirFmt
 
 
-def _compute_partial_sample_coordinates(group_results, global_ordination):
-    """
-    Compute MFA partial sample coordinates for each group and dimension.
-
-    This returns the long-format table written to ``partial-scores.tsv`` with
-    one row per sample, group, and retained global dimension.
-
-    The implementation follows the partial factor score construction described
-    in Abdi and Valentin (2007): for each group ``g``, the partial scores are
-    computed from the group-specific cross-product matrix projected into the
-    global MFA space,
-
-    ``S_g = G * (Z_g Z_g^T) * P``
-
-    where ``G`` is the number of groups and ``P`` is the global projection
-    matrix. In the current scikit-learn PCA convention, the global projection
-    matrix is reconstructed from the global sample scores and eigenvalues.
-    This formulation was validated against ``FactoMineR::MFA`` up to the
-    constant sample-score scaling difference between scikit-learn and
-    FactoMineR.
-    """
-    n_groups = len(group_results)
-    global_scores = global_ordination.samples
-    eigvals = global_ordination.eigvals
-    n_samples = len(global_scores.index)
-
-    # Abdi (2007) defines the partial factor scores as
-    #   S_g = G * (Z_g Z_g^T) * P
-    # where G is the number of groups and P is the global projection matrix.
-    #
-    # The PCA action reports weighted-inertia eigenvalues λ = Σ² / n. Rewriting
-    # K P = T with K = X X^T and T = UΣ gives the projection matrix as
-    # P = T Σ⁻² = T / (n * λ).
-    projection = global_scores.divide(n_samples * eigvals, axis=1)
-    partial_scores = []
-
-    for group_result in group_results:
-        weighted_table = group_result["weighted_table"]
-        centered_group = weighted_table - weighted_table.mean(axis=0)
-        group_cross_product = centered_group @ centered_group.T
-        partial = pd.DataFrame(
-            n_groups * (group_cross_product.to_numpy() @ projection.to_numpy()),
-            index=group_cross_product.index,
-            columns=range(1, projection.shape[1] + 1),
-        )
-        partial.index.name = "sample_id"
-        partial = partial.reset_index().melt(
-            id_vars="sample_id",
-            var_name="dim",
-            value_name="coordinate",
-        )
-        partial.insert(1, "group", group_result["group"])
-        partial_scores.append(partial)
-
-    return pd.concat(partial_scores, ignore_index=True)
-
-
-def _compute_partial_axes_summary(group_results, global_ordination):
-    """
-    Compute the MFA partial-axes summary table.
-
-    This returns the long-format table written to ``partial-axes.tsv`` with
-    one row per group-specific axis and global MFA axis pair.
-
-    The value reported here is the correlation between each group's local PCA
-    sample scores and the global MFA sample scores. This matches the partial
-    axes interpretation described in the Abdi MFA material, where block-specific
-    axes are compared to the global axes through their alignment, and it also
-    matches the ``FactoMineR::MFA`` partial-axes correlation output for the
-    centered quantitative-group setup used by this pipeline.
-    """
-    global_scores = global_ordination.samples
-    global_dims = list(global_scores.columns)
-    rows = []
-
-    for group_result in group_results:
-        group_scores = group_result["ordination"].samples
-        for partial_axis_idx, partial_axis in enumerate(group_scores.columns, start=1):
-            for global_dim_idx, global_dim in enumerate(global_dims, start=1):
-                value = group_scores[partial_axis].corr(global_scores[global_dim])
-                rows.append(
-                    {
-                        "group": group_result["group"],
-                        "partial_axis": partial_axis_idx,
-                        "global_dim": global_dim_idx,
-                        "value": 0.0 if pd.isna(value) else float(value),
-                    }
-                )
-
-    return pd.DataFrame(rows)
-
-
-def _compute_group_summary(group_results, global_ordination):
-    """
-    Compute the MFA group summary table.
-
-    This returns the long-format table written to ``group-summary.tsv`` with
-    one row per group and retained dimension. The table includes group
-    coordinates, contributions, and ``cos2``, plus the block weighting terms
-    retained during MFA construction.
-
-    The implementation follows the active-group formulas used by
-    ``FactoMineR::MFA``:
-
-    - group contribution on a dimension is the sum of the feature
-      contributions from that group on that dimension
-    - group coordinate is ``contribution * global_eigenvalue``
-    - group ``cos2`` is ``coordinate^2 / dist2_group``
-    - ``dist2_group`` is the sum of squared normalized eigenvalues from the
-      group's separate analysis
-
-    This is intentionally based on the FactoMineR reference implementation,
-    because these group-level summaries are not spelled out in the Abdi paper
-    as directly as the partial individual scores are.
-    """
-    eigvals = global_ordination.eigvals
-    feature_contrib = global_ordination.features.pow(2).multiply(eigvals, axis=1)
-    total_by_dim = feature_contrib.sum(axis=0)
-    rows = []
-
-    for group_result in group_results:
-        group = group_result["group"]
-        weighted_columns = group_result["weighted_table"].columns
-        group_contrib = feature_contrib.loc[weighted_columns].sum(axis=0) / total_by_dim
-        group_dist2 = float(
-            (group_result["ordination"].eigvals / group_result["first_eigenvalue"])
-            .pow(2)
-            .sum()
-        )
-
-        for dim_idx, dim_name in enumerate(group_contrib.index, start=1):
-            contribution = float(group_contrib[dim_name])
-            coordinate = float(contribution * eigvals[dim_name])
-            rows.append(
-                {
-                    "group": group,
-                    "dim": dim_idx,
-                    "coordinate": coordinate,
-                    "contribution": contribution,
-                    "cos2": float((coordinate**2) / group_dist2),
-                    "first_eigenvalue": float(group_result["first_eigenvalue"]),
-                    "weight": float(group_result["weight"]),
-                }
-            )
-
-    return pd.DataFrame(rows)
-
-
-def _compute_feature_correlations(weighted_tables, global_ordination):
-    """
-    Compute wide feature-to-component correlations for the MFA global solution.
-
-    This returns the wide-format table written to ``feature-correlations.tsv``
-    with one row per feature and one dimension column per retained global MFA
-    component.
-
-    The implementation follows the same quantity exposed by
-    ``prince.MFA.column_correlations``: for each feature and retained
-    component, it reports the Pearson correlation between the variable and the
-    global component scores. In Prince this is the inherited PCA
-    ``column_correlations`` quantity and is used for variable correlation
-    circles. The same result can be obtained directly here by correlating the
-    MFA analysis matrix columns with the global sample scores.
-    """
-    weighted_table = pd.concat(weighted_tables, axis=1)
-    global_scores = global_ordination.samples
-
-    centered_features = weighted_table - weighted_table.mean(axis=0)
-    centered_scores = global_scores - global_scores.mean(axis=0)
-
-    feature_std = centered_features.std(axis=0, ddof=1)
-    score_std = centered_scores.std(axis=0, ddof=1)
-
-    feature_std = feature_std.replace(0, np.nan)
-    score_std = score_std.replace(0, np.nan)
-
-    standardized_features = centered_features.divide(feature_std, axis=1)
-    standardized_scores = centered_scores.divide(score_std, axis=1)
-
-    correlation_values = (
-        standardized_features.to_numpy().T @ standardized_scores.to_numpy()
-    ) / (len(weighted_table.index) - 1)
-    correlations = pd.DataFrame(
-        correlation_values,
-        index=weighted_table.columns,
-        columns=range(1, global_scores.shape[1] + 1),
-    )
-    correlations.index.name = "feature_id"
-    correlations = correlations.reset_index()
-    correlations["group"] = correlations["feature_id"].str.split(":", n=1).str[0]
-    correlations["feature_name"] = correlations["feature_id"].str.split(":", n=1).str[1]
-
-    ordered_columns = [
-        "feature_id",
-        "group",
-        "feature_name",
-        *range(1, global_scores.shape[1] + 1),
-    ]
-    return correlations[ordered_columns]
-
-
-def _create_mfa_results_artifact(
-    ctx,
-    global_ordination,
-    partial_scores,
-    partial_axes,
-    group_summary,
-    feature_correlations,
-):
-    """
-    Build the composite ``MFAResults`` artifact from the computed MFA outputs.
-
-    This helper writes the existing MFA directory-format payload:
-
-    - ``ordination.txt``
-    - ``partial-scores.tsv``
-    - ``partial-axes.tsv``
-    - ``group-summary.tsv``
-    - ``feature-correlations.tsv``
-
-    It does not implement MFA mathematics itself; it is only responsible for
-    packaging the already computed outputs into the registered
-    ``MFAResultsDirFmt`` so the pipeline can return the plugin's composite
-    ``MFAResults`` semantic type.
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_dir = Path(temp_dir)
-        global_ordination.write(str(temp_dir / "ordination.txt"))
-        partial_scores.to_csv(temp_dir / "partial-scores.tsv", sep="\t", index=False)
-        partial_axes.to_csv(temp_dir / "partial-axes.tsv", sep="\t", index=False)
-        group_summary.to_csv(temp_dir / "group-summary.tsv", sep="\t", index=False)
-        feature_correlations.to_csv(
-            temp_dir / "feature-correlations.tsv", sep="\t", index=False
-        )
-        return ctx.make_artifact(MFAResults, temp_dir, view_type=MFAResultsDirFmt)
-
-
-def mfa(
-    ctx,
-    feature_tables,
-    n_components=None,
-    svd_solver="full",
-    random_state=None,
-):
-    """
-    Run Multiple Factor Analysis on a collection of feature tables.
-
-    Each input table is analyzed with a PCA using the user-specified
-    ``n_components``, ``svd_solver``, and ``random_state`` to obtain the first
-    eigenvalue used for classical MFA block weighting. The weighted tables are
-    then concatenated and a global PCA is performed on the combined matrix
-    using the same PCA parameters.
-
-    Parameters:
-        ctx : qiime2.sdk.Context
-            Plugin execution context used to access registered actions.
-        feature_tables : Collection[FeatureTable[Unconstrained]]
-            Collection of feature tables keyed by group name.
-        n_components : int | None
-            Number of components to keep for both the per-group and global
-            PCAs, or ``None`` to keep all components.
-        svd_solver : str
-            SVD solver to use for both the per-group and global PCAs.
-        random_state : int | None
-            Random seed forwarded to PCA when using stochastic solvers.
-
-    Returns:
-        qiime2.Artifact
-            An artifact containing the global MFA ordination result together
-            with MFA-specific support tables.
-    """
-    pca_action = ctx.get_action("mfa", "pca")
+def _build_prince_input(feature_tables):
     feature_tables = getattr(feature_tables, "collection", feature_tables)
 
     if len(feature_tables) < 2:
@@ -295,11 +25,12 @@ def mfa(
 
     tables = {}
     consensus_samples = None
+    for group_name, table in feature_tables.items():
+        if ":" in group_name:
+            raise ValueError("MFA group names cannot contain ':'.")
 
-    # Find the shared sample IDs across all groups before any PCA is computed.
-    for group_name, table_artifact in feature_tables.items():
-        table = table_artifact.view(pd.DataFrame)
-        tables[group_name] = (table_artifact, table)
+        table = table.view(pd.DataFrame)
+        tables[group_name] = table
 
         if consensus_samples is None:
             consensus_samples = table.index
@@ -309,11 +40,9 @@ def mfa(
     if consensus_samples.empty:
         raise ValueError("Feature tables do not share any sample IDs.")
 
-    weighted_tables = []
-    group_results = []
-
-    # Subset every table to the consensus samples and warn about dropped rows.
-    for group_name, (table_artifact, table) in tables.items():
+    prefixed_tables = []
+    groups = {}
+    for group_name, table in tables.items():
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
@@ -322,68 +51,217 @@ def mfa(
                 UserWarning,
             )
 
-        table = table.loc[consensus_samples]
+        table = table.loc[consensus_samples].copy()
+        table.columns = [f"{group_name}:{feature}" for feature in table.columns]
+        prefixed_tables.append(table)
+        groups[group_name] = list(table.columns)
 
-        table_artifact = ctx.make_artifact("FeatureTable[Unconstrained]", table)
-        (group_pca,) = pca_action(
-            table=table_artifact,
-            n_components=n_components,
-            svd_solver=svd_solver,
-            random_state=random_state,
-        )
-        group_ordination = group_pca.view(OrdinationResults)
-        first_eigenvalue = float(group_ordination.eigvals.iloc[0])
+    return pd.concat(prefixed_tables, axis=1), groups
 
+
+def _as_prince_wide_table(table):
+    table = table.copy()
+    table.index.name = "id"
+    return table.reset_index()
+
+
+def _flatten_partial_sample_coordinates(partial_coordinates):
+    partial_coordinates = partial_coordinates.copy()
+    partial_coordinates.columns = [
+        f"{group}:{component}" for group, component in partial_coordinates.columns
+    ]
+    return _as_prince_wide_table(partial_coordinates)
+
+
+def _compute_partial_axes_summary(mfa_result, table):
+    """
+    Compute correlations between each group component and each global component.
+
+    Prince exposes the per-group PCA models used internally during MFA, but it
+    does not expose this partial-axis summary as a fitted table.
+    """
+    global_scores = mfa_result.row_coordinates(table)
+    rows = []
+
+    for group, columns in mfa_result.groups_.items():
+        group_scores = mfa_result[group].row_coordinates(table.loc[:, columns])
+        for partial_component in group_scores.columns:
+            for global_component in global_scores.columns:
+                correlation = group_scores[partial_component].corr(
+                    global_scores[global_component]
+                )
+                rows.append(
+                    {
+                        "group": group,
+                        "partial_component": partial_component,
+                        "global_component": global_component,
+                        "correlation": (
+                            0.0 if pd.isna(correlation) else float(correlation)
+                        ),
+                    }
+                )
+
+    return pd.DataFrame(rows)
+
+
+def _compute_group_summary(mfa_result):
+    """
+    Compute group-level coordinates, contributions, and cos2 from Prince output.
+
+    Prince exposes feature contributions and the internal per-group PCA models,
+    but it does not expose this group-level summary as a fitted table.
+    """
+    eigenvalues = pd.Series(mfa_result.eigenvalues_)
+    rows = []
+
+    for group, columns in mfa_result.groups_.items():
+        group_contribution = mfa_result.column_contributions_.loc[columns].sum(axis=0)
+        first_eigenvalue = float(mfa_result[group].eigenvalues_[0])
         if first_eigenvalue <= 0:
             raise ValueError(
-                f"Feature table '{group_name}' has a non-positive first eigenvalue."
+                f"Feature table '{group}' has a non-positive first eigenvalue."
             )
 
-        # Scale each group by the square root of its first eigenvalue.
-        weight = first_eigenvalue**-0.5
-        weighted_group = table * weight
-        weighted_group.columns = [
-            f"{group_name}:{feature}" for feature in weighted_group.columns
-        ]
-        weighted_tables.append(weighted_group)
-        group_results.append(
-            {
-                "group": group_name,
-                "first_eigenvalue": first_eigenvalue,
-                "weight": weight,
-                "ordination": group_ordination,
-                "weighted_table": weighted_group,
-            }
+        group_dist2 = float(
+            np.square(mfa_result[group].eigenvalues_ / first_eigenvalue).sum()
         )
+        for component in group_contribution.index:
+            contribution = float(group_contribution[component])
+            coordinate = float(contribution * eigenvalues[component])
+            rows.append(
+                {
+                    "group": group,
+                    "component": component,
+                    "coordinate": coordinate,
+                    "contribution": contribution,
+                    "cos2": float((coordinate**2) / group_dist2),
+                }
+            )
 
-    weighted_table_artifact = ctx.make_artifact(
-        "FeatureTable[Unconstrained]", pd.concat(weighted_tables, axis=1)
+    return pd.DataFrame(rows)
+
+
+def _to_ordination(mfa_result, table):
+    axis_names = [f"PC{i + 1}" for i in range(mfa_result.n_components)]
+
+    samples = mfa_result.row_coordinates(table).copy()
+    samples.columns = axis_names
+
+    features = mfa_result.column_coordinates_.copy()
+    features.columns = axis_names
+
+    eigvals = pd.Series(mfa_result.eigenvalues_, index=axis_names)
+    proportion_explained = pd.Series(
+        mfa_result.percentage_of_variance_, index=axis_names
     )
 
-    # Run the global ordination on the weighted multi-block feature table.
-    (global_pca,) = pca_action(
-        table=weighted_table_artifact,
+    return OrdinationResults(
+        short_method_name="MFA",
+        long_method_name="Multiple Factor Analysis",
+        eigvals=eigvals,
+        samples=samples,
+        features=features,
+        proportion_explained=proportion_explained,
+    )
+
+
+def _feature_cosine_similarities(mfa_result):
+    coordinates = mfa_result.column_coordinates_
+    squared_coordinates = coordinates.pow(2)
+    squared_distance = squared_coordinates.sum(axis=1).replace(0, np.nan)
+    return squared_coordinates.divide(squared_distance, axis=0).fillna(0.0)
+
+
+def _create_mfa_results(
+    ordination,
+    partial_sample_coordinates,
+    sample_cosine_similarities,
+    partial_axes,
+    group_summary,
+    feature_correlations,
+    feature_contributions,
+    feature_cosine_similarities,
+):
+    results = MFAResultsDirFmt()
+
+    ordination.write(str(results.path / "ordination.txt"))
+    partial_sample_coordinates.to_csv(
+        results.path / "partial-sample-coordinates.tsv", sep="\t", index=False
+    )
+    sample_cosine_similarities.to_csv(
+        results.path / "sample-cosine-similarities.tsv", sep="\t", index=False
+    )
+    partial_axes.to_csv(results.path / "partial-axes.tsv", sep="\t", index=False)
+    group_summary.to_csv(results.path / "group-summary.tsv", sep="\t", index=False)
+    feature_correlations.to_csv(
+        results.path / "feature-correlations.tsv", sep="\t", index=False
+    )
+    feature_contributions.to_csv(
+        results.path / "feature-contributions.tsv", sep="\t", index=False
+    )
+    feature_cosine_similarities.to_csv(
+        results.path / "feature-cosine-similarities.tsv", sep="\t", index=False
+    )
+
+    return results
+
+
+def mfa(
+    feature_tables: dict,
+    rescale_with_mean: bool = True,
+    rescale_with_std: bool = True,
+    n_components: int = 2,
+    n_iter: int = 3,
+    random_state: CaptureHolder[int] = None,
+    engine: str = "sklearn",
+) -> MFAResultsDirFmt:
+    """
+    Run Multiple Factor Analysis directly with prince.
+
+    Parameters mirror the PCA action where applicable and are forwarded to
+    ``prince.MFA``.
+    """
+    if engine == "sklearn":
+        random_state = CaptureHolder.get_or_set(
+            random_state, lambda: secrets.randbits(32)
+        )
+    else:
+        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
+
+    table, groups = _build_prince_input(feature_tables)
+    mfa_result = prince.MFA(
+        rescale_with_mean=rescale_with_mean,
+        rescale_with_std=rescale_with_std,
         n_components=n_components,
-        svd_solver=svd_solver,
+        n_iter=n_iter,
+        copy=True,
+        check_input=True,
         random_state=random_state,
+        engine=engine,
+    ).fit(table, groups=groups)
+
+    ordination = _to_ordination(mfa_result, table)
+    partial_sample_coordinates = _flatten_partial_sample_coordinates(
+        mfa_result.partial_row_coordinates(table)
+    )
+    sample_cosine_similarities = _as_prince_wide_table(
+        mfa_result.row_cosine_similarities(table)
+    )
+    partial_axes = _compute_partial_axes_summary(mfa_result, table)
+    group_summary = _compute_group_summary(mfa_result)
+    feature_correlations = _as_prince_wide_table(mfa_result.column_correlations)
+    feature_contributions = _as_prince_wide_table(mfa_result.column_contributions_)
+    feature_cosine_similarities = _as_prince_wide_table(
+        _feature_cosine_similarities(mfa_result)
     )
 
-    global_ordination = global_pca.view(OrdinationResults)
-    partial_scores = _compute_partial_sample_coordinates(
-        group_results, global_ordination
-    )
-    partial_axes = _compute_partial_axes_summary(group_results, global_ordination)
-    group_summary = _compute_group_summary(group_results, global_ordination)
-    feature_correlations = _compute_feature_correlations(
-        weighted_tables, global_ordination
-    )
-    mfa_results = _create_mfa_results_artifact(
-        ctx,
-        global_ordination,
-        partial_scores,
+    return _create_mfa_results(
+        ordination,
+        partial_sample_coordinates,
+        sample_cosine_similarities,
         partial_axes,
         group_summary,
         feature_correlations,
+        feature_contributions,
+        feature_cosine_similarities,
     )
-
-    return mfa_results

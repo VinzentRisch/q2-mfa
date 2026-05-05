@@ -158,7 +158,7 @@ plugin.methods.register_function(
     ],
 )
 
-plugin.pipelines.register_function(
+plugin.methods.register_function(
     function=mfa,
     inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
@@ -175,11 +175,11 @@ plugin.pipelines.register_function(
     name="Multiple Factor Analysis (MFA)",
     description=(
         "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
-        "table is treated as a separate group, and a global PCA is performed "
-        "on the concatenated and weighted groups."
+        "table is treated as a separate group, and the analysis is performed "
+        "directly with prince.MFA."
     ),
     citations=[
         citations["escofier1994multiple"],
-        citations["pedregosa2011scikit"],
+        citations["Halford_Prince"],
     ],
 )

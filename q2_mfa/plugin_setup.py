@@ -7,7 +7,16 @@
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from q2_types.ordination import PCoAResults
-from rachis.core.type import Choices, Collection, Float, Int, Properties, Range, Str
+from rachis.core.type import (
+    Bool,
+    Choices,
+    Collection,
+    Float,
+    Int,
+    Properties,
+    Range,
+    Str,
+)
 from rachis.plugin import Citations, Metadata, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -15,12 +24,11 @@ from q2_mfa._mfa_visualizer import mfa_visualizer
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
 from q2_mfa.types import (
-    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResults,
     MFAResultsDirFmt,
     PartialAxesFormat,
-    PartialScoresFormat,
+    PrinceWideTSVFormat,
 )
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -36,11 +44,10 @@ plugin = Plugin(
 )
 
 plugin.register_formats(
-    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
-    PartialScoresFormat,
+    PrinceWideTSVFormat,
 )
 plugin.register_semantic_types(MFAResults)
 plugin.register_artifact_class(
@@ -48,7 +55,7 @@ plugin.register_artifact_class(
     directory_format=MFAResultsDirFmt,
     description=(
         "Represents the global MFA ordination together with MFA-specific "
-        "partial scores, partial axes, group summary, and feature "
+        "Prince-style sample, feature, partial axes, group summary, and feature "
         "correlation tables."
     ),
 )
@@ -99,25 +106,35 @@ plugin.methods.register_function(
 )
 
 ordination_parameters = {
+    "rescale_with_mean": Bool,
+    "rescale_with_std": Bool,
     "n_components": Int % Range(1, None),
-    "svd_solver": Str % Choices(["full", "randomized"]),
+    "n_iter": Int % Range(0, None),
     "random_state": Int,
+    "engine": Str % Choices(["sklearn", "scipy"]),
 }
 
 ordination_parameter_descriptions = {
-    "n_components": (
-        "Number of components to keep. If n_components is not set all "
-        "components are kept: n_components == min(n_samples, n_features). "
+    "n_components": "Number of principal components to compute.",
+    "rescale_with_mean": (
+        "Whether to center each feature by subtracting its mean before "
+        "performing SVD. "
     ),
-    "svd_solver": (
-        "SVD solver to use. If full: run exact full SVD using the standard "
-        "LAPACK solver and select the components by postprocessing. If  "
-        "randomized: run approximate truncated SVD by the method of Halko"
-        " et al."
+    "rescale_with_std": (
+        "Whether to standardize each feature to unit variance before " "performing SVD."
+    ),
+    "n_iter": (
+        "Number of iterations used by the 'sklearn' randomized SVD "
+        "engine. This parameter is ignored by the 'scipy' engine.  "
+    ),
+    "engine": (
+        "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy'"
+        " uses SciPy SVD."
     ),
     "random_state": (
-        "Random seed. Used by the randomized solver. Pass an int for "
-        "reproducible results across multiple function calls."
+        "Random seedused by the 'sklearn' SVD engine. Pass an int for "
+        "reproducible results across multiple function calls.This "
+        "parameter is ignored by the 'scipy' engine."
     ),
 }
 
@@ -131,16 +148,18 @@ plugin.methods.register_function(
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
-        "Principal component analysis implementation with scikit-learn. For more "
-        "information about the parameters consult the scikit-learn documentation."
+        "Principal component analysis implementation with the 'prince' package. "
+        "The output is an ordination result: eigenvalues correspond to prince "
+        "eigenvalues, sites correspond to sample scores, species correspond to "
+        "feature coordinates, and proportion explained corresponds to prince "
+        "percentage of variance."
     ),
     citations=[
-        citations["hotelling1933analysis"],
-        citations["pedregosa2011scikit"],
+        citations["Halford_Prince"],
     ],
 )
 
-plugin.pipelines.register_function(
+plugin.methods.register_function(
     function=mfa,
     inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
@@ -157,12 +176,12 @@ plugin.pipelines.register_function(
     name="Multiple Factor Analysis (MFA)",
     description=(
         "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
-        "table is treated as a separate group, and a global PCA is performed "
-        "on the concatenated and weighted groups."
+        "table is treated as a separate group, and the analysis is performed "
+        "directly with prince.MFA."
     ),
     citations=[
         citations["escofier1994multiple"],
-        citations["pedregosa2011scikit"],
+        citations["Halford_Prince"],
     ],
 )
 

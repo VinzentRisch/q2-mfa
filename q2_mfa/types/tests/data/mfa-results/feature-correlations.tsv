@@ -1,4 +1,4 @@
-feature_id	group	feature_name	1	2
-Climate:temp_mean	Climate	temp_mean	0.81	-0.22
-Chemistry:glucose	Chemistry	glucose	0.74	0.31
-Fungi:yeast_a	Fungi	yeast_a	0.67	-0.58
+id	0	1
+Climate:temp_mean	0.81	-0.22
+Chemistry:glucose	0.74	0.31
+Fungi:yeast_a	0.67	-0.58

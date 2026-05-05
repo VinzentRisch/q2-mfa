@@ -29,7 +29,6 @@ def _build_prince_input(feature_tables):
         if ":" in group_name:
             raise ValueError("MFA group names cannot contain ':'.")
 
-        table = table.view(pd.DataFrame)
         tables[group_name] = table
 
         if consensus_samples is None:
@@ -207,7 +206,7 @@ def _create_mfa_results(
 
 
 def mfa(
-    feature_tables: dict,
+    feature_tables: pd.DataFrame,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
     n_components: int = 2,

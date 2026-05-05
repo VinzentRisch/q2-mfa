@@ -9,27 +9,26 @@ from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa.types import (
-    FeatureCorrelationsFormat,
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
-    PartialScoresFormat,
+    PrinceWideTSVFormat,
 )
 
 
 class TestMFAFormats(TestPluginBase):
     package = "q2_mfa.types.tests"
 
-    def test_partial_scores_format_ok(self):
-        fmt = PartialScoresFormat(
-            self.get_data_path("partial-scores.tsv"),
+    def test_prince_wide_tsv_format_ok(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide.tsv"),
             mode="r",
         )
         fmt.validate()
 
-    def test_partial_scores_format_error_header(self):
-        fmt = PartialScoresFormat(
-            self.get_data_path("partial-scores-broken-header.tsv"),
+    def test_prince_wide_tsv_format_error_header(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-broken-header.tsv"),
             mode="r",
         )
         with self.assertRaisesRegex(ValidationError, "Invalid header"):
@@ -60,21 +59,6 @@ class TestMFAFormats(TestPluginBase):
     def test_group_summary_format_error_header(self):
         fmt = GroupSummaryFormat(
             self.get_data_path("group-summary-broken-header.tsv"),
-            mode="r",
-        )
-        with self.assertRaisesRegex(ValidationError, "Invalid header"):
-            fmt.validate()
-
-    def test_feature_correlations_format_ok(self):
-        fmt = FeatureCorrelationsFormat(
-            self.get_data_path("feature-correlations.tsv"),
-            mode="r",
-        )
-        fmt.validate()
-
-    def test_feature_correlations_format_error_header(self):
-        fmt = FeatureCorrelationsFormat(
-            self.get_data_path("feature-correlations-broken-header.tsv"),
             mode="r",
         )
         with self.assertRaisesRegex(ValidationError, "Invalid header"):

@@ -16,7 +16,7 @@ from q2_mfa.types import (
     MFAResults,
     MFAResultsDirFmt,
     PartialAxesFormat,
-    PartialScoresFormat,
+    PrinceWideTSVFormat,
 )
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -36,7 +36,7 @@ plugin.register_formats(
     GroupSummaryFormat,
     MFAResultsDirFmt,
     PartialAxesFormat,
-    PartialScoresFormat,
+    PrinceWideTSVFormat,
 )
 plugin.register_semantic_types(MFAResults)
 plugin.register_artifact_class(
@@ -44,7 +44,7 @@ plugin.register_artifact_class(
     directory_format=MFAResultsDirFmt,
     description=(
         "Represents the global MFA ordination together with MFA-specific "
-        "partial scores, partial axes, and group summary tables."
+        "Prince-style sample, feature, partial axes, and group summary tables."
     ),
 )
 

@@ -62,24 +62,13 @@ def pca(
         engine=engine,
     ).fit(table)
 
-    axis_names = [f"PC{i + 1}" for i in range(pca.n_components)]
-
-    samples = pca.row_coordinates(table).copy()
-    samples.columns = axis_names
-
-    features = pca.column_coordinates_.copy()
-    features.columns = axis_names
-
-    eigvals = pd.Series(pca.eigenvalues_, index=axis_names)
-    proportion_explained = pd.Series(pca.percentage_of_variance_, index=axis_names)
-
     ordination = OrdinationResults(
         short_method_name="PCA",
         long_method_name="Principal Component Analysis",
-        eigvals=eigvals,
-        samples=samples,
-        features=features,
-        proportion_explained=proportion_explained,
+        eigvals=pd.Series(pca.eigenvalues_),
+        samples=pca.row_coordinates(table),
+        features=pca.column_coordinates_,
+        proportion_explained=pd.Series(pca.percentage_of_variance_),
     )
 
     return ordination

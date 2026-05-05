@@ -141,26 +141,13 @@ def _compute_group_summary(mfa_result):
 
 
 def _to_ordination(mfa_result, table):
-    axis_names = [f"PC{i + 1}" for i in range(mfa_result.n_components)]
-
-    samples = mfa_result.row_coordinates(table).copy()
-    samples.columns = axis_names
-
-    features = mfa_result.column_coordinates_.copy()
-    features.columns = axis_names
-
-    eigvals = pd.Series(mfa_result.eigenvalues_, index=axis_names)
-    proportion_explained = pd.Series(
-        mfa_result.percentage_of_variance_, index=axis_names
-    )
-
     return OrdinationResults(
         short_method_name="MFA",
         long_method_name="Multiple Factor Analysis",
-        eigvals=eigvals,
-        samples=samples,
-        features=features,
-        proportion_explained=proportion_explained,
+        eigvals=pd.Series(mfa_result.eigenvalues_),
+        samples=mfa_result.row_coordinates(table),
+        features=mfa_result.column_coordinates_,
+        proportion_explained=pd.Series(mfa_result.percentage_of_variance_),
     )
 
 

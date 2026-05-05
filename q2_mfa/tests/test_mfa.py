@@ -11,7 +11,6 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import prince
-from rachis import Artifact
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
@@ -30,16 +29,6 @@ class TestMFA(TestPluginBase):
         cls.disjoint = instance._load_table("mfa/mfa_disjoint.tsv")
         cls.duplicate_a = instance._load_table("mfa/mfa_duplicate_a.tsv")
         cls.duplicate_b = instance._load_table("mfa/mfa_duplicate_b.tsv")
-        cls.artifact_a = cls._import_table(cls.table_a)
-        cls.artifact_b = cls._import_table(cls.table_b)
-        cls.mismatched_artifact = cls._import_table(cls.mismatched)
-        cls.disjoint_artifact = cls._import_table(cls.disjoint)
-        cls.duplicate_a_artifact = cls._import_table(cls.duplicate_a)
-        cls.duplicate_b_artifact = cls._import_table(cls.duplicate_b)
-
-    @staticmethod
-    def _import_table(table):
-        return Artifact.import_data("FeatureTable[Unconstrained]", table)
 
     def _load_table(self, filename):
         return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
@@ -96,8 +85,8 @@ class TestMFA(TestPluginBase):
 
     def test_mfa_parses_prince_values_and_names(self):
         feature_tables = {
-            "metabolome": self.artifact_a,
-            "microbiome": self.artifact_b,
+            "metabolome": self.table_a,
+            "microbiome": self.table_b,
         }
         table, groups = self._build_prince_input(
             {"metabolome": self.table_a, "microbiome": self.table_b}
@@ -145,8 +134,8 @@ class TestMFA(TestPluginBase):
 
     def test_mfa_writes_prince_wide_outputs(self):
         feature_tables = {
-            "metabolome": self.artifact_a,
-            "microbiome": self.artifact_b,
+            "metabolome": self.table_a,
+            "microbiome": self.table_b,
         }
         table, groups = self._build_prince_input(
             {"metabolome": self.table_a, "microbiome": self.table_b}
@@ -203,8 +192,8 @@ class TestMFA(TestPluginBase):
 
     def test_mfa_writes_derived_outputs(self):
         feature_tables = {
-            "metabolome": self.artifact_a,
-            "microbiome": self.artifact_b,
+            "metabolome": self.table_a,
+            "microbiome": self.table_b,
         }
         table, groups = self._build_prince_input(
             {"metabolome": self.table_a, "microbiome": self.table_b}
@@ -269,7 +258,7 @@ class TestMFA(TestPluginBase):
         with warnings.catch_warnings(record=True) as observed:
             warnings.simplefilter("always")
             results = mfa(
-                {"metabolome": self.artifact_a, "other": self.mismatched_artifact},
+                {"metabolome": self.table_a, "other": self.mismatched},
                 n_components=2,
                 engine="scipy",
                 random_state=None,
@@ -295,17 +284,17 @@ class TestMFA(TestPluginBase):
 
     def test_mfa_requires_at_least_two_feature_tables(self):
         with self.assertRaisesRegex(ValueError, "at least two feature tables"):
-            mfa({"metabolome": self.artifact_a})
+            mfa({"metabolome": self.table_a})
 
     def test_mfa_raises_when_no_samples_are_shared(self):
         with self.assertRaisesRegex(ValueError, "do not share any sample IDs"):
-            mfa({"metabolome": self.artifact_a, "other": self.disjoint_artifact})
+            mfa({"metabolome": self.table_a, "other": self.disjoint})
 
     def test_mfa_prefixes_all_feature_names_with_group_name(self):
         results = mfa(
             {
-                "metabolome": self.duplicate_a_artifact,
-                "microbiome": self.duplicate_b_artifact,
+                "metabolome": self.duplicate_a,
+                "microbiome": self.duplicate_b,
             },
             n_components=2,
             engine="scipy",
@@ -323,7 +312,7 @@ class TestMFA(TestPluginBase):
 
     def test_mfa_runs_with_generated_random_state(self):
         results = mfa(
-            {"metabolome": self.artifact_a, "microbiome": self.artifact_b},
+            {"metabolome": self.table_a, "microbiome": self.table_b},
             n_components=2,
             random_state=None,
             engine="sklearn",

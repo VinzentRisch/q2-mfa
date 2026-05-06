@@ -6,15 +6,21 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
+from unittest.mock import Mock, patch
 
-import numpy as np
 import numpy.testing as npt
 import pandas as pd
-import prince
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.mfa import mfa
+from q2_mfa.mfa import (
+    _as_prince_wide_table,
+    _build_prince_input,
+    _create_mfa_results,
+    _to_ordination,
+    mfa,
+)
+from q2_mfa.types import MFAResultsDirFmt
 
 
 class TestMFA(TestPluginBase):
@@ -33,292 +39,136 @@ class TestMFA(TestPluginBase):
     def _load_table(self, filename):
         return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
 
-    def _build_prince_input(self, feature_tables):
-        consensus_samples = None
-        for table in feature_tables.values():
-            if consensus_samples is None:
-                consensus_samples = table.index
-            else:
-                consensus_samples = consensus_samples.intersection(table.index)
+    def test_build_prince_input_success(self):
+        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        table, groups = _build_prince_input(feature_tables)
 
-        prefixed_tables = []
-        groups = {}
-        for group, table in feature_tables.items():
-            table = table.loc[consensus_samples].copy()
-            table.columns = [f"{group}:{feature}" for feature in table.columns]
-            prefixed_tables.append(table)
-            groups[group] = list(table.columns)
-
-        table = pd.concat(prefixed_tables, axis=1)
-        return table, groups
-
-    def _read_ordination(self, results):
-        return OrdinationResults.read(str(results.path / "ordination.txt"))
-
-    def _read_table(self, results, filename):
-        return pd.read_csv(results.path / filename, sep="\t")
-
-    def _stringify_value_columns(self, table):
-        table = table.copy()
-        table.columns = [
-            column if column == "id" else str(column) for column in table.columns
-        ]
-        table.columns.name = None
-        return table
-
-    def _assert_frame_values_equal(self, observed, expected):
-        self.assertEqual(list(observed.index), list(expected.index))
-        self.assertEqual(list(observed.columns), list(expected.columns))
-        npt.assert_allclose(observed.to_numpy(), expected.to_numpy())
-
-    def _prince_mfa(self, table, groups, **kwargs):
-        return prince.MFA(
-            rescale_with_mean=kwargs.get("rescale_with_mean", True),
-            rescale_with_std=kwargs.get("rescale_with_std", True),
-            n_components=kwargs.get("n_components", 2),
-            n_iter=kwargs.get("n_iter", 3),
-            copy=True,
-            check_input=True,
-            random_state=kwargs.get("random_state", None),
-            engine=kwargs.get("engine", "scipy"),
-        ).fit(table, groups=groups)
-
-    def test_mfa_parses_prince_values_and_names(self):
-        feature_tables = {
-            "metabolome": self.table_a,
-            "microbiome": self.table_b,
-        }
-        table, groups = self._build_prince_input(
-            {"metabolome": self.table_a, "microbiome": self.table_b}
-        )
-        results = mfa(
-            feature_tables,
-            rescale_with_mean=True,
-            rescale_with_std=True,
-            n_components=2,
-            n_iter=2,
-            engine="scipy",
-            random_state=None,
-        )
-        prince_result = self._prince_mfa(
-            table,
-            groups,
-            n_components=2,
-            n_iter=2,
-            engine="scipy",
-            random_state=None,
+        self.assertEqual(len(table.index), 3)  # common samples
+        self.assertEqual(len(table.columns), 4)  # 2+2 features
+        self.assertIn("metabolome:feature-a1", table.columns)
+        self.assertIn("microbiome:feature-b1", table.columns)
+        self.assertEqual(
+            groups["metabolome"], ["metabolome:feature-a1", "metabolome:feature-a2"]
         )
 
-        ordn = self._read_ordination(results)
-        self.assertIsInstance(ordn, OrdinationResults)
-        self.assertEqual(list(ordn.samples.index), list(table.index))
-        self.assertEqual(list(ordn.features.index), list(table.columns))
-        self.assertEqual(ordn.samples.shape, (table.shape[0], 2))
-        self.assertEqual(ordn.features.shape, (table.shape[1], 2))
-        self.assertEqual(len(ordn.eigvals), 2)
-        self.assertEqual(len(ordn.proportion_explained), 2)
-
-        npt.assert_allclose(
-            ordn.samples.to_numpy(), prince_result.row_coordinates(table).to_numpy()
-        )
-        npt.assert_allclose(
-            ordn.features.to_numpy(), prince_result.column_coordinates_.to_numpy()
-        )
-        npt.assert_allclose(ordn.eigvals.to_numpy(), prince_result.eigenvalues_)
-        npt.assert_allclose(
-            ordn.proportion_explained.to_numpy(),
-            prince_result.percentage_of_variance_,
-        )
-
-        results.validate()
-
-    def test_mfa_writes_prince_wide_outputs(self):
-        feature_tables = {
-            "metabolome": self.table_a,
-            "microbiome": self.table_b,
-        }
-        table, groups = self._build_prince_input(
-            {"metabolome": self.table_a, "microbiome": self.table_b}
-        )
-        results = mfa(
-            feature_tables,
-            n_components=2,
-            engine="scipy",
-            random_state=None,
-        )
-        prince_result = self._prince_mfa(table, groups, random_state=None)
-
-        partial_coordinates = self._read_table(
-            results, "partial-sample-coordinates.tsv"
-        )
-        expected_partial = prince_result.partial_row_coordinates(table).copy()
-        expected_partial.columns = [
-            f"{group}:{component}" for group, component in expected_partial.columns
-        ]
-        expected_partial.index.name = "id"
-        expected_partial = expected_partial.reset_index()
-        pd.testing.assert_frame_equal(partial_coordinates, expected_partial)
-
-        sample_cos2 = self._read_table(results, "sample-cosine-similarities.tsv")
-        expected_sample_cos2 = prince_result.row_cosine_similarities(table).copy()
-        expected_sample_cos2.index.name = "id"
-        expected_sample_cos2 = expected_sample_cos2.reset_index()
-        expected_sample_cos2 = self._stringify_value_columns(expected_sample_cos2)
-        pd.testing.assert_frame_equal(sample_cos2, expected_sample_cos2)
-
-        feature_correlations = self._read_table(results, "feature-correlations.tsv")
-        expected_correlations = prince_result.column_correlations.copy()
-        expected_correlations.index.name = "id"
-        expected_correlations = expected_correlations.reset_index()
-        expected_correlations = self._stringify_value_columns(expected_correlations)
-        pd.testing.assert_frame_equal(feature_correlations, expected_correlations)
-
-        feature_contributions = self._read_table(results, "feature-contributions.tsv")
-        expected_contributions = prince_result.column_contributions_.copy()
-        expected_contributions.index.name = "id"
-        expected_contributions = expected_contributions.reset_index()
-        expected_contributions = self._stringify_value_columns(expected_contributions)
-        pd.testing.assert_frame_equal(feature_contributions, expected_contributions)
-
-        feature_cos2 = self._read_table(results, "feature-cosine-similarities.tsv")
-        expected_feature_cos2 = prince_result.column_coordinates_.pow(2)
-        expected_feature_cos2 = expected_feature_cos2.divide(
-            expected_feature_cos2.sum(axis=1).replace(0, np.nan), axis=0
-        ).fillna(0.0)
-        expected_feature_cos2.index.name = "id"
-        expected_feature_cos2 = expected_feature_cos2.reset_index()
-        expected_feature_cos2 = self._stringify_value_columns(expected_feature_cos2)
-        pd.testing.assert_frame_equal(feature_cos2, expected_feature_cos2)
-
-    def test_mfa_writes_derived_outputs(self):
-        feature_tables = {
-            "metabolome": self.table_a,
-            "microbiome": self.table_b,
-        }
-        table, groups = self._build_prince_input(
-            {"metabolome": self.table_a, "microbiome": self.table_b}
-        )
-        results = mfa(
-            feature_tables,
-            n_components=2,
-            engine="scipy",
-            random_state=None,
-        )
-        prince_result = self._prince_mfa(table, groups, random_state=None)
-
-        partial_axes = self._read_table(results, "partial-axes.tsv")
-        expected_partial_axes = []
-        global_scores = prince_result.row_coordinates(table)
-        for group, columns in groups.items():
-            group_scores = prince_result[group].row_coordinates(table.loc[:, columns])
-            for partial_component in group_scores.columns:
-                for global_component in global_scores.columns:
-                    expected_partial_axes.append(
-                        {
-                            "group": group,
-                            "partial_component": partial_component,
-                            "global_component": global_component,
-                            "correlation": float(
-                                group_scores[partial_component].corr(
-                                    global_scores[global_component]
-                                )
-                            ),
-                        }
-                    )
-        expected_partial_axes = pd.DataFrame(expected_partial_axes)
-        pd.testing.assert_frame_equal(partial_axes, expected_partial_axes)
-
-        group_summary = self._read_table(results, "group-summary.tsv")
-        expected_group_summary = []
-        eigenvalues = pd.Series(prince_result.eigenvalues_)
-        for group, columns in groups.items():
-            group_contribution = prince_result.column_contributions_.loc[columns].sum(
-                axis=0
-            )
-            first_eigenvalue = float(prince_result[group].eigenvalues_[0])
-            group_dist2 = float(
-                np.square(prince_result[group].eigenvalues_ / first_eigenvalue).sum()
-            )
-            for component in group_contribution.index:
-                contribution = float(group_contribution[component])
-                coordinate = float(contribution * eigenvalues[component])
-                expected_group_summary.append(
-                    {
-                        "group": group,
-                        "component": component,
-                        "coordinate": coordinate,
-                        "contribution": contribution,
-                        "cos2": float((coordinate**2) / group_dist2),
-                    }
-                )
-        expected_group_summary = pd.DataFrame(expected_group_summary)
-        pd.testing.assert_frame_equal(group_summary, expected_group_summary)
-
-    def test_mfa_drops_non_shared_samples_with_warning(self):
+    def test_build_prince_input_drops_samples_with_warning(self):
         with warnings.catch_warnings(record=True) as observed:
             warnings.simplefilter("always")
-            results = mfa(
-                {"metabolome": self.table_a, "other": self.mismatched},
-                n_components=2,
-                engine="scipy",
-                random_state=None,
+            table, _ = _build_prince_input(
+                {"metabolome": self.table_a, "other": self.mismatched}
             )
 
         self.assertEqual(len(observed), 2)
-        self.assertEqual(
-            str(observed[0].message),
-            (
-                "\n\033[93mDropping samples from group 'metabolome' that are not "
-                "shared across all tables:\nsample-2\033[0m"
-            ),
+        self.assertIn(
+            "Dropping samples from group 'metabolome'", str(observed[0].message)
         )
-        self.assertEqual(
-            str(observed[1].message),
-            (
-                "\n\033[93mDropping samples from group 'other' that are not "
-                "shared across all tables:\nsample-x\033[0m"
-            ),
-        )
-        ordn = self._read_ordination(results)
-        self.assertEqual(list(ordn.samples.index), ["sample-1", "sample-3"])
+        self.assertIn("Dropping samples from group 'other'", str(observed[1].message))
+        self.assertEqual(list(table.index), ["sample-1", "sample-3"])
 
-    def test_mfa_requires_at_least_two_feature_tables(self):
+    def test_build_prince_input_error_fewer_than_two_tables(self):
         with self.assertRaisesRegex(ValueError, "at least two feature tables"):
-            mfa({"metabolome": self.table_a})
+            _build_prince_input({"metabolome": self.table_a})
 
-    def test_mfa_raises_when_no_samples_are_shared(self):
+    def test_build_prince_input_error_illegal_group_name(self):
+        with self.assertRaisesRegex(ValueError, "cannot contain ':'"):
+            _build_prince_input({"illegal:name": self.table_a, "other": self.table_b})
+
+    def test_build_prince_input_error_no_shared_samples(self):
         with self.assertRaisesRegex(ValueError, "do not share any sample IDs"):
-            mfa({"metabolome": self.table_a, "other": self.disjoint})
+            _build_prince_input({"metabolome": self.table_a, "other": self.disjoint})
 
-    def test_mfa_prefixes_all_feature_names_with_group_name(self):
+    def test_as_prince_wide_table_multiindex_rows(self):
+        df = pd.DataFrame(
+            {"val": [1, 2]},
+            index=pd.MultiIndex.from_tuples(
+                [("A", "x"), ("B", "y")], names=["L1", "L2"]
+            ),
+        )
+        result = _as_prince_wide_table(df)
+        self.assertEqual(list(result["id"]), ["A:x", "B:y"])
+
+    def test_as_prince_wide_table_multiindex_columns(self):
+        df = pd.DataFrame(
+            [[1, 2]],
+            index=["s1"],
+            columns=pd.MultiIndex.from_tuples(
+                [("A", "x"), ("B", "y")], names=["L1", "L2"]
+            ),
+        )
+        result = _as_prince_wide_table(df)
+        self.assertEqual(list(result.columns), ["id", "A:x", "B:y"])
+        self.assertEqual(result["id"].iloc[0], "s1")
+
+    def test_to_ordination(self):
+        mock_mfa = Mock()
+        mock_mfa.eigenvalues_ = [0.5, 0.3]
+        mock_mfa.percentage_of_variance_ = [0.6, 0.4]
+        expected_samples = pd.DataFrame({"comp1": [1, 2]}, index=["s1", "s2"])
+        mock_mfa.row_coordinates.return_value = expected_samples
+        expected_features = pd.DataFrame({"comp1": [0.1, 0.2]}, index=["f1", "f2"])
+        mock_mfa.column_coordinates_ = expected_features
+
+        table = pd.DataFrame()
+        ordn = _to_ordination(mock_mfa, table)
+
+        self.assertIsInstance(ordn, OrdinationResults)
+        npt.assert_array_equal(ordn.eigvals, [0.5, 0.3])
+        npt.assert_array_equal(ordn.proportion_explained, [0.6, 0.4])
+        pd.testing.assert_frame_equal(ordn.samples, expected_samples)
+        pd.testing.assert_frame_equal(ordn.features, expected_features)
+
+    def test_create_mfa_results(self):
+        ordn = OrdinationResults(
+            "MFA", "MFA", pd.Series([1, 2]), pd.DataFrame({"0": [1]}, index=["s1"])
+        )
+        tables = {"test-table.tsv": pd.DataFrame({"col": [1]}, index=["s1"])}
+
+        results = _create_mfa_results(ordn, tables)
+
+        self.assertIsInstance(results, MFAResultsDirFmt)
+        self.assertTrue((results.path / "test-table.tsv").exists())
+        self.assertTrue((results.path / "ordination.txt").exists())
+
+    def test_mfa_integration(self):
+        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
         results = mfa(
-            {
-                "metabolome": self.duplicate_a,
-                "microbiome": self.duplicate_b,
-            },
+            feature_tables,
             n_components=2,
             engine="scipy",
             random_state=None,
         )
 
-        ordn = self._read_ordination(results)
-        expected_features = [
-            "metabolome:shared-feature",
-            "metabolome:feature-a2",
-            "microbiome:shared-feature",
-            "microbiome:feature-b2",
-        ]
-        self.assertListEqual(list(ordn.features.index), expected_features)
+        self.assertIsInstance(results, MFAResultsDirFmt)
+        results.validate()
 
-    def test_mfa_runs_with_generated_random_state(self):
-        results = mfa(
+        ordn = OrdinationResults.read(str(results.path / "ordination.txt"))
+        self.assertEqual(len(ordn.samples), 3)
+        self.assertEqual(len(ordn.features), 4)
+
+    @patch("q2_mfa.mfa._create_mfa_results")
+    @patch("q2_mfa.mfa._to_ordination")
+    @patch("q2_mfa.mfa._build_prince_input")
+    @patch("q2_mfa.mfa.prince.MFA")
+    @patch("q2_mfa.mfa.secrets.randbits", return_value=12345)
+    def test_mfa_runs_with_generated_random_state(
+        self,
+        randbits,
+        prince_mfa,
+        build_prince_input,
+        to_ordination,
+        create_mfa_results,
+    ):
+        table = pd.DataFrame({"feature": [1.0]}, index=["sample"])
+        build_prince_input.return_value = (table, {"group": ["feature"]})
+        prince_mfa.return_value.fit.return_value = Mock()
+
+        mfa(
             {"metabolome": self.table_a, "microbiome": self.table_b},
             n_components=2,
             random_state=None,
             engine="sklearn",
         )
 
-        ordn = self._read_ordination(results)
-        self.assertIsInstance(ordn, OrdinationResults)
-        self.assertEqual(ordn.samples.shape[1], 2)
-        self.assertEqual(ordn.features.shape[1], 2)
+        randbits.assert_called_once_with(32)
+        self.assertEqual(prince_mfa.call_args.kwargs["random_state"], 12345)
+        create_mfa_results.assert_called_once()

@@ -8,12 +8,7 @@
 from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.types import (
-    GroupSummaryFormat,
-    MFAResultsDirFmt,
-    PartialAxesFormat,
-    PrinceWideTSVFormat,
-)
+from q2_mfa.types import MFAResultsDirFmt, PrinceWideTSVFormat
 
 
 class TestMFAFormats(TestPluginBase):
@@ -34,34 +29,31 @@ class TestMFAFormats(TestPluginBase):
         with self.assertRaisesRegex(ValidationError, "Invalid header"):
             fmt.validate()
 
-    def test_partial_axes_format_ok(self):
-        fmt = PartialAxesFormat(
-            self.get_data_path("partial-axes.tsv"),
+    def test_prince_wide_tsv_format_error_values(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-broken-values.tsv"),
             mode="r",
         )
-        fmt.validate()
-
-    def test_partial_axes_format_error_values(self):
-        fmt = PartialAxesFormat(
-            self.get_data_path("partial-axes-broken-values.tsv"),
-            mode="r",
-        )
-        with self.assertRaisesRegex(ValidationError, "Line 3 has 3 columns"):
+        with self.assertRaisesRegex(ValidationError, "Line 3 has 2 columns"):
             fmt.validate()
 
-    def test_group_summary_format_ok(self):
-        fmt = GroupSummaryFormat(
-            self.get_data_path("group-summary.tsv"),
+    def test_prince_wide_tsv_format_error_no_value_columns(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-no-values.tsv"),
             mode="r",
         )
-        fmt.validate()
+        with self.assertRaisesRegex(ValidationError, "at least 1"):
+            fmt.validate()
 
-    def test_group_summary_format_error_header(self):
-        fmt = GroupSummaryFormat(
-            self.get_data_path("group-summary-broken-header.tsv"),
+    def test_prince_wide_tsv_format_error_non_numeric_value(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-non-numeric-value.tsv"),
             mode="r",
         )
-        with self.assertRaisesRegex(ValidationError, "Invalid header"):
+        with self.assertRaisesRegex(
+            ValidationError,
+            "Prince wide TSV value columns must be numeric.",
+        ):
             fmt.validate()
 
     def test_mfa_results_directory_format_ok(self):

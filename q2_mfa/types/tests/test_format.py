@@ -45,6 +45,14 @@ class TestMFAFormats(TestPluginBase):
         with self.assertRaisesRegex(ValidationError, "at least 1"):
             fmt.validate()
 
+    def test_prince_wide_tsv_format_error_no_data_rows(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-no-data-rows.tsv"),
+            mode="r",
+        )
+        with self.assertRaisesRegex(ValidationError, "at least one data row"):
+            fmt.validate()
+
     def test_prince_wide_tsv_format_error_non_numeric_value(self):
         fmt = PrinceWideTSVFormat(
             self.get_data_path("prince-wide-non-numeric-value.tsv"),

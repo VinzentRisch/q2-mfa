@@ -9,13 +9,11 @@ import json
 import tempfile
 from pathlib import Path
 
-from q2_types.ordination import OrdinationFormat, PCoAResults
-from rachis import Artifact, Metadata
-from rachis.core.type import Properties
+from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
-from skbio import OrdinationResults
 
 from q2_mfa._mfa_visualizer import mfa_visualizer
+from q2_mfa.types import MFAResultsDirFmt
 
 
 class TestMFAVisualizer(TestPluginBase):
@@ -24,22 +22,13 @@ class TestMFAVisualizer(TestPluginBase):
     @classmethod
     def setUpClass(cls):
         instance = cls()
-        cls.ordination = instance._load_ordination("mfa_vis/ord_global.ordination")
-        cls.single_axis_ordination = instance._load_ordination(
-            "mfa_vis/ord_group_a.ordination"
-        )
         cls.metadata = Metadata.load(
             instance.get_data_path("mfa_vis/sample_metadata.tsv")
         )
-
-    @classmethod
-    def _load_ordination(cls, path):
-        artifact = Artifact.import_data(
-            PCoAResults % Properties("mfa"),
-            cls().get_data_path(path),
-            view_type=OrdinationFormat,
+        cls.mfa_results = MFAResultsDirFmt(
+            instance.get_data_path("mfa/mfa_vis_results"),
+            mode="r",
         )
-        return artifact.view(OrdinationResults)
 
     def _load_payload(self, output_dir):
         prefix = "window.MFA_VISUALIZER_DATA = "
@@ -53,7 +42,7 @@ class TestMFAVisualizer(TestPluginBase):
 
     def test_mfa_visualizer_writes_expected_assets_and_payload(self):
         with tempfile.TemporaryDirectory() as output_dir:
-            mfa_visualizer(output_dir, self.ordination, self.metadata)
+            mfa_visualizer(output_dir, self.mfa_results, self.metadata)
 
             for filename in (
                 "index.html",
@@ -119,9 +108,169 @@ class TestMFAVisualizer(TestPluginBase):
             },
         )
 
-    def test_mfa_visualizer_requires_at_least_two_dimensions(self):
+    def test_mfa_visualizer_parses_prince_mfa_results(self):
         with tempfile.TemporaryDirectory() as output_dir:
-            with self.assertRaisesRegex(
-                ValueError, "requires at least two sample dimensions"
-            ):
-                mfa_visualizer(output_dir, self.single_axis_ordination, self.metadata)
+            mfa_visualizer(output_dir, self.mfa_results, self.metadata)
+            payload = self._load_payload(output_dir)
+
+        self.assertEqual(payload["partial_groups"], ["A", "B"])
+        self.assertNotIn("partial_axes", payload)
+        self.assertEqual(
+            {payload["default_x"], payload["default_y"]},
+            {"Dim 1", "Dim 2"},
+        )
+        for sample in payload["samples"]:
+            self.assertEqual(set(sample["coords"]), {"Dim 1", "Dim 2"})
+        for partial_sample in payload["partial_samples"]:
+            self.assertEqual(set(partial_sample["coords"]), {"Dim 1", "Dim 2"})
+        for group in payload["group_summary"]:
+            self.assertEqual(set(group["coords"]), {"Dim 1", "Dim 2"})
+            self.assertEqual(set(group["contribution"]), {"Dim 1", "Dim 2"})
+            self.assertEqual(set(group["cos2"]), {"Dim 1", "Dim 2"})
+        self.assertEqual(
+            {
+                (entry["partial_axis"], entry["global_dim"])
+                for entry in payload["partial_correlations"]
+            },
+            {
+                (1, "Dim 1"),
+                (1, "Dim 2"),
+                (2, "Dim 1"),
+                (2, "Dim 2"),
+            },
+        )
+        for feature in payload["feature_correlations"]:
+            self.assertEqual(set(feature["coords"]), {"Dim 1", "Dim 2"})
+        self.assertEqual(
+            [component["key"] for component in payload["component_variance"]],
+            ["Dim 1", "Dim 2"],
+        )
+
+        self.assertEqual(
+            payload["partial_samples"],
+            [
+                {
+                    "sample_id": "sample-1",
+                    "group": "A",
+                    "coords": {"Dim 1": 0.9, "Dim 2": 0.11},
+                },
+                {
+                    "sample_id": "sample-1",
+                    "group": "B",
+                    "coords": {"Dim 1": 1.1, "Dim 2": 0.09},
+                },
+                {
+                    "sample_id": "sample-2",
+                    "group": "A",
+                    "coords": {"Dim 1": 1.8, "Dim 2": 0.21},
+                },
+                {
+                    "sample_id": "sample-2",
+                    "group": "B",
+                    "coords": {"Dim 1": 2.2, "Dim 2": 0.19},
+                },
+                {
+                    "sample_id": "sample-3",
+                    "group": "A",
+                    "coords": {"Dim 1": 2.7, "Dim 2": 0.31},
+                },
+                {
+                    "sample_id": "sample-3",
+                    "group": "B",
+                    "coords": {"Dim 1": 3.3, "Dim 2": 0.29},
+                },
+            ],
+        )
+
+        self.assertEqual(
+            payload["group_summary"],
+            [
+                {
+                    "group": "A",
+                    "coords": {"Dim 1": 0.42, "Dim 2": 0.12},
+                    "contribution": {"Dim 1": 0.35, "Dim 2": 0.45},
+                    "cos2": {"Dim 1": 0.72, "Dim 2": 0.18},
+                },
+                {
+                    "group": "B",
+                    "coords": {"Dim 1": 0.58, "Dim 2": 0.28},
+                    "contribution": {"Dim 1": 0.65, "Dim 2": 0.55},
+                    "cos2": {"Dim 1": 0.83, "Dim 2": 0.27},
+                },
+            ],
+        )
+        for group in payload["group_summary"]:
+            self.assertNotIn("first_eigenvalue", group)
+            self.assertNotIn("weight", group)
+
+        self.assertEqual(
+            payload["partial_correlations"],
+            [
+                {
+                    "group": "A",
+                    "partial_axis": 1,
+                    "global_dim": "Dim 1",
+                    "value": 0.88,
+                },
+                {
+                    "group": "A",
+                    "partial_axis": 1,
+                    "global_dim": "Dim 2",
+                    "value": 0.12,
+                },
+                {
+                    "group": "A",
+                    "partial_axis": 2,
+                    "global_dim": "Dim 1",
+                    "value": 0.05,
+                },
+                {
+                    "group": "A",
+                    "partial_axis": 2,
+                    "global_dim": "Dim 2",
+                    "value": 0.74,
+                },
+                {
+                    "group": "B",
+                    "partial_axis": 1,
+                    "global_dim": "Dim 1",
+                    "value": 0.67,
+                },
+                {
+                    "group": "B",
+                    "partial_axis": 1,
+                    "global_dim": "Dim 2",
+                    "value": 0.22,
+                },
+                {
+                    "group": "B",
+                    "partial_axis": 2,
+                    "global_dim": "Dim 1",
+                    "value": 0.11,
+                },
+                {
+                    "group": "B",
+                    "partial_axis": 2,
+                    "global_dim": "Dim 2",
+                    "value": 0.82,
+                },
+            ],
+        )
+
+        self.assertEqual(
+            payload["feature_correlations"],
+            [
+                {
+                    "feature_id": "A:feature-a",
+                    "group": "A",
+                    "feature_name": "feature-a",
+                    "coords": {"Dim 1": 0.71, "Dim 2": -0.21},
+                },
+                {
+                    "feature_id": "B:taxon:b:variant",
+                    "group": "B",
+                    "feature_name": "taxon:b:variant",
+                    "coords": {"Dim 1": 0.62, "Dim 2": 0.44},
+                },
+            ],
+        )

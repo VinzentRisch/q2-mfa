@@ -426,19 +426,7 @@ function getActivePaletteKind() {
 }
 
 function getOrderedGroupNames() {
-  if (payload.partial_groups?.length) {
-    return payload.partial_groups;
-  }
-
-  if (payload.group_summary?.length) {
-    return payload.group_summary.map((entry) => entry.group);
-  }
-
-  if (payload.partial_axes?.length) {
-    return [...new Set(payload.partial_axes.map((entry) => entry.group))];
-  }
-
-  return [];
+  return payload.partial_groups;
 }
 
 function getGroupColorMap(groups = getOrderedGroupNames()) {
@@ -481,7 +469,7 @@ function buildTraces(samples) {
 }
 
 function buildFeatureCorrelationTraces() {
-  if (!state.showFeatureCorrelations || !payload.feature_correlations?.length) {
+  if (!state.showFeatureCorrelations) {
     return [];
   }
 
@@ -564,10 +552,6 @@ function buildFeatureCorrelationTraces() {
 }
 
 function getRankedFeatureCorrelations(limit = null) {
-  if (!payload.feature_correlations?.length) {
-    return [];
-  }
-
   // Rank by correlation magnitude in the currently displayed 2D plane so the
   // table and overlay surface the variables best represented in the exact view
   // the user is inspecting.
@@ -609,7 +593,7 @@ function renderTopFeaturesTable() {
 
   body.replaceChildren();
   const features = getRankedFeatureCorrelations();
-  empty.textContent = features.length ? '' : 'Feature correlation values are not available.';
+  empty.textContent = '';
 
   const fragment = document.createDocumentFragment();
   features.forEach((feature, index) => {
@@ -645,8 +629,7 @@ function buildFeatureTableCell(value, className) {
 function buildPartialOverlayTraces(samples, colorColumn) {
   if (
     !state.showPartialOverlay ||
-    !payload.partial_samples?.length ||
-    !payload.partial_groups?.length
+    !payload.partial_samples?.length
   ) {
     return [];
   }
@@ -1139,7 +1122,6 @@ function renderGroupPlot() {
       entry.coords[state.yDimension] !== undefined
   );
   const groupColors = getGroupColorMap(groups.map((entry) => entry.group));
-  const hasGroups = groups.length > 0;
   const labelPlacement = placeGroupInertiaLabels(groups, groupColors);
 
   const trace = {
@@ -1161,10 +1143,10 @@ function renderGroupPlot() {
       },
     },
   };
-  const traces = hasGroups ? [
+  const traces = [
     trace,
     ...buildPlotLabelConnectorTraces(labelPlacement),
-  ] : [];
+  ];
   const labelTrace = buildPlotLabelTrace(labelPlacement, 12);
   if (labelTrace) {
     traces.push(labelTrace);
@@ -1173,7 +1155,7 @@ function renderGroupPlot() {
   Plotly.react(
     'group-plot',
     traces,
-    buildGroupLayout(hasGroups),
+    buildGroupLayout(),
     {
       responsive: true,
       displaylogo: false,
@@ -1217,8 +1199,6 @@ function buildGroupHoverText(entry) {
     `${dimensionsByKey[state.yDimension].label} contribution: ${formatValue(entry.contribution[state.yDimension])}`,
     `${dimensionsByKey[state.xDimension].label} cos2: ${formatValue(entry.cos2[state.xDimension])}`,
     `${dimensionsByKey[state.yDimension].label} cos2: ${formatValue(entry.cos2[state.yDimension])}`,
-    `First eigenvalue: ${formatValue(entry.first_eigenvalue)}`,
-    `Weight: ${formatValue(entry.weight)}`,
   ].join('<br>');
 }
 
@@ -1452,7 +1432,7 @@ function computeLabelRange(values, includeZero) {
   return [min - padding, max + padding];
 }
 
-function buildGroupLayout(hasGroups) {
+function buildGroupLayout() {
   const themeColors = getThemeColors();
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
@@ -1495,19 +1475,7 @@ function buildGroupLayout(hasGroups) {
       gridwidth: 1,
       tickfont: { color: themeColors.font },
     },
-    annotations: hasGroups
-      ? []
-      : [
-          {
-            text: 'Group summary values are not available.',
-            showarrow: false,
-            xref: 'paper',
-            yref: 'paper',
-            x: 0.5,
-            y: 0.5,
-            font: { size: 16, color: themeColors.annotation },
-          },
-        ],
+    annotations: [],
   };
 }
 
@@ -1526,10 +1494,9 @@ function updateGroupSummary(groups) {
 
 function renderPartialAxesPlot() {
   const themeColors = getThemeColors();
-  const partialAxes = (payload.partial_axes ?? []).filter(
+  const partialAxes = (payload.partial_correlations ?? []).filter(
     (entry) => entry.partial_axis === 1 || entry.partial_axis === 2
   );
-  const hasPartialAxes = partialAxes.length > 0;
   const seriesKeys = [...new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`))];
   const groupColors = getGroupColorMap();
 
@@ -1570,14 +1537,12 @@ function renderPartialAxesPlot() {
     traces.push(labelTrace);
   }
 
-  if (hasPartialAxes) {
-    traces.unshift(buildPartialAxesCircleBoundary());
-  }
+  traces.unshift(buildPartialAxesCircleBoundary());
 
   Plotly.react(
     'partial-axes-plot',
-    hasPartialAxes ? traces : [],
-    buildPartialAxesLayout(hasPartialAxes),
+    traces,
+    buildPartialAxesLayout(),
     {
       responsive: true,
       displaylogo: false,
@@ -1704,7 +1669,7 @@ function buildPartialAxesCircleBoundary() {
   };
 }
 
-function buildPartialAxesLayout(hasPartialAxes) {
+function buildPartialAxesLayout() {
   const themeColors = getThemeColors();
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
@@ -1747,19 +1712,7 @@ function buildPartialAxesLayout(hasPartialAxes) {
       zerolinewidth: 1,
       tickfont: { color: themeColors.font },
     },
-    annotations: hasPartialAxes
-      ? []
-      : [
-          {
-            text: 'Partial axes values are not available.',
-            showarrow: false,
-            xref: 'paper',
-            yref: 'paper',
-            x: 0.5,
-            y: 0.5,
-            font: { size: 16, color: themeColors.annotation },
-          },
-        ],
+    annotations: [],
   };
 }
 
@@ -1784,7 +1737,6 @@ function renderVariancePlot() {
   );
   const selectedDimensions = new Set([state.xDimension, state.yDimension]);
   const themeColors = getThemeColors();
-  const hasVariance = components.length > 0;
 
   const barTrace = {
     type: 'bar',
@@ -1808,8 +1760,8 @@ function renderVariancePlot() {
 
   Plotly.react(
     'variance-plot',
-    hasVariance ? [barTrace] : [],
-    buildVarianceLayout(hasVariance),
+    [barTrace],
+    buildVarianceLayout(),
     {
       responsive: true,
       displaylogo: false,
@@ -1846,11 +1798,11 @@ function renderVariancePlot() {
     }
   );
 
-  renderCumulativeVariancePlot(components, hasVariance, themeColors);
+  renderCumulativeVariancePlot(components, themeColors);
   updateVarianceSummary(components);
 }
 
-function renderCumulativeVariancePlot(components, hasVariance, themeColors) {
+function renderCumulativeVariancePlot(components, themeColors) {
   let cumulativeTotal = 0;
   const selectedDimensions = new Set([state.xDimension, state.yDimension]);
   const cumulativeTrace = {
@@ -1883,8 +1835,8 @@ function renderCumulativeVariancePlot(components, hasVariance, themeColors) {
 
   Plotly.react(
     'cumulative-variance-plot',
-    hasVariance ? [cumulativeTrace] : [],
-    buildCumulativeVarianceLayout(hasVariance),
+    [cumulativeTrace],
+    buildCumulativeVarianceLayout(),
     {
       responsive: true,
       displaylogo: false,
@@ -1923,7 +1875,7 @@ function renderCumulativeVariancePlot(components, hasVariance, themeColors) {
   updateCumulativeSummary(components);
 }
 
-function buildVarianceLayout(hasVariance) {
+function buildVarianceLayout() {
   const themeColors = getThemeColors();
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
@@ -1947,23 +1899,11 @@ function buildVarianceLayout(hasVariance) {
       gridwidth: 1,
       tickfont: { color: themeColors.font },
     },
-    annotations: hasVariance
-      ? []
-      : [
-          {
-            text: 'Explained variance values are not available.',
-            showarrow: false,
-            xref: 'paper',
-            yref: 'paper',
-            x: 0.5,
-            y: 0.5,
-            font: { size: 16, color: themeColors.annotation },
-          },
-        ],
+    annotations: [],
   };
 }
 
-function buildCumulativeVarianceLayout(hasVariance) {
+function buildCumulativeVarianceLayout() {
   const themeColors = getThemeColors();
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
@@ -1990,19 +1930,7 @@ function buildCumulativeVarianceLayout(hasVariance) {
       tickfont: { color: themeColors.font },
       zeroline: false,
     },
-    annotations: hasVariance
-      ? []
-      : [
-          {
-            text: 'Explained variance values are not available.',
-            showarrow: false,
-            xref: 'paper',
-            yref: 'paper',
-            x: 0.5,
-            y: 0.5,
-            font: { size: 16, color: themeColors.annotation },
-          },
-        ],
+    annotations: [],
   };
 }
 
@@ -2074,18 +2002,17 @@ function updateVarianceSummary(components) {
     (sum, component) => sum + component.variance_explained,
     0
   );
-  document.getElementById('variance-summary').textContent = components.length
-    ? `${formatValue(totalExplained * 100)}% across ${components.length} components`
-    : 'Variance unavailable';
+  document.getElementById('variance-summary').textContent =
+    `${formatValue(totalExplained * 100)}% across ${components.length} components`;
 }
 
 function updateCumulativeSummary(components) {
-  const finalValue = components.length
-    ? components.reduce((sum, component) => sum + component.variance_explained, 0) * 100
-    : null;
-  document.getElementById('cumulative-summary').textContent = finalValue === null
-    ? 'Cumulative variance unavailable'
-    : `${formatValue(finalValue)}% at component ${components.length}`;
+  const finalValue = components.reduce(
+    (sum, component) => sum + component.variance_explained,
+    0
+  ) * 100;
+  document.getElementById('cumulative-summary').textContent =
+    `${formatValue(finalValue)}% at component ${components.length}`;
 }
 
 function formatMetadataValue(value) {

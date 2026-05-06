@@ -34,97 +34,67 @@ def mfa_visualizer(
         ordination,
         partial_sample_coordinates,
         group_summary,
-        partial_axes,
+        partial_correlations,
         feature_correlations,
     ) = _load_mfa_visualizer_inputs(mfa_results)
-    sample_coordinates = ordination.samples
-    if sample_coordinates is None or sample_coordinates.empty:
-        raise ValueError("MFA results must contain sample coordinates.")
-
-    if sample_coordinates.shape[1] < 2:
-        raise ValueError("MFA visualization requires at least two sample dimensions.")
 
     payload = _build_payload(
         ordination,
         sample_metadata,
         partial_sample_coordinates,
         group_summary,
-        partial_axes,
+        partial_correlations,
         feature_correlations,
     )
     _write_visualization(output_dir, payload)
 
 
 def _load_mfa_visualizer_inputs(
-    mfa_results,
+    mfa_results: MFAResultsDirFmt,
 ) -> tuple[
     OrdinationResults,
-    pd.DataFrame | None,
-    pd.DataFrame | None,
-    pd.DataFrame | None,
-    pd.DataFrame | None,
+    pd.DataFrame,
+    dict[str, pd.DataFrame],
+    pd.DataFrame,
+    pd.DataFrame,
 ]:
-    if isinstance(mfa_results, OrdinationResults):
-        return mfa_results, None, None, None, None
-
-    if isinstance(mfa_results, MFAResultsDirFmt):
-        ordination = OrdinationResults.read(str(mfa_results.path / "ordination.txt"))
-        partial_scores = pd.read_csv(mfa_results.path / "partial-scores.tsv", sep="\t")
-        group_summary = pd.read_csv(mfa_results.path / "group-summary.tsv", sep="\t")
-        partial_axes = pd.read_csv(mfa_results.path / "partial-axes.tsv", sep="\t")
-        feature_correlations = pd.read_csv(
-            mfa_results.path / "feature-correlations.tsv", sep="\t"
-        )
-        return (
-            ordination,
-            partial_scores,
-            group_summary,
-            partial_axes,
-            feature_correlations,
-        )
-
-    if hasattr(mfa_results, "path"):
-        path = Path(mfa_results.path)
-        ordination_path = path / "ordination.txt"
-        partial_scores_path = path / "partial-scores.tsv"
-        if ordination_path.exists():
-            ordination = OrdinationResults.read(str(ordination_path))
-            partial_scores = None
-            if partial_scores_path.exists():
-                partial_scores = pd.read_csv(partial_scores_path, sep="\t")
-            group_summary = None
-            group_summary_path = path / "group-summary.tsv"
-            if group_summary_path.exists():
-                group_summary = pd.read_csv(group_summary_path, sep="\t")
-            partial_axes = None
-            partial_axes_path = path / "partial-axes.tsv"
-            if partial_axes_path.exists():
-                partial_axes = pd.read_csv(partial_axes_path, sep="\t")
-            feature_correlations = None
-            feature_correlations_path = path / "feature-correlations.tsv"
-            if feature_correlations_path.exists():
-                feature_correlations = pd.read_csv(feature_correlations_path, sep="\t")
-            return (
-                ordination,
-                partial_scores,
-                group_summary,
-                partial_axes,
-                feature_correlations,
-            )
-
-    raise TypeError(
-        "mfa_results must be an OrdinationResults object or an MFAResults directory "
-        "view."
+    ordination = OrdinationResults.read(str(mfa_results.path / "ordination.txt"))
+    partial_sample_coordinates = _read_prince_wide_tsv(
+        mfa_results.path / "partial-sample-coordinates.tsv"
+    )
+    group_summary = {
+        "coordinates": _read_prince_wide_tsv(
+            mfa_results.path / "group-coordinates.tsv"
+        ),
+        "contributions": _read_prince_wide_tsv(
+            mfa_results.path / "group-contributions.tsv"
+        ),
+        "cos2": _read_prince_wide_tsv(
+            mfa_results.path / "group-cosine-similarities.tsv"
+        ),
+    }
+    partial_correlations = _read_prince_wide_tsv(
+        mfa_results.path / "partial-correlations.tsv"
+    )
+    feature_correlations = pd.read_csv(
+        mfa_results.path / "feature-correlations.tsv", sep="\t"
+    )
+    return (
+        ordination,
+        partial_sample_coordinates,
+        group_summary,
+        partial_correlations,
+        feature_correlations,
     )
 
 
 def _build_payload(
     ordination: OrdinationResults,
     sample_metadata: Metadata,
-    partial_sample_coordinates: pd.DataFrame | None = None,
-    group_summary: pd.DataFrame | None = None,
-    partial_axes: pd.DataFrame | None = None,
-    feature_correlations: pd.DataFrame | None = None,
+    partial_sample_coordinates: pd.DataFrame,
+    group_summary: dict[str, pd.DataFrame],
+    partial_correlations: pd.DataFrame,
+    feature_correlations: pd.DataFrame,
 ) -> dict[str, object]:
     sample_coordinates = ordination.samples.copy()
     sample_coordinates.index = sample_coordinates.index.astype(str)
@@ -145,7 +115,9 @@ def _build_payload(
         dimensions,
     )
     group_summary_payload = _build_group_summary_payload(group_summary, dimensions)
-    partial_axes_payload = _build_partial_axes_payload(partial_axes, dimensions)
+    partial_correlations_payload = _build_partial_correlation_payload(
+        partial_correlations, dimensions
+    )
     feature_correlation_payload = _build_feature_correlation_payload(
         feature_correlations, dimensions
     )
@@ -189,40 +161,34 @@ def _build_payload(
         "partial_groups": partial_groups,
         "partial_samples": partial_samples,
         "group_summary": group_summary_payload,
-        "partial_axes": partial_axes_payload,
+        "partial_correlations": partial_correlations_payload,
         "feature_correlations": feature_correlation_payload,
     }
 
 
 def _build_partial_sample_payload(
-    partial_sample_coordinates: pd.DataFrame | None,
+    partial_sample_coordinates: pd.DataFrame,
     sample_ids: pd.Index,
     dimensions: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], list[str]]:
-    if partial_sample_coordinates is None or partial_sample_coordinates.empty:
-        return [], []
-
-    partial_scores = partial_sample_coordinates.copy()
-    partial_scores["sample_id"] = partial_scores["sample_id"].astype(str)
-    partial_scores["group"] = partial_scores["group"].astype(str)
-
-    dim_lookup = {
-        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
-    }
-    partial_scores = partial_scores[partial_scores["dim"].isin(dim_lookup)]
-    if partial_scores.empty:
-        return [], []
-
-    partial_scores["dimension_key"] = partial_scores["dim"].map(dim_lookup)
+    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
     grouped = {}
-    for row in partial_scores.itertuples(index=False):
-        grouped.setdefault((row.sample_id, row.group), {})[row.dimension_key] = float(
-            row.coordinate
-        )
+    groups = set()
+    for _, row in partial_sample_coordinates.iterrows():
+        sample_id = str(row["id"])
+        for column_name, value in row.items():
+            if column_name == "id":
+                continue
+            group, dimension = _split_group_dimension_column(column_name)
+            groups.add(group)
+            grouped.setdefault((sample_id, group), {})[dim_lookup[dimension]] = float(
+                value
+            )
 
     partial_samples = []
+    ordered_groups = sorted(groups)
     for sample_id in sample_ids:
-        for group in sorted(partial_scores["group"].unique()):
+        for group in ordered_groups:
             coords = grouped.get((sample_id, group))
             if coords is None:
                 continue
@@ -234,106 +200,88 @@ def _build_partial_sample_payload(
                 }
             )
 
-    return partial_samples, sorted(partial_scores["group"].unique())
+    return partial_samples, ordered_groups
 
 
 def _build_group_summary_payload(
-    group_summary: pd.DataFrame | None,
+    group_summary: dict[str, pd.DataFrame],
     dimensions: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    if group_summary is None or group_summary.empty:
-        return []
+    coordinate_table = group_summary["coordinates"]
+    contribution_table = group_summary["contributions"]
+    cos2_table = group_summary["cos2"]
 
-    dim_lookup = {
-        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
-    }
-    summary = group_summary.copy()
-    summary["group"] = summary["group"].astype(str)
-    summary = summary[summary["dim"].isin(dim_lookup)]
-    if summary.empty:
-        return []
+    contribution_by_group = _index_by_id(contribution_table)
+    cos2_by_group = _index_by_id(cos2_table)
+    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
+    payload = []
+    for _, coordinate_row in coordinate_table.iterrows():
+        group = str(coordinate_row["id"])
+        contribution_row = contribution_by_group[group]
+        cos2_row = cos2_by_group[group]
 
-    grouped = {}
-    for row in summary.itertuples(index=False):
-        group_entry = grouped.setdefault(
-            row.group,
-            {
-                "group": row.group,
-                "coords": {},
-                "contribution": {},
-                "cos2": {},
-                "first_eigenvalue": float(row.first_eigenvalue),
-                "weight": float(row.weight),
-            },
-        )
-        dim_key = dim_lookup[row.dim]
-        group_entry["coords"][dim_key] = float(row.coordinate)
-        group_entry["contribution"][dim_key] = float(row.contribution)
-        group_entry["cos2"][dim_key] = float(row.cos2)
-
-    return [grouped[group] for group in sorted(grouped)]
-
-
-def _build_partial_axes_payload(
-    partial_axes: pd.DataFrame | None,
-    dimensions: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    if partial_axes is None or partial_axes.empty:
-        return []
-
-    dim_lookup = {
-        index + 1: dimension["key"] for index, dimension in enumerate(dimensions)
-    }
-    axes = partial_axes.copy()
-    axes["group"] = axes["group"].astype(str)
-    axes = axes[axes["global_dim"].isin(dim_lookup)]
-    if axes.empty:
-        return []
-
-    return [
-        {
-            "group": str(row.group),
-            "partial_axis": int(row.partial_axis),
-            "global_dim": dim_lookup[row.global_dim],
-            "value": float(row.value),
+        group_entry = {
+            "group": group,
+            "coords": {},
+            "contribution": {},
+            "cos2": {},
         }
-        for row in axes.itertuples(index=False)
-    ]
+        for dimension, dim_key in dim_lookup.items():
+            column_name = str(dimension)
+            group_entry["coords"][dim_key] = float(coordinate_row[column_name])
+            group_entry["contribution"][dim_key] = float(contribution_row[column_name])
+            group_entry["cos2"][dim_key] = float(cos2_row[column_name])
+
+        payload.append(group_entry)
+
+    return sorted(payload, key=lambda entry: entry["group"])
+
+
+def _build_partial_correlation_payload(
+    partial_correlations: pd.DataFrame,
+    dimensions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
+    payload = []
+    for _, row in partial_correlations.iterrows():
+        group, partial_axis = _split_group_dimension_column(row["id"])
+        for dimension, dim_key in dim_lookup.items():
+            column_name = str(dimension)
+            payload.append(
+                {
+                    "group": group,
+                    "partial_axis": partial_axis + 1,
+                    "global_dim": dim_key,
+                    "value": float(row[column_name]),
+                }
+            )
+
+    return payload
 
 
 def _build_feature_correlation_payload(
-    feature_correlations: pd.DataFrame | None,
+    feature_correlations: pd.DataFrame,
     dimensions: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    if feature_correlations is None or feature_correlations.empty:
-        return []
-
-    correlation_table = feature_correlations.copy()
-    dimension_columns = {
-        str(index + 1): dimension["key"] for index, dimension in enumerate(dimensions)
-    }
-    available_dimension_columns = [
-        column for column in dimension_columns if column in correlation_table.columns
-    ]
-    if not available_dimension_columns:
-        return []
-
-    correlation_table["feature_id"] = correlation_table["feature_id"].astype(str)
-    correlation_table["group"] = correlation_table["group"].astype(str)
-    correlation_table["feature_name"] = correlation_table["feature_name"].astype(str)
+    dimension_columns = _build_zero_indexed_dimension_lookup(dimensions)
 
     payload = []
-    for _, row in correlation_table.iterrows():
+    for _, row in feature_correlations.iterrows():
+        feature_id = str(row["id"])
+        group, feature_name = feature_id.split(":", 1)
         coords = {}
-        for column in available_dimension_columns:
+        for column in dimension_columns:
+            column = str(column)
             value = row[column]
-            coords[dimension_columns[column]] = None if pd.isna(value) else float(value)
+            coords[dimension_columns[int(column)]] = (
+                None if pd.isna(value) else float(value)
+            )
 
         payload.append(
             {
-                "feature_id": row["feature_id"],
-                "group": row["group"],
-                "feature_name": row["feature_name"],
+                "feature_id": feature_id,
+                "group": group,
+                "feature_name": feature_name,
                 "coords": coords,
             }
         )
@@ -341,8 +289,29 @@ def _build_feature_correlation_payload(
     return payload
 
 
+def _read_prince_wide_tsv(path: Path) -> pd.DataFrame:
+    table = pd.read_csv(path, sep="\t")
+    table["id"] = table["id"].astype(str)
+    return table
+
+
+def _build_zero_indexed_dimension_lookup(
+    dimensions: list[dict[str, object]],
+) -> dict[int, str]:
+    return {index: dimension["key"] for index, dimension in enumerate(dimensions)}
+
+
+def _split_group_dimension_column(column_name: str) -> tuple[str, int]:
+    group, dimension = str(column_name).split(":", 1)
+    return group, int(dimension)
+
+
+def _index_by_id(table: pd.DataFrame) -> dict[str, pd.Series]:
+    return {str(row["id"]): row for _, row in table.iterrows()}
+
+
 def _build_dimensions(
-    sample_coordinates: pd.DataFrame, proportion_explained: pd.Series | None
+    sample_coordinates: pd.DataFrame, proportion_explained: pd.Series
 ) -> list[dict[str, object]]:
     dimensions = []
     for index, column_name in enumerate(sample_coordinates.columns):

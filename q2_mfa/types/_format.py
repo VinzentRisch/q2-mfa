@@ -48,6 +48,9 @@ class PrinceWideTSVFormat(model.TextFileFormat):
             )
 
         df = pd.read_csv(str(self), sep="\t")
+        if df.empty:
+            raise ValidationError("Prince wide TSV must contain at least one data row.")
+
         numeric_values = df[value_columns].apply(pd.to_numeric, errors="coerce")
         if numeric_values.isna().to_numpy().any():
             raise ValidationError("Prince wide TSV value columns must be numeric.")

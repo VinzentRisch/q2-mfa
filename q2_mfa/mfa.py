@@ -61,8 +61,8 @@ def _as_prince_wide_table(table):
     """
     Normalize a Prince component table for the MFA result directory.
 
-    Prince partial tables can use a MultiIndex for row labels, so those labels
-    are flattened with ':' before they become the result table's ``id`` column.
+    Prince partial tables can use MultiIndex row or column labels, so those
+    labels are flattened with ':' before writing a single-header TSV.
     """
     table = table.copy()
     if isinstance(table.index, pd.MultiIndex):
@@ -70,8 +70,12 @@ def _as_prince_wide_table(table):
             ":".join(str(value) for value in index_values)
             for index_values in table.index
         ]
+    if isinstance(table.columns, pd.MultiIndex):
+        table.columns = [
+            ":".join(str(value) for value in column_values)
+            for column_values in table.columns
+        ]
     table.index.name = "id"
-    table.columns = [str(index) for index in range(len(table.columns))]
     return table.reset_index()
 
 

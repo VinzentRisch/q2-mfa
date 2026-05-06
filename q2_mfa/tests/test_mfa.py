@@ -64,8 +64,14 @@ class TestMFA(TestPluginBase):
                 ":".join(str(value) for value in index_values)
                 for index_values in table.index
             ]
+        if isinstance(table.columns, pd.MultiIndex):
+            table.columns = [
+                ":".join(str(value) for value in column_values)
+                for column_values in table.columns
+            ]
+        else:
+            table.columns = [str(column) for column in table.columns]
         table.index.name = "id"
-        table.columns = [str(index) for index in range(len(table.columns))]
         return table.reset_index()
 
     def _prince_mfa(self, table, groups, **kwargs):

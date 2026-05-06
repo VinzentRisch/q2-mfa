@@ -189,14 +189,11 @@ def _build_partial_sample_payload(
     ordered_groups = sorted(groups)
     for sample_id in sample_ids:
         for group in ordered_groups:
-            coords = grouped.get((sample_id, group))
-            if coords is None:
-                continue
             partial_samples.append(
                 {
                     "sample_id": sample_id,
                     "group": group,
-                    "coords": coords,
+                    "coords": grouped[(sample_id, group)],
                 }
             )
 
@@ -315,16 +312,9 @@ def _build_dimensions(
 ) -> list[dict[str, object]]:
     dimensions = []
     for index, column_name in enumerate(sample_coordinates.columns):
-        explained = None
-        if proportion_explained is not None and index < len(proportion_explained):
-            explained_value = proportion_explained.iloc[index]
-            if pd.notna(explained_value):
-                explained = float(explained_value)
-
+        explained = float(proportion_explained.iloc[index])
         label = f"Dim {index + 1}"
-        axis_title = label
-        if explained is not None:
-            axis_title = f"{label} ({explained * 100:.1f}% explained)"
+        axis_title = f"{label} ({explained * 100:.1f}% explained)"
 
         dimensions.append(
             {

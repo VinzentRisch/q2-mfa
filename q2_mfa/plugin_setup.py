@@ -156,18 +156,12 @@ plugin.methods.register_function(
     outputs=[("mfa_results", MFAResults)],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
     parameter_descriptions=ordination_parameter_descriptions,
-    output_descriptions={
-        "mfa_results": (
-            "MFA results containing the global ordination together with "
-            "partial sample coordinates, partial axes summary, group "
-            "summary, and feature correlation tables."
-        )
-    },
+    output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",
     description=(
         "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
         "table is treated as a separate group, and the analysis is performed "
-        "directly with prince.MFA."
+        "with the prince python package."
     ),
     citations=[
         citations["escofier1994multiple"],

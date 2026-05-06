@@ -47,13 +47,6 @@ class PrinceWideTSVFormat(model.TextFileFormat):
                 "Expected at least 1 Prince wide TSV value column, " "observed 0."
             )
 
-        expected_value_columns = [str(index) for index in range(len(value_columns))]
-        if value_columns != expected_value_columns:
-            raise ValidationError(
-                "Prince wide TSV value columns must be consecutive integers "
-                "starting at 0."
-            )
-
         df = pd.read_csv(str(self), sep="\t")
         numeric_values = df[value_columns].apply(pd.to_numeric, errors="coerce")
         if numeric_values.isna().to_numpy().any():

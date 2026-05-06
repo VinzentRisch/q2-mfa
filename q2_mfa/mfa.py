@@ -8,7 +8,6 @@
 import secrets
 import warnings
 
-import numpy as np
 import pandas as pd
 import prince
 from rachis.plugin import CaptureHolder
@@ -79,13 +78,6 @@ def _to_ordination(mfa_result, table):
         features=mfa_result.column_coordinates_,
         proportion_explained=pd.Series(mfa_result.percentage_of_variance_),
     )
-
-
-def _feature_cosine_similarities(mfa_result):
-    coordinates = mfa_result.column_coordinates_
-    squared_coordinates = coordinates.pow(2)
-    squared_distance = squared_coordinates.sum(axis=1).replace(0, np.nan)
-    return squared_coordinates.divide(squared_distance, axis=0).fillna(0.0)
 
 
 def _create_mfa_results(
@@ -189,7 +181,7 @@ def mfa(
     feature_correlations = _as_prince_wide_table(mfa_result.column_correlations)
     feature_contributions = _as_prince_wide_table(mfa_result.column_contributions_)
     feature_cosine_similarities = _as_prince_wide_table(
-        _feature_cosine_similarities(mfa_result)
+        mfa_result.column_cosine_similarities_
     )
 
     return _create_mfa_results(

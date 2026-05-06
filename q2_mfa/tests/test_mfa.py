@@ -7,7 +7,6 @@
 # ----------------------------------------------------------------------------
 import warnings
 
-import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import prince
@@ -207,12 +206,8 @@ class TestMFA(TestPluginBase):
         pd.testing.assert_frame_equal(feature_contributions, expected_contributions)
 
         feature_cos2 = self._read_table(results, "feature-cosine-similarities.tsv")
-        expected_feature_cos2 = prince_result.column_coordinates_.pow(2)
-        expected_feature_cos2 = expected_feature_cos2.divide(
-            expected_feature_cos2.sum(axis=1).replace(0, np.nan), axis=0
-        ).fillna(0.0)
         expected_feature_cos2 = self._as_expected_prince_wide_table(
-            expected_feature_cos2
+            prince_result.column_cosine_similarities_
         )
         pd.testing.assert_frame_equal(feature_cos2, expected_feature_cos2)
 

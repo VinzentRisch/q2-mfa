@@ -60,84 +60,14 @@ def _build_prince_input(feature_tables):
 
 def _as_prince_wide_table(table):
     table = table.copy()
+    if isinstance(table.index, pd.MultiIndex):
+        table.index = [
+            ":".join(str(value) for value in index_values)
+            for index_values in table.index
+        ]
     table.index.name = "id"
+    table.columns = [str(index) for index in range(len(table.columns))]
     return table.reset_index()
-
-
-def _flatten_partial_sample_coordinates(partial_coordinates):
-    partial_coordinates = partial_coordinates.copy()
-    partial_coordinates.columns = [
-        f"{group}:{component}" for group, component in partial_coordinates.columns
-    ]
-    return _as_prince_wide_table(partial_coordinates)
-
-
-def _compute_partial_axes_summary(mfa_result, table):
-    """
-    Compute correlations between each group component and each global component.
-
-    Prince exposes the per-group PCA models used internally during MFA, but it
-    does not expose this partial-axis summary as a fitted table.
-    """
-    global_scores = mfa_result.row_coordinates(table)
-    rows = []
-
-    for group, columns in mfa_result.groups_.items():
-        group_scores = mfa_result[group].row_coordinates(table.loc[:, columns])
-        for partial_component in group_scores.columns:
-            for global_component in global_scores.columns:
-                correlation = group_scores[partial_component].corr(
-                    global_scores[global_component]
-                )
-                rows.append(
-                    {
-                        "group": group,
-                        "partial_component": partial_component,
-                        "global_component": global_component,
-                        "correlation": (
-                            0.0 if pd.isna(correlation) else float(correlation)
-                        ),
-                    }
-                )
-
-    return pd.DataFrame(rows)
-
-
-def _compute_group_summary(mfa_result):
-    """
-    Compute group-level coordinates, contributions, and cos2 from Prince output.
-
-    Prince exposes feature contributions and the internal per-group PCA models,
-    but it does not expose this group-level summary as a fitted table.
-    """
-    eigenvalues = pd.Series(mfa_result.eigenvalues_)
-    rows = []
-
-    for group, columns in mfa_result.groups_.items():
-        group_contribution = mfa_result.column_contributions_.loc[columns].sum(axis=0)
-        first_eigenvalue = float(mfa_result[group].eigenvalues_[0])
-        if first_eigenvalue <= 0:
-            raise ValueError(
-                f"Feature table '{group}' has a non-positive first eigenvalue."
-            )
-
-        group_dist2 = float(
-            np.square(mfa_result[group].eigenvalues_ / first_eigenvalue).sum()
-        )
-        for component in group_contribution.index:
-            contribution = float(group_contribution[component])
-            coordinate = float(contribution * eigenvalues[component])
-            rows.append(
-                {
-                    "group": group,
-                    "component": component,
-                    "coordinate": coordinate,
-                    "contribution": contribution,
-                    "cos2": float((coordinate**2) / group_dist2),
-                }
-            )
-
-    return pd.DataFrame(rows)
 
 
 def _to_ordination(mfa_result, table):
@@ -162,8 +92,11 @@ def _create_mfa_results(
     ordination,
     partial_sample_coordinates,
     sample_cosine_similarities,
-    partial_axes,
-    group_summary,
+    group_coordinates,
+    group_contributions,
+    group_cosine_similarities,
+    partial_correlations,
+    partial_contributions,
     feature_correlations,
     feature_contributions,
     feature_cosine_similarities,
@@ -177,8 +110,21 @@ def _create_mfa_results(
     sample_cosine_similarities.to_csv(
         results.path / "sample-cosine-similarities.tsv", sep="\t", index=False
     )
-    partial_axes.to_csv(results.path / "partial-axes.tsv", sep="\t", index=False)
-    group_summary.to_csv(results.path / "group-summary.tsv", sep="\t", index=False)
+    group_coordinates.to_csv(
+        results.path / "group-coordinates.tsv", sep="\t", index=False
+    )
+    group_contributions.to_csv(
+        results.path / "group-contributions.tsv", sep="\t", index=False
+    )
+    group_cosine_similarities.to_csv(
+        results.path / "group-cosine-similarities.tsv", sep="\t", index=False
+    )
+    partial_correlations.to_csv(
+        results.path / "partial-correlations.tsv", sep="\t", index=False
+    )
+    partial_contributions.to_csv(
+        results.path / "partial-contributions.tsv", sep="\t", index=False
+    )
     feature_correlations.to_csv(
         results.path / "feature-correlations.tsv", sep="\t", index=False
     )
@@ -227,14 +173,19 @@ def mfa(
     ).fit(table, groups=groups)
 
     ordination = _to_ordination(mfa_result, table)
-    partial_sample_coordinates = _flatten_partial_sample_coordinates(
+    partial_sample_coordinates = _as_prince_wide_table(
         mfa_result.partial_row_coordinates(table)
     )
     sample_cosine_similarities = _as_prince_wide_table(
         mfa_result.row_cosine_similarities(table)
     )
-    partial_axes = _compute_partial_axes_summary(mfa_result, table)
-    group_summary = _compute_group_summary(mfa_result)
+    group_coordinates = _as_prince_wide_table(mfa_result.group_coordinates_)
+    group_contributions = _as_prince_wide_table(mfa_result.group_contributions_)
+    group_cosine_similarities = _as_prince_wide_table(
+        mfa_result.group_cosine_similarities_
+    )
+    partial_correlations = _as_prince_wide_table(mfa_result.partial_correlations_)
+    partial_contributions = _as_prince_wide_table(mfa_result.partial_contributions_)
     feature_correlations = _as_prince_wide_table(mfa_result.column_correlations)
     feature_contributions = _as_prince_wide_table(mfa_result.column_contributions_)
     feature_cosine_similarities = _as_prince_wide_table(
@@ -245,8 +196,11 @@ def mfa(
         ordination,
         partial_sample_coordinates,
         sample_cosine_similarities,
-        partial_axes,
-        group_summary,
+        group_coordinates,
+        group_contributions,
+        group_cosine_similarities,
+        partial_correlations,
+        partial_contributions,
         feature_correlations,
         feature_contributions,
         feature_cosine_similarities,

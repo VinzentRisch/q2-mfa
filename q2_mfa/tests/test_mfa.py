@@ -58,18 +58,16 @@ class TestMFA(TestPluginBase):
     def _read_table(self, results, filename):
         return pd.read_csv(results.path / filename, sep="\t")
 
-    def _stringify_value_columns(self, table):
+    def _as_expected_prince_wide_table(self, table):
         table = table.copy()
-        table.columns = [
-            column if column == "id" else str(column) for column in table.columns
-        ]
-        table.columns.name = None
-        return table
-
-    def _assert_frame_values_equal(self, observed, expected):
-        self.assertEqual(list(observed.index), list(expected.index))
-        self.assertEqual(list(observed.columns), list(expected.columns))
-        npt.assert_allclose(observed.to_numpy(), expected.to_numpy())
+        if isinstance(table.index, pd.MultiIndex):
+            table.index = [
+                ":".join(str(value) for value in index_values)
+                for index_values in table.index
+            ]
+        table.index.name = "id"
+        table.columns = [str(index) for index in range(len(table.columns))]
+        return table.reset_index()
 
     def _prince_mfa(self, table, groups, **kwargs):
         return prince.MFA(
@@ -151,33 +149,61 @@ class TestMFA(TestPluginBase):
         partial_coordinates = self._read_table(
             results, "partial-sample-coordinates.tsv"
         )
-        expected_partial = prince_result.partial_row_coordinates(table).copy()
-        expected_partial.columns = [
-            f"{group}:{component}" for group, component in expected_partial.columns
-        ]
-        expected_partial.index.name = "id"
-        expected_partial = expected_partial.reset_index()
+        expected_partial = self._as_expected_prince_wide_table(
+            prince_result.partial_row_coordinates(table)
+        )
         pd.testing.assert_frame_equal(partial_coordinates, expected_partial)
 
         sample_cos2 = self._read_table(results, "sample-cosine-similarities.tsv")
-        expected_sample_cos2 = prince_result.row_cosine_similarities(table).copy()
-        expected_sample_cos2.index.name = "id"
-        expected_sample_cos2 = expected_sample_cos2.reset_index()
-        expected_sample_cos2 = self._stringify_value_columns(expected_sample_cos2)
+        expected_sample_cos2 = self._as_expected_prince_wide_table(
+            prince_result.row_cosine_similarities(table)
+        )
         pd.testing.assert_frame_equal(sample_cos2, expected_sample_cos2)
 
+        group_coordinates = self._read_table(results, "group-coordinates.tsv")
+        expected_group_coordinates = self._as_expected_prince_wide_table(
+            prince_result.group_coordinates_
+        )
+        pd.testing.assert_frame_equal(group_coordinates, expected_group_coordinates)
+
+        group_contributions = self._read_table(results, "group-contributions.tsv")
+        expected_group_contributions = self._as_expected_prince_wide_table(
+            prince_result.group_contributions_
+        )
+        pd.testing.assert_frame_equal(group_contributions, expected_group_contributions)
+
+        group_cos2 = self._read_table(results, "group-cosine-similarities.tsv")
+        expected_group_cos2 = self._as_expected_prince_wide_table(
+            prince_result.group_cosine_similarities_
+        )
+        pd.testing.assert_frame_equal(group_cos2, expected_group_cos2)
+
+        partial_correlations = self._read_table(results, "partial-correlations.tsv")
+        expected_partial_correlations = self._as_expected_prince_wide_table(
+            prince_result.partial_correlations_
+        )
+        pd.testing.assert_frame_equal(
+            partial_correlations, expected_partial_correlations
+        )
+
+        partial_contributions = self._read_table(results, "partial-contributions.tsv")
+        expected_partial_contributions = self._as_expected_prince_wide_table(
+            prince_result.partial_contributions_
+        )
+        pd.testing.assert_frame_equal(
+            partial_contributions, expected_partial_contributions
+        )
+
         feature_correlations = self._read_table(results, "feature-correlations.tsv")
-        expected_correlations = prince_result.column_correlations.copy()
-        expected_correlations.index.name = "id"
-        expected_correlations = expected_correlations.reset_index()
-        expected_correlations = self._stringify_value_columns(expected_correlations)
+        expected_correlations = self._as_expected_prince_wide_table(
+            prince_result.column_correlations
+        )
         pd.testing.assert_frame_equal(feature_correlations, expected_correlations)
 
         feature_contributions = self._read_table(results, "feature-contributions.tsv")
-        expected_contributions = prince_result.column_contributions_.copy()
-        expected_contributions.index.name = "id"
-        expected_contributions = expected_contributions.reset_index()
-        expected_contributions = self._stringify_value_columns(expected_contributions)
+        expected_contributions = self._as_expected_prince_wide_table(
+            prince_result.column_contributions_
+        )
         pd.testing.assert_frame_equal(feature_contributions, expected_contributions)
 
         feature_cos2 = self._read_table(results, "feature-cosine-similarities.tsv")
@@ -185,74 +211,10 @@ class TestMFA(TestPluginBase):
         expected_feature_cos2 = expected_feature_cos2.divide(
             expected_feature_cos2.sum(axis=1).replace(0, np.nan), axis=0
         ).fillna(0.0)
-        expected_feature_cos2.index.name = "id"
-        expected_feature_cos2 = expected_feature_cos2.reset_index()
-        expected_feature_cos2 = self._stringify_value_columns(expected_feature_cos2)
+        expected_feature_cos2 = self._as_expected_prince_wide_table(
+            expected_feature_cos2
+        )
         pd.testing.assert_frame_equal(feature_cos2, expected_feature_cos2)
-
-    def test_mfa_writes_derived_outputs(self):
-        feature_tables = {
-            "metabolome": self.table_a,
-            "microbiome": self.table_b,
-        }
-        table, groups = self._build_prince_input(
-            {"metabolome": self.table_a, "microbiome": self.table_b}
-        )
-        results = mfa(
-            feature_tables,
-            n_components=2,
-            engine="scipy",
-            random_state=None,
-        )
-        prince_result = self._prince_mfa(table, groups, random_state=None)
-
-        partial_axes = self._read_table(results, "partial-axes.tsv")
-        expected_partial_axes = []
-        global_scores = prince_result.row_coordinates(table)
-        for group, columns in groups.items():
-            group_scores = prince_result[group].row_coordinates(table.loc[:, columns])
-            for partial_component in group_scores.columns:
-                for global_component in global_scores.columns:
-                    expected_partial_axes.append(
-                        {
-                            "group": group,
-                            "partial_component": partial_component,
-                            "global_component": global_component,
-                            "correlation": float(
-                                group_scores[partial_component].corr(
-                                    global_scores[global_component]
-                                )
-                            ),
-                        }
-                    )
-        expected_partial_axes = pd.DataFrame(expected_partial_axes)
-        pd.testing.assert_frame_equal(partial_axes, expected_partial_axes)
-
-        group_summary = self._read_table(results, "group-summary.tsv")
-        expected_group_summary = []
-        eigenvalues = pd.Series(prince_result.eigenvalues_)
-        for group, columns in groups.items():
-            group_contribution = prince_result.column_contributions_.loc[columns].sum(
-                axis=0
-            )
-            first_eigenvalue = float(prince_result[group].eigenvalues_[0])
-            group_dist2 = float(
-                np.square(prince_result[group].eigenvalues_ / first_eigenvalue).sum()
-            )
-            for component in group_contribution.index:
-                contribution = float(group_contribution[component])
-                coordinate = float(contribution * eigenvalues[component])
-                expected_group_summary.append(
-                    {
-                        "group": group,
-                        "component": component,
-                        "coordinate": coordinate,
-                        "contribution": contribution,
-                        "cos2": float((coordinate**2) / group_dist2),
-                    }
-                )
-        expected_group_summary = pd.DataFrame(expected_group_summary)
-        pd.testing.assert_frame_equal(group_summary, expected_group_summary)
 
     def test_mfa_drops_non_shared_samples_with_warning(self):
         with warnings.catch_warnings(record=True) as observed:

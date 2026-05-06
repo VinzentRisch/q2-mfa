@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 import secrets
 import warnings
+from functools import reduce
 
 import pandas as pd
 import prince
@@ -22,25 +23,23 @@ def _build_prince_input(feature_tables):
     if len(feature_tables) < 2:
         raise ValueError("MFA requires at least two feature tables.")
 
-    tables = {}
-    consensus_samples = None
-    for group_name, table in feature_tables.items():
+    for group_name in feature_tables:
         if ":" in group_name:
             raise ValueError("MFA group names cannot contain ':'.")
 
-        tables[group_name] = table
-
-        if consensus_samples is None:
-            consensus_samples = table.index
-        else:
-            consensus_samples = consensus_samples.intersection(table.index)
+    tables = list(feature_tables.values())
+    consensus_samples = reduce(
+        lambda shared, table: shared.intersection(table.index),
+        tables[1:],
+        tables[0].index,
+    )
 
     if consensus_samples.empty:
         raise ValueError("Feature tables do not share any sample IDs.")
 
     prefixed_tables = []
     groups = {}
-    for group_name, table in tables.items():
+    for group_name, table in feature_tables.items():
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(

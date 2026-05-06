@@ -98,7 +98,7 @@ plugin.methods.register_function(
 ordination_parameters = {
     "rescale_with_mean": Bool,
     "rescale_with_std": Bool,
-    "n_components": Int % Range(1, None),
+    "n_components": Int % Range(2, None),
     "n_iter": Int % Range(0, None),
     "random_state": Int,
     "engine": Str % Choices(["sklearn", "scipy"]),

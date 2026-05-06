@@ -17,7 +17,9 @@ from skbio import OrdinationResults
 from q2_mfa.types import MFAResultsDirFmt
 
 
-def _build_prince_input(feature_tables):
+def _build_prince_input(
+    feature_tables: dict,
+) -> tuple[pd.DataFrame, dict]:
     feature_tables = getattr(feature_tables, "collection", feature_tables)
 
     if len(feature_tables) < 2:
@@ -56,7 +58,7 @@ def _build_prince_input(feature_tables):
     return pd.concat(prefixed_tables, axis=1), groups
 
 
-def _as_prince_wide_table(table):
+def _as_prince_wide_table(table: pd.DataFrame) -> pd.DataFrame:
     """
     Normalize a Prince component table for the MFA result directory.
 
@@ -78,7 +80,7 @@ def _as_prince_wide_table(table):
     return table.reset_index()
 
 
-def _to_ordination(mfa_result, table):
+def _to_ordination(mfa_result: prince.MFA, table: pd.DataFrame) -> OrdinationResults:
     return OrdinationResults(
         short_method_name="MFA",
         long_method_name="Multiple Factor Analysis",
@@ -90,9 +92,9 @@ def _to_ordination(mfa_result, table):
 
 
 def _create_mfa_results(
-    ordination,
-    prince_tables,
-):
+    ordination: OrdinationResults,
+    prince_tables: dict,
+) -> MFAResultsDirFmt:
     results = MFAResultsDirFmt()
 
     ordination.write(str(results.path / "ordination.txt"))

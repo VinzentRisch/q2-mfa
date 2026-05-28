@@ -1742,7 +1742,7 @@ function renderVariancePlot() {
     type: 'bar',
     name: 'Explained variance',
     x: components.map((component) => component.label),
-    y: components.map((component) => component.variance_explained * 100),
+    y: components.map((component) => component.variance_explained),
     marker: {
       color: components.map((component) =>
         selectedDimensions.has(component.key)
@@ -1754,7 +1754,7 @@ function renderVariancePlot() {
         width: 1,
       },
     },
-    customdata: components.map((component) => [component.variance_explained * 100]),
+    customdata: components.map((component) => [component.variance_explained]),
     hovertemplate: '%{x}: %{customdata[0]:.2f}% explained<extra></extra>',
   };
 
@@ -1811,7 +1811,7 @@ function renderCumulativeVariancePlot(components, themeColors) {
     name: 'Cumulative explained variance',
     x: components.map((component) => component.label),
     y: components.map((component) => {
-      cumulativeTotal += component.variance_explained * 100;
+      cumulativeTotal += component.variance_explained;
       return cumulativeTotal;
     }),
     line: {
@@ -2003,14 +2003,14 @@ function updateVarianceSummary(components) {
     0
   );
   document.getElementById('variance-summary').textContent =
-    `${formatValue(totalExplained * 100)}% across ${components.length} components`;
+    `${formatValue(totalExplained)}% across ${components.length} components`;
 }
 
 function updateCumulativeSummary(components) {
   const finalValue = components.reduce(
     (sum, component) => sum + component.variance_explained,
     0
-  ) * 100;
+  );
   document.getElementById('cumulative-summary').textContent =
     `${formatValue(finalValue)}% at component ${components.length}`;
 }

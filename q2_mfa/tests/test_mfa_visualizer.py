@@ -62,6 +62,9 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn('id="top-features-table-body"', index_html)
             self.assertNotIn("https://cdn.plot.ly", index_html)
 
+            app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
+            self.assertNotIn("variance_explained * 100", app_js)
+
             payload = self._load_payload(output_dir)
 
         self.assertEqual(payload["default_x"], "Dim 1")

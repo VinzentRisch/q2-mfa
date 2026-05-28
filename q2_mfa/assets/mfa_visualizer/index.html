@@ -47,7 +47,7 @@
         <label class="toggle-option" for="show-barycenter">
           <input id="show-barycenter" type="checkbox">
           <span>Barycenter ellipse</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Barycenter ellipse help" data-tooltip="Shows an ellipse around the visible sample scores. It summarizes the center and spread of the currently displayed samples; wider ellipses indicate more dispersion on the selected MFA axes.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Barycenter ellipse help" data-tooltip="Shows an ellipse around the visible sample scores from ordination.txt. The ellipse is calculated from the filtered samples on the selected X and Y axes: the center is the mean score and the shape comes from the two-dimensional covariance of those scores. Wider ellipses indicate more dispersion on the selected MFA axes.">?</span>
         </label>
       </div>
 
@@ -55,7 +55,7 @@
         <label class="toggle-option" for="show-partial-overlay">
           <input id="show-partial-overlay" type="checkbox">
           <span>Partial coordinates</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial coordinates help" data-tooltip="Shows each sample's group-specific partial coordinates and connects them to the global sample score. Long connectors indicate that a group places that sample away from the consensus position.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial coordinates help" data-tooltip="Shows each sample's group-specific partial coordinates from partial-sample-coordinates.tsv and connects them to the global sample scores from ordination.txt. Long connectors indicate that a group places that sample away from the consensus position.">?</span>
         </label>
       </div>
 
@@ -63,7 +63,7 @@
         <label class="toggle-option" for="show-feature-correlations">
           <input id="show-feature-correlations" type="checkbox">
           <span>Feature correlations</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Feature correlations help" data-tooltip="Overlays the strongest feature correlations for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. The top-feature count controls how many arrows are shown, ordered by two-dimensional correlation magnitude on the current X and Y axes.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Feature correlations help" data-tooltip="Overlays the strongest feature correlations from feature-correlations.tsv for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the current X and Y correlation values.">?</span>
         </label>
       </div>
 
@@ -93,7 +93,7 @@
     <section class="plot-grid-secondary">
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Explained variance by component <span class="help-tooltip" tabindex="0" role="button" aria-label="Explained variance help" data-tooltip="Shows how much total variation each MFA component explains. Larger bars indicate axes that capture more structure and are usually better candidates for interpretation.">?</span></span>
+          <span class="plot-title-with-help">Explained variance by component <span class="help-tooltip" tabindex="0" role="button" aria-label="Explained variance help" data-tooltip="Shows the proportion explained values stored in ordination.txt for each MFA component. Larger bars indicate axes that capture more structure and are usually better candidates for interpretation.">?</span></span>
           <span id="variance-summary"></span>
         </div>
         <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -101,7 +101,7 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Cumulative explained variance <span class="help-tooltip" tabindex="0" role="button" aria-label="Cumulative variance help" data-tooltip="Shows the running total of variance explained as components are added. Use it to judge how many axes are needed to summarize the dataset.">?</span></span>
+          <span class="plot-title-with-help">Cumulative explained variance <span class="help-tooltip" tabindex="0" role="button" aria-label="Cumulative variance help" data-tooltip="Shows the running total calculated from the component proportion explained values in ordination.txt. Each point sums that component and all earlier components, which helps judge how many axes are needed to summarize the dataset.">?</span></span>
           <span id="cumulative-summary"></span>
         </div>
         <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -109,14 +109,14 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Group partial inertia <span class="help-tooltip" tabindex="0" role="button" aria-label="Group partial inertia help" data-tooltip="Shows how strongly each data group contributes to and is represented by the selected MFA axes. Groups farther from zero are more influential in the displayed dimensions.">?</span></span>
+          <span class="plot-title-with-help">Group partial inertia <span class="help-tooltip" tabindex="0" role="button" aria-label="Group partial inertia help" data-tooltip="Shows group coordinates from group-coordinates.tsv for the selected MFA axes. Hover details add group contribution values from group-contributions.tsv and cos2 values from group-cosine-similarities.tsv. Groups farther from zero are more influential in the displayed dimensions.">?</span></span>
         </div>
         <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Partial axes <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial axes help" data-tooltip="Shows how each group-specific axis aligns with the global MFA axes. Vectors pointing in similar directions indicate agreement between groups; vectors near zero are weakly aligned with this view.">?</span></span>
+          <span class="plot-title-with-help">Partial axes <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial axes help" data-tooltip="Shows partial axis correlations from partial-correlations.tsv. Each vector uses the selected global MFA axes as coordinates, so vectors pointing in similar directions indicate agreement between groups and vectors near zero are weakly aligned with this view.">?</span></span>
         </div>
         <div id="partial-axes-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
@@ -124,7 +124,7 @@
 
     <section class="feature-table-shell" aria-label="Contributing features">
       <div class="plot-status">
-        <span class="plot-title-with-help">Contributing features <span class="help-tooltip" tabindex="0" role="button" aria-label="Contributing features help" data-tooltip="Ranks all features by the magnitude of their correlations in the currently selected two-dimensional MFA plane. Larger values indicate features more strongly represented by the selected axes.">?</span></span>
+        <span class="plot-title-with-help">Contributing features <span class="help-tooltip" tabindex="0" role="button" aria-label="Contributing features help" data-tooltip="Ranks all features from feature-correlations.tsv by the magnitude of their correlations in the currently selected two-dimensional MFA plane. Plane magnitude is calculated as sqrt(x^2 + y^2) from the selected X and Y axis correlation values; larger values indicate features more strongly represented by the selected axes.">?</span></span>
         <button id="download-feature-table" class="feature-table-download" type="button">Download TSV</button>
       </div>
       <div class="feature-table-wrapper">

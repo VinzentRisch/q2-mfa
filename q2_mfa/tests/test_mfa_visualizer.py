@@ -70,6 +70,22 @@ class TestMFAVisualizer(TestPluginBase):
                 'max="100" step="1" value="10">',
                 index_html,
             )
+            for expected_tooltip_text in (
+                "visible sample scores from ordination.txt",
+                "partial coordinates from partial-sample-coordinates.tsv",
+                "global sample scores from ordination.txt",
+                "feature correlations from feature-correlations.tsv",
+                "sqrt(x^2 + y^2)",
+                "proportion explained values stored in ordination.txt",
+                "running total calculated from the component proportion "
+                "explained values in ordination.txt",
+                "group coordinates from group-coordinates.tsv",
+                "contribution values from group-contributions.tsv",
+                "cos2 values from group-cosine-similarities.tsv",
+                "partial axis correlations from partial-correlations.tsv",
+                "Ranks all features from feature-correlations.tsv",
+            ):
+                self.assertIn(expected_tooltip_text, index_html)
             for sort_key in (
                 "rank",
                 "feature_name",

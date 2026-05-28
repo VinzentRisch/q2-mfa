@@ -73,7 +73,6 @@ const state = {
   categoricalFilterValues: new Set(),
   numericFilterMin: null,
   numericFilterMax: null,
-  darkMode: true,
 };
 
 function initialize() {
@@ -81,7 +80,6 @@ function initialize() {
   populateDimensionSelectors();
   populateColorControls();
   populateFilterSelector();
-  applyTheme();
   bindEvents();
   renderFilterControls();
   renderPlot();
@@ -188,17 +186,6 @@ function bindEvents() {
     renderFilterControls();
     renderPlot();
   });
-
-  document.getElementById('dark-mode-toggle').addEventListener('change', (event) => {
-    state.darkMode = event.target.checked;
-    applyTheme();
-    renderPlot();
-  });
-}
-
-function applyTheme() {
-  document.body.classList.toggle('dark-mode', state.darkMode);
-  document.getElementById('dark-mode-toggle').checked = state.darkMode;
 }
 
 function resetFilterState() {

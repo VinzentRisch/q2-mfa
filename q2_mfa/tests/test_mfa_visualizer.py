@@ -102,6 +102,7 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("table-layout: fixed;", style_css)
             self.assertIn(".feature-table-number {\n  text-align: left;", style_css)
             self.assertIn("justify-content: flex-start;", style_css)
+            self.assertIn("color-scheme: light;", style_css)
             self.assertNotIn("height: 640px;", style_css)
 
             app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")

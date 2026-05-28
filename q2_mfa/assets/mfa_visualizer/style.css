@@ -328,10 +328,10 @@ input[type="number"] {
   cursor: pointer;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 400;
+  letter-spacing: normal;
   padding: 7px 10px;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .feature-table-download:hover {
@@ -400,9 +400,9 @@ input[type="number"] {
   color: var(--text-muted);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .feature-table-sort {

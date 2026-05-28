@@ -483,12 +483,13 @@ function buildFeatureCorrelationTraces() {
   const labelPlacement = placeFeatureCorrelationLabels(rankedFeatures, groupColors);
 
   const traces = [];
-  traces.push(...buildPlotLabelConnectorTraces(labelPlacement));
   groupOrder.forEach((group) => {
     const groupFeatures = rankedFeatures.filter((feature) => feature.group === group);
     if (!groupFeatures.length) {
       return;
     }
+    const groupLegend = `feature-correlations:${group}`;
+    const groupLabelPlacement = labelPlacement.filter((label) => label.group === group);
 
     const lineX = [];
     const lineY = [];
@@ -501,7 +502,7 @@ function buildFeatureCorrelationTraces() {
       type: 'scatter',
       mode: 'lines',
       name: `${group} feature vectors`,
-      legendgroup: `feature-correlations:${group}`,
+      legendgroup: groupLegend,
       x: lineX,
       y: lineY,
       line: {
@@ -516,7 +517,7 @@ function buildFeatureCorrelationTraces() {
       type: 'scatter',
       mode: 'markers',
       name: group,
-      legendgroup: `feature-correlations:${group}`,
+      legendgroup: groupLegend,
       showlegend: true,
       x: groupFeatures.map((feature) => feature.x),
       y: groupFeatures.map((feature) => feature.y),
@@ -542,11 +543,18 @@ function buildFeatureCorrelationTraces() {
         },
       },
     });
+
+    traces.push(...buildPlotLabelConnectorTraces(groupLabelPlacement, {
+      legendgroup: groupLegend,
+    }));
+    const labelTrace = buildPlotLabelTrace(groupLabelPlacement, 11, {
+      legendgroup: groupLegend,
+      name: `${group} feature labels`,
+    });
+    if (labelTrace) {
+      traces.push(labelTrace);
+    }
   });
-  const labelTrace = buildPlotLabelTrace(labelPlacement, 11);
-  if (labelTrace) {
-    traces.push(labelTrace);
-  }
 
   return traces;
 }
@@ -1225,6 +1233,7 @@ function placeFeatureCorrelationLabels(features, groupColors) {
     anchorX: feature.x,
     anchorY: feature.y,
     color: groupColors[feature.group],
+    group: feature.group,
     hoverText:
       `<b>${feature.feature_id}</b><br>` +
       `Group: ${feature.group}<br>` +
@@ -1292,6 +1301,7 @@ function placePlotLabels(items, options) {
         box: bestCandidate.box,
         color: item.color,
         connector: firstLabelOverlap || bestCandidate.overlapPenalty > 0,
+        group: item.group,
         hoverText: item.hoverText,
         text: item.text,
         x: bestCandidate.x,
@@ -1367,7 +1377,7 @@ function buildPlotPointBox(x, y, options) {
   };
 }
 
-function buildPlotLabelConnectorTraces(labelPlacement) {
+function buildPlotLabelConnectorTraces(labelPlacement, traceOptions = {}) {
   return labelPlacement
     .filter((label) => label.connector)
     .map((label) => ({
@@ -1383,10 +1393,11 @@ function buildPlotLabelConnectorTraces(labelPlacement) {
       },
       hoverinfo: 'skip',
       showlegend: false,
+      ...traceOptions,
     }));
 }
 
-function buildPlotLabelTrace(labelPlacement, fontSize) {
+function buildPlotLabelTrace(labelPlacement, fontSize, traceOptions = {}) {
   if (!labelPlacement.length) {
     return null;
   }
@@ -1394,7 +1405,7 @@ function buildPlotLabelTrace(labelPlacement, fontSize) {
   return {
     type: 'scatter',
     mode: 'text',
-    name: 'Labels',
+    name: traceOptions.name ?? 'Labels',
     x: labelPlacement.map((label) => label.x),
     y: labelPlacement.map((label) => label.y),
     text: labelPlacement.map((label) => label.text),
@@ -1404,10 +1415,10 @@ function buildPlotLabelTrace(labelPlacement, fontSize) {
       size: fontSize,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
     },
-    customdata: labelPlacement.map((label) => label.hoverText),
-    hovertemplate: '%{customdata}<extra></extra>',
+    hoverinfo: 'skip',
     cliponaxis: false,
     showlegend: false,
+    ...traceOptions,
   };
 }
 

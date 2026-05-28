@@ -64,6 +64,32 @@ class TestMFAVisualizer(TestPluginBase):
 
             app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
             self.assertNotIn("variance_explained * 100", app_js)
+            self.assertIn("hoverinfo: 'skip'", app_js)
+            self.assertNotIn(
+                "customdata: labelPlacement.map((label) => label.hoverText)",
+                app_js,
+            )
+            self.assertIn(
+                "const groupLegend = `feature-correlations:${group}`;",
+                app_js,
+            )
+            self.assertIn(
+                "const groupLabelPlacement = labelPlacement.filter("
+                "(label) => label.group === group);",
+                app_js,
+            )
+            self.assertIn("group: feature.group,", app_js)
+            self.assertIn("group: item.group,", app_js)
+            self.assertIn(
+                "buildPlotLabelConnectorTraces(groupLabelPlacement, {\n"
+                "      legendgroup: groupLegend,",
+                app_js,
+            )
+            self.assertIn(
+                "buildPlotLabelTrace(groupLabelPlacement, 11, {\n"
+                "      legendgroup: groupLegend,",
+                app_js,
+            )
 
             payload = self._load_payload(output_dir)
 

@@ -60,10 +60,38 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn('id="top-features-table-body"', index_html)
+            self.assertIn('id="download-feature-table"', index_html)
+            self.assertIn(
+                '<label for="top-feature-count">Feature arrows</label>',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="top-feature-count" type="number" min="1" '
+                'max="100" step="1" value="10">',
+                index_html,
+            )
+            for sort_key in (
+                "rank",
+                "feature_name",
+                "group",
+                "x",
+                "y",
+                "rankingScore",
+            ):
+                self.assertIn(f'data-feature-sort="{sort_key}"', index_html)
             self.assertNotIn("https://cdn.plot.ly", index_html)
+
+            style_css = (Path(output_dir) / "style.css").read_text(encoding="utf-8")
+            self.assertIn("max-height: min(70vh, 780px);", style_css)
+            self.assertIn("table-layout: fixed;", style_css)
+            self.assertIn(".feature-table-number {\n  text-align: left;", style_css)
+            self.assertIn("justify-content: flex-start;", style_css)
+            self.assertNotIn("height: 640px;", style_css)
 
             app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
             self.assertNotIn("variance_explained * 100", app_js)
+            self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
+            self.assertIn("topFeatureCount: 10,", app_js)
             self.assertIn("hoverinfo: 'skip'", app_js)
             self.assertNotIn(
                 "customdata: labelPlacement.map((label) => label.hoverText)",
@@ -90,6 +118,11 @@ class TestMFAVisualizer(TestPluginBase):
                 "      legendgroup: groupLegend,",
                 app_js,
             )
+            self.assertIn("function getSortedFeatureTableRows()", app_js)
+            self.assertIn("function updateFeatureTableSort(button)", app_js)
+            self.assertIn("function downloadFeatureTableTsv()", app_js)
+            self.assertIn("function escapeTsvValue(value)", app_js)
+            self.assertIn("const features = getSortedFeatureTableRows();", app_js)
 
             payload = self._load_payload(output_dir)
 

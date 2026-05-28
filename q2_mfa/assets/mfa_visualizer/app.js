@@ -46,6 +46,7 @@ const PARTIAL_AXES_X_RANGE = [-1.08, 1.3];
 const PARTIAL_AXES_Y_RANGE = [-1.16, 1.16];
 const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
+const MAX_FEATURE_OVERLAY_COUNT = 100;
 
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
@@ -64,6 +65,10 @@ const state = {
   showPartialOverlay: false,
   showFeatureCorrelations: false,
   topFeatureCount: 10,
+  featureTableSort: {
+    column: 'rank',
+    direction: 'asc',
+  },
   filterBy: '',
   categoricalFilterValues: new Set(),
   numericFilterMin: null,
@@ -161,8 +166,20 @@ function bindEvents() {
     if (!Number.isFinite(nextValue) || nextValue < 1) {
       return;
     }
-    state.topFeatureCount = Math.floor(nextValue);
+    state.topFeatureCount = Math.min(Math.floor(nextValue), MAX_FEATURE_OVERLAY_COUNT);
+    event.target.value = state.topFeatureCount;
     renderPlot();
+  });
+
+  document.querySelectorAll('[data-feature-sort]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      updateFeatureTableSort(event.currentTarget);
+      renderTopFeaturesTable();
+    });
+  });
+
+  document.getElementById('download-feature-table').addEventListener('click', () => {
+    downloadFeatureTableTsv();
   });
 
   document.getElementById('filter-by').addEventListener('change', (event) => {
@@ -578,9 +595,50 @@ function getRankedFeatureCorrelations(limit = null) {
       b.rankingScore - a.rankingScore ||
       a.group.localeCompare(b.group) ||
       a.feature_name.localeCompare(b.feature_name)
-    );
+    )
+    .map((feature, index) => ({
+      ...feature,
+      rank: index + 1,
+    }));
 
   return limit === null ? rankedFeatures : rankedFeatures.slice(0, limit);
+}
+
+function getSortedFeatureTableRows() {
+  const features = getRankedFeatureCorrelations();
+  const { column, direction } = state.featureTableSort;
+  return features.slice().sort((left, right) =>
+    compareFeatureTableRows(left, right, column, direction)
+  );
+}
+
+function compareFeatureTableRows(left, right, column, direction) {
+  let comparison;
+  if (['rank', 'x', 'y', 'rankingScore'].includes(column)) {
+    comparison = left[column] - right[column];
+  } else {
+    comparison = String(left[column]).localeCompare(String(right[column]));
+  }
+
+  if (comparison !== 0) {
+    return direction === 'asc' ? comparison : -comparison;
+  }
+
+  return left.rank - right.rank;
+}
+
+function updateFeatureTableSort(button) {
+  const column = button.dataset.featureSort;
+  if (state.featureTableSort.column === column) {
+    state.featureTableSort.direction =
+      state.featureTableSort.direction === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+
+  state.featureTableSort = {
+    column,
+    direction: button.dataset.defaultDirection ?? 'asc',
+  };
 }
 
 function renderTopFeaturesTable() {
@@ -600,13 +658,14 @@ function renderTopFeaturesTable() {
   }
 
   body.replaceChildren();
-  const features = getRankedFeatureCorrelations();
-  empty.textContent = '';
+  const features = getSortedFeatureTableRows();
+  updateFeatureTableSortHeaders();
+  empty.textContent = features.length ? '' : 'No finite feature correlations for the selected dimensions.';
 
   const fragment = document.createDocumentFragment();
-  features.forEach((feature, index) => {
+  features.forEach((feature) => {
     const row = document.createElement('tr');
-    row.appendChild(buildFeatureTableCell(index + 1, 'feature-table-rank'));
+    row.appendChild(buildFeatureTableCell(feature.rank, 'feature-table-rank'));
     row.appendChild(buildFeatureNameCell(feature));
     row.appendChild(buildFeatureTableCell(feature.group));
     row.appendChild(buildFeatureTableCell(formatValue(feature.x), 'feature-table-number'));
@@ -617,6 +676,30 @@ function renderTopFeaturesTable() {
     fragment.appendChild(row);
   });
   body.appendChild(fragment);
+}
+
+function updateFeatureTableSortHeaders() {
+  document.querySelectorAll('[data-feature-sort]').forEach((button) => {
+    const column = button.dataset.featureSort;
+    const isActive = column === state.featureTableSort.column;
+    const direction = isActive ? state.featureTableSort.direction : 'none';
+    const header = button.closest('th');
+    const indicator = button.querySelector('.feature-table-sort-indicator');
+    header.setAttribute(
+      'aria-sort',
+      direction === 'none'
+        ? 'none'
+        : direction === 'asc'
+          ? 'ascending'
+          : 'descending'
+    );
+    button.classList.toggle('is-active', isActive);
+    indicator.textContent = isActive
+      ? state.featureTableSort.direction === 'asc'
+        ? '↑'
+        : '↓'
+      : '';
+  });
 }
 
 function buildFeatureNameCell(feature) {
@@ -632,6 +715,45 @@ function buildFeatureTableCell(value, className) {
   }
   cell.textContent = value;
   return cell;
+}
+
+function downloadFeatureTableTsv() {
+  const rows = getSortedFeatureTableRows();
+  const xLabel = dimensionsByKey[state.xDimension].label;
+  const yLabel = dimensionsByKey[state.yDimension].label;
+  const header = ['rank', 'feature_id', 'feature', 'group', xLabel, yLabel, 'plane_magnitude'];
+  const lines = [
+    header.map(escapeTsvValue).join('\t'),
+    ...rows.map((feature) => [
+      feature.rank,
+      feature.feature_id,
+      feature.feature_name,
+      feature.group,
+      feature.x,
+      feature.y,
+      feature.rankingScore,
+    ].map(escapeTsvValue).join('\t')),
+  ];
+
+  const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/tab-separated-values' });
+  const link = document.createElement('a');
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = buildFeatureTableDownloadFilename();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function escapeTsvValue(value) {
+  return String(value).replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+}
+
+function buildFeatureTableDownloadFilename() {
+  const xLabel = state.xDimension.toLowerCase().replace(/\s+/g, '-');
+  const yLabel = state.yDimension.toLowerCase().replace(/\s+/g, '-');
+  return `mfa-contributing-features-${xLabel}-vs-${yLabel}.tsv`;
 }
 
 function buildPartialOverlayTraces(samples, colorColumn) {

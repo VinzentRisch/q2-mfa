@@ -411,6 +411,25 @@ input[type="number"] {
   font-size: 0.78rem;
 }
 
+.feature-table-download {
+  appearance: none;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-main);
+  cursor: pointer;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+.feature-table-download:hover {
+  border-color: var(--accent);
+}
+
 .plot-title-with-help {
   display: inline-flex;
   align-items: center;
@@ -440,8 +459,7 @@ input[type="number"] {
 }
 
 .feature-table-wrapper {
-  height: 640px;
-  max-height: 70vh;
+  max-height: min(70vh, 780px);
   overflow: auto;
   border: 1px solid var(--panel-border);
   border-radius: 14px;
@@ -450,6 +468,7 @@ input[type="number"] {
 .feature-table {
   width: 100%;
   min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.84rem;
 }
@@ -459,7 +478,10 @@ input[type="number"] {
   padding: 9px 10px;
   border-bottom: 1px solid var(--panel-border);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .feature-table th {
@@ -475,6 +497,32 @@ input[type="number"] {
   text-transform: uppercase;
 }
 
+.feature-table-sort {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.feature-table-sort.is-active {
+  color: var(--text-main);
+}
+
+.feature-table-sort-indicator {
+  min-width: 1ch;
+}
+
 .feature-table tbody tr:hover {
   background: var(--accent-soft);
 }
@@ -486,7 +534,7 @@ input[type="number"] {
 }
 
 .feature-table-number {
-  text-align: right;
+  text-align: left;
 }
 
 .feature-table-empty {

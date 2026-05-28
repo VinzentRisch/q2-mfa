@@ -477,6 +477,7 @@ function buildFeatureCorrelationTraces() {
     return [];
   }
 
+  const themeColors = getThemeColors();
   const rankedFeatures = getRankedFeatureCorrelations(state.topFeatureCount);
   if (!rankedFeatures.length) {
     return [];
@@ -540,10 +541,10 @@ function buildFeatureCorrelationTraces() {
         color: groupColors[group],
         size: 9,
         opacity: 0.95,
-        symbol: 'circle-open',
+        symbol: 'circle',
         line: {
-          color: groupColors[group],
-          width: 2,
+          color: themeColors.markerLine,
+          width: 1,
         },
       },
     });

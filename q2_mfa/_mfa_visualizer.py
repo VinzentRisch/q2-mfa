@@ -314,7 +314,7 @@ def _build_dimensions(
     for index, column_name in enumerate(sample_coordinates.columns):
         explained = float(proportion_explained.iloc[index])
         label = f"Dim {index + 1}"
-        axis_title = f"{label} ({explained * 100:.1f}% explained)"
+        axis_title = f"{label} ({explained:.1f}% explained)"
 
         dimensions.append(
             {

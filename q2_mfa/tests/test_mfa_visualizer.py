@@ -106,7 +106,6 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertNotIn("height: 640px;", style_css)
 
             app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
-            self.assertNotIn("variance_explained * 100", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
             self.assertIn("hoverinfo: 'skip'", app_js)
@@ -148,6 +147,10 @@ class TestMFAVisualizer(TestPluginBase):
         self.assertEqual(
             [dimension["label"] for dimension in payload["dimensions"]],
             ["Dim 1", "Dim 2"],
+        )
+        self.assertEqual(
+            [dimension["axis_title"] for dimension in payload["dimensions"]],
+            ["Dim 1 (0.8% explained)", "Dim 2 (0.2% explained)"],
         )
         self.assertEqual(
             payload["component_variance"],

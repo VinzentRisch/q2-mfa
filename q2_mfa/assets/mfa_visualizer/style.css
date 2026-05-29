@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --page-bg: #f4f2eb;
+  --page-bg: #f2f3ed;
   --panel-bg: rgba(255, 255, 255, 0.92);
   --panel-border: rgba(41, 47, 54, 0.12);
   --control-bg: #ffffff;
@@ -30,10 +30,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(circle at top left, rgba(18, 103, 130, 0.16), transparent 32%),
-    radial-gradient(circle at top right, rgba(201, 94, 55, 0.14), transparent 28%),
-    var(--page-bg);
+  background: var(--page-bg);
   color: var(--text-main);
   font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
 }

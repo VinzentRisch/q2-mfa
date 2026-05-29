@@ -62,7 +62,7 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn('id="top-features-table-body"', index_html)
             self.assertIn('id="download-feature-table"', index_html)
             self.assertIn(
-                '<label for="top-feature-count">Feature arrows</label>',
+                '<label for="top-feature-count">Number of loadings</label>',
                 index_html,
             )
             self.assertIn(

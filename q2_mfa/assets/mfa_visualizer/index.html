@@ -58,13 +58,13 @@
         <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
         <label class="toggle-option" for="show-feature-correlations">
           <input id="show-feature-correlations" type="checkbox">
-          <span>Feature correlations</span>
+          <span>Feature loadings</span>
           <span class="help-tooltip" tabindex="0" role="button" aria-label="Feature correlations help" data-tooltip="Overlays the strongest feature correlations from feature-correlations.tsv for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the current X and Y correlation values.">?</span>
         </label>
       </div>
 
       <div class="control-group control-group-top-features">
-        <label for="top-feature-count">Feature arrows</label>
+        <label for="top-feature-count">Number of loadings</label>
         <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
       </div>
 

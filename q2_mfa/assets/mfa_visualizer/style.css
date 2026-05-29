@@ -97,8 +97,6 @@ h1 {
 
 .control-group-toggle {
   justify-content: flex-start;
-  gap: 0;
-  padding-top: 20px;
 }
 
 .control-group-wide {
@@ -126,12 +124,18 @@ h1 {
 }
 
 label,
-.filter-heading {
+.filter-heading,
+.control-label-placeholder {
   color: var(--text-muted);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.74rem;
   letter-spacing: normal;
+  line-height: 1.2;
   text-transform: none;
+}
+
+.control-label-placeholder {
+  visibility: hidden;
 }
 
 select,

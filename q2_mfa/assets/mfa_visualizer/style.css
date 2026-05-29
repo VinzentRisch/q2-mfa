@@ -53,11 +53,11 @@ body {
 }
 
 .eyebrow {
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--accent);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 

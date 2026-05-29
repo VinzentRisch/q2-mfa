@@ -76,7 +76,6 @@ const state = {
 };
 
 function initialize() {
-  document.getElementById('visualizer-title').textContent = payload.title;
   populateDimensionSelectors();
   populateColorControls();
   populateFilterSelector();

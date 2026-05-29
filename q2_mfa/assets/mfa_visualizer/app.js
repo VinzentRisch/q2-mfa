@@ -219,11 +219,6 @@ function renderCategoricalFilterControls(container, column) {
     }
   }
 
-  const heading = document.createElement('div');
-  heading.className = 'filter-heading';
-  heading.textContent = `Include values from ${column.name}`;
-  container.appendChild(heading);
-
   const options = document.createElement('div');
   options.className = 'filter-options';
 
@@ -276,11 +271,6 @@ function renderNumericFilterControls(container, column) {
     state.numericFilterMin = column.min;
     state.numericFilterMax = column.max;
   }
-
-  const heading = document.createElement('div');
-  heading.className = 'filter-heading';
-  heading.textContent = `Range filter for ${column.name}`;
-  container.appendChild(heading);
 
   const grid = document.createElement('div');
   grid.className = 'numeric-filter-grid';

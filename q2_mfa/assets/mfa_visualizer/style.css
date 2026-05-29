@@ -5,7 +5,6 @@
   --panel-border: rgba(41, 47, 54, 0.12);
   --control-bg: #ffffff;
   --control-border: rgba(82, 96, 109, 0.24);
-  --filter-bg: rgba(244, 242, 235, 0.75);
   --text-main: #1f2933;
   --text-muted: #52606d;
   --accent: #126782;
@@ -124,7 +123,6 @@ h1 {
 }
 
 label,
-.filter-heading,
 .control-label-placeholder {
   color: var(--text-muted);
   font-family: "IBM Plex Mono", monospace;
@@ -264,10 +262,10 @@ input[type="number"] {
 .filter-controls {
   min-height: 34px;
   width: 100%;
-  padding: 7px 9px;
-  border: 1px solid var(--panel-border);
-  border-radius: 16px;
-  background: var(--filter-bg);
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--control-bg);
   display: flex;
   align-items: center;
 }
@@ -280,7 +278,7 @@ input[type="number"] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .filter-option {
@@ -295,7 +293,8 @@ input[type="number"] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 0;
+  width: 100%;
 }
 
 .plot-shell {

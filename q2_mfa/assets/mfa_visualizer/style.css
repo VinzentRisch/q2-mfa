@@ -271,8 +271,7 @@ input[type="number"] {
   align-items: center;
 }
 
-.filter-placeholder,
-.filter-summary-empty {
+.filter-placeholder {
   color: var(--text-muted);
 }
 
@@ -347,7 +346,7 @@ input[type="number"] {
 
 .plot-canvas {
   width: 100%;
-  min-height: 620px;
+  min-height: 682px;
   overflow: visible;
 }
 
@@ -501,7 +500,7 @@ input[type="number"] {
   }
 
   .plot-canvas {
-    min-height: 520px;
+    min-height: 572px;
   }
 
   .plot-canvas-secondary {

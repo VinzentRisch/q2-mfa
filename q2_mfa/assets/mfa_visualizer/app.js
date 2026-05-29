@@ -200,7 +200,6 @@ function renderFilterControls() {
 
   if (!state.filterBy) {
     container.innerHTML = '<span class="filter-placeholder">No metadata filter applied.</span>';
-    document.getElementById('filter-summary').textContent = 'Showing all samples';
     return;
   }
 
@@ -378,7 +377,6 @@ function renderPlot() {
   renderPartialAxesPlot();
   renderVariancePlot();
   renderTopFeaturesTable();
-  updateStatus(filteredSamples);
 }
 
 function buildDownloadFilename(extension) {
@@ -1178,7 +1176,7 @@ function buildLayout(isEmpty) {
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
     dragmode: 'zoom',
     hovermode: 'closest',
-    margin: { t: 104, r: 40, b: 70, l: 80 },
+    margin: { t: 72, r: 40, b: 70, l: 80 },
     font: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
@@ -1187,7 +1185,7 @@ function buildLayout(isEmpty) {
       orientation: 'h',
       groupclick: 'togglegroup',
       yanchor: 'bottom',
-      y: 1.14,
+      y: 1.08,
       xanchor: 'left',
       x: 0,
       font: { color: themeColors.font },
@@ -2088,34 +2086,6 @@ function buildPartialHoverText(entry) {
     `${dimensionsByKey[state.xDimension].label}: ${formatValue(entry.coords[state.xDimension])}`,
     `${dimensionsByKey[state.yDimension].label}: ${formatValue(entry.coords[state.yDimension])}`,
   ].join('<br>');
-}
-
-function updateStatus(filteredSamples) {
-  document.getElementById('sample-count').textContent =
-    `${filteredSamples.length} of ${payload.samples.length} samples shown`;
-
-  if (!state.filterBy) {
-    document.getElementById('filter-summary').textContent = 'Showing all samples';
-    return;
-  }
-
-  const column = metadataByName[state.filterBy];
-  if (column.type === 'categorical') {
-    const selectedValues = column.values.filter((value) =>
-      state.categoricalFilterValues.has(value)
-    );
-    if (column.has_missing && state.categoricalFilterValues.has(MISSING_VALUE_TOKEN)) {
-      selectedValues.push('Missing');
-    }
-    document.getElementById('filter-summary').textContent =
-      `Filter: ${state.filterBy} in ${selectedValues.join(', ') || 'none'}`;
-    return;
-  }
-
-  const lowerBound = state.numericFilterMin ?? column.min;
-  const upperBound = state.numericFilterMax ?? column.max;
-  document.getElementById('filter-summary').textContent =
-    `Filter: ${state.filterBy} from ${formatValue(lowerBound)} to ${formatValue(upperBound)}`;
 }
 
 function updateVarianceSummary(components) {

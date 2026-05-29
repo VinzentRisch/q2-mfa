@@ -425,7 +425,7 @@ function getGroupColorMap(groups = getOrderedGroupNames()) {
   return Object.fromEntries(
     orderedGroups.map((group, index) => [
       group,
-      COLOR_PALETTES.Earth.colors[index % COLOR_PALETTES.Earth.colors.length],
+      COLOR_PALETTES.Safe.colors[index % COLOR_PALETTES.Safe.colors.length],
     ])
   );
 }

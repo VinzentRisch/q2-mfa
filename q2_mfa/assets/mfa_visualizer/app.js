@@ -347,7 +347,7 @@ function getFilteredSamples() {
 function renderPlot() {
   const filteredSamples = getFilteredSamples();
   const traces = buildTraces(filteredSamples);
-  const layout = buildLayout(filteredSamples.length === 0);
+  const layout = buildLayout();
 
   Plotly.react('sample-plot', traces, layout, {
     responsive: true,
@@ -1167,7 +1167,7 @@ function withAlpha(hexColor, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
-function buildLayout(isEmpty) {
+function buildLayout() {
   const themeColors = getThemeColors();
 
   return {
@@ -1213,19 +1213,6 @@ function buildLayout(isEmpty) {
       gridwidth: 1,
       tickfont: { color: themeColors.font },
     },
-    annotations: isEmpty
-      ? [
-          {
-            text: 'No samples match the active filter.',
-            showarrow: false,
-            xref: 'paper',
-            yref: 'paper',
-            x: 0.5,
-            y: 0.5,
-            font: { size: 16, color: themeColors.annotation },
-          },
-        ]
-      : [],
   };
 }
 

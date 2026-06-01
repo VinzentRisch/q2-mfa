@@ -344,6 +344,15 @@ input[type="number"] {
   min-width: 0;
 }
 
+.plot-shell-main {
+  position: relative;
+  width: 100%;
+  min-width: min(640px, 100%);
+  max-width: 100%;
+  overflow: auto;
+  resize: horizontal;
+}
+
 .plot-canvas {
   width: 100%;
   min-height: 682px;

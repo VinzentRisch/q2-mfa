@@ -80,8 +80,29 @@ function initialize() {
   populateColorControls();
   populateFilterSelector();
   bindEvents();
+  bindSamplePlotResizeObserver();
   renderFilterControls();
   renderPlot();
+}
+
+function bindSamplePlotResizeObserver() {
+  const samplePlotShell = document.querySelector('.plot-shell-main');
+  if (!samplePlotShell || !window.ResizeObserver) {
+    return;
+  }
+
+  let resizeAnimationFrame = null;
+  const resizeObserver = new ResizeObserver(() => {
+    if (resizeAnimationFrame !== null) {
+      window.cancelAnimationFrame(resizeAnimationFrame);
+    }
+
+    resizeAnimationFrame = window.requestAnimationFrame(() => {
+      Plotly.Plots.resize('sample-plot');
+      resizeAnimationFrame = null;
+    });
+  });
+  resizeObserver.observe(samplePlotShell);
 }
 
 function populateDimensionSelectors() {

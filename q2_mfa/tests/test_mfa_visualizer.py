@@ -70,6 +70,7 @@ class TestMFAVisualizer(TestPluginBase):
                 'max="100" step="1" value="10">',
                 index_html,
             )
+            self.assertIn('class="plot-shell plot-shell-main"', index_html)
             for expected_tooltip_text in (
                 "visible sample scores from ordination.txt",
                 "partial coordinates from partial-sample-coordinates.tsv",
@@ -103,9 +104,15 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn(".feature-table-number {\n  text-align: left;", style_css)
             self.assertIn("justify-content: flex-start;", style_css)
             self.assertIn("color-scheme: light;", style_css)
+            self.assertIn("resize: horizontal;", style_css)
+            self.assertIn("max-width: 100%;", style_css)
+            self.assertNotIn(".plot-shell-main::after", style_css)
             self.assertNotIn("height: 640px;", style_css)
 
             app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
+            self.assertIn("function bindSamplePlotResizeObserver()", app_js)
+            self.assertIn("new ResizeObserver", app_js)
+            self.assertIn("Plotly.Plots.resize('sample-plot')", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
             self.assertIn("hoverinfo: 'skip'", app_js)

@@ -125,6 +125,8 @@ class TestMFAVisualizer(TestPluginBase):
             )
             self.assertIn("resize: horizontal;", style_css)
             self.assertIn("max-width: 100%;", style_css)
+            self.assertIn("container-type: inline-size;", style_css)
+            self.assertIn("height: calc(100cqw - 34px);", style_css)
             self.assertNotIn(".plot-shell-main::after", style_css)
             self.assertNotIn("height: 640px;", style_css)
 
@@ -143,10 +145,21 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 56, b: 70, l: 90 };",
+                "const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };",
+                app_js,
+            )
+            self.assertIn(
+                "const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };",
+                app_js,
+            )
+            self.assertIn(
+                "const CUMULATIVE_VARIANCE_PLOT_MARGIN = "
+                "{ t: 28, r: 56, b: 42, l: 80 };",
                 app_js,
             )
             self.assertEqual(app_js.count("margin: SECONDARY_SQUARE_PLOT_MARGIN"), 2)
+            self.assertIn("margin: VARIANCE_PLOT_MARGIN,", app_js)
+            self.assertIn("margin: CUMULATIVE_VARIANCE_PLOT_MARGIN,", app_js)
             self.assertIn("const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];", app_js)
             self.assertEqual(app_js.count("scaleanchor: 'y',"), 2)
             self.assertGreaterEqual(app_js.count("constrain: 'domain',"), 4)

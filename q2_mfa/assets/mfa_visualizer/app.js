@@ -52,7 +52,9 @@ const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
 const SAMPLE_LEGEND_SYMBOL_WIDTH = 46;
 const SAMPLE_LEGEND_LABEL_PADDING = 34;
 const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
-const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 56, b: 70, l: 90 };
+const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };
+const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };
+const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
 
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
@@ -2064,7 +2066,7 @@ function buildVarianceLayout() {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 20, r: 20, b: 60, l: 80 },
+    margin: VARIANCE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
@@ -2092,7 +2094,7 @@ function buildCumulativeVarianceLayout() {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 28, r: 56, b: 60, l: 80 },
+    margin: CUMULATIVE_VARIANCE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',

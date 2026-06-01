@@ -367,7 +367,12 @@ input[type="number"] {
 #group-plot,
 #partial-axes-plot {
   min-height: 0;
-  aspect-ratio: 1 / 1;
+  height: calc(100cqw - 34px);
+  max-height: calc(100cqw - 34px);
+}
+
+.plot-shell-secondary {
+  container-type: inline-size;
 }
 
 .feature-table-shell {

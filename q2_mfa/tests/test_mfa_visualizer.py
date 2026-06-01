@@ -113,6 +113,23 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("function bindSamplePlotResizeObserver()", app_js)
             self.assertIn("new ResizeObserver", app_js)
             self.assertIn("Plotly.Plots.resize('sample-plot')", app_js)
+            self.assertIn("function computeSampleLegendRightMargin(traces)", app_js)
+            self.assertIn(
+                "const legendRightMargin = computeSampleLegendRightMargin(traces);",
+                app_js,
+            )
+            self.assertIn(
+                "margin: { t: 32, r: legendRightMargin, b: 70, l: 80 },", app_js
+            )
+            self.assertIn("SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;", app_js)
+            self.assertIn("function updateSamplePlotResizeLimits(layout)", app_js)
+            self.assertIn("updateSamplePlotResizeLimits(layout);", app_js)
+            self.assertIn(
+                "samplePlotShell.style.minWidth = `min(${minimumShellWidth}px, 100%)`;",
+                app_js,
+            )
+            self.assertIn("orientation: 'v',", app_js)
+            self.assertIn("x: 1.02,", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
             self.assertIn("hoverinfo: 'skip'", app_js)

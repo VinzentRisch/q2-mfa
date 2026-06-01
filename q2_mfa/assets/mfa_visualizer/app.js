@@ -47,6 +47,11 @@ const PARTIAL_AXES_Y_RANGE = [-1.16, 1.16];
 const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 const MAX_FEATURE_OVERLAY_COUNT = 100;
+const SAMPLE_LEGEND_MIN_RIGHT_MARGIN = 150;
+const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
+const SAMPLE_LEGEND_SYMBOL_WIDTH = 46;
+const SAMPLE_LEGEND_LABEL_PADDING = 34;
+const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
 
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
@@ -358,7 +363,8 @@ function getFilteredSamples() {
 function renderPlot() {
   const filteredSamples = getFilteredSamples();
   const traces = buildTraces(filteredSamples);
-  const layout = buildLayout();
+  const layout = buildLayout(traces);
+  updateSamplePlotResizeLimits(layout);
 
   Plotly.react('sample-plot', traces, layout, {
     responsive: true,
@@ -1178,26 +1184,27 @@ function withAlpha(hexColor, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
-function buildLayout() {
+function buildLayout(traces) {
   const themeColors = getThemeColors();
+  const legendRightMargin = computeSampleLegendRightMargin(traces);
 
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
     dragmode: 'zoom',
     hovermode: 'closest',
-    margin: { t: 72, r: 40, b: 70, l: 80 },
+    margin: { t: 32, r: legendRightMargin, b: 70, l: 80 },
     font: {
       color: themeColors.font,
       family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
     },
     legend: {
-      orientation: 'h',
+      orientation: 'v',
       groupclick: 'togglegroup',
-      yanchor: 'bottom',
-      y: 1.08,
+      yanchor: 'top',
+      y: 1,
       xanchor: 'left',
-      x: 0,
+      x: 1.02,
       font: { color: themeColors.font },
     },
     xaxis: {
@@ -1225,6 +1232,60 @@ function buildLayout() {
       tickfont: { color: themeColors.font },
     },
   };
+}
+
+function updateSamplePlotResizeLimits(layout) {
+  const samplePlotShell = document.querySelector('.plot-shell-main');
+  const samplePlot = document.getElementById('sample-plot');
+  if (!samplePlotShell || !samplePlot) {
+    return;
+  }
+
+  const shellWidth = samplePlotShell.getBoundingClientRect().width;
+  const plotWidth = samplePlot.getBoundingClientRect().width;
+  const shellExtraWidth = Math.max(shellWidth - plotWidth, 0);
+  const plotHeight = samplePlot.getBoundingClientRect().height || 682;
+  const squarePlotWidth = Math.max(
+    plotHeight - layout.margin.t - layout.margin.b,
+    0
+  );
+  const minimumShellWidth = Math.ceil(
+    squarePlotWidth + layout.margin.l + layout.margin.r + shellExtraWidth
+  );
+
+  samplePlotShell.style.minWidth = `min(${minimumShellWidth}px, 100%)`;
+}
+
+function computeSampleLegendRightMargin(traces) {
+  const legendLabels = traces.flatMap((trace) => {
+    const labels = [];
+    if (trace.showlegend !== false && trace.name) {
+      labels.push(trace.name);
+    }
+
+    const colorbarTitle = trace.marker?.colorbar?.title?.text;
+    if (colorbarTitle) {
+      labels.push(colorbarTitle);
+    }
+
+    return labels;
+  });
+
+  const maxLabelCharacters = Math.max(
+    0,
+    ...legendLabels.map((label) => Array.from(String(label)).length)
+  );
+  const estimatedMargin = Math.ceil(
+    SAMPLE_LEGEND_SYMBOL_WIDTH +
+    SAMPLE_LEGEND_LABEL_PADDING +
+    maxLabelCharacters * SAMPLE_LEGEND_CHARACTER_WIDTH
+  );
+
+  return clamp(
+    estimatedMargin,
+    SAMPLE_LEGEND_MIN_RIGHT_MARGIN,
+    SAMPLE_LEGEND_MAX_RIGHT_MARGIN
+  );
 }
 
 function renderGroupPlot() {

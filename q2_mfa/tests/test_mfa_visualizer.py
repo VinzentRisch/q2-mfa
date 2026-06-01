@@ -150,6 +150,8 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];", app_js)
             self.assertEqual(app_js.count("scaleanchor: 'y',"), 2)
             self.assertGreaterEqual(app_js.count("constrain: 'domain',"), 4)
+            self.assertNotIn("zeroline: false,", app_js)
+            self.assertNotIn("zerolinewidth: 2,", app_js)
             self.assertIn("function computeSampleLegendRightMargin(traces)", app_js)
             self.assertIn(
                 "const legendRightMargin = computeSampleLegendRightMargin(traces);",

@@ -2112,7 +2112,7 @@ function buildCumulativeVarianceLayout() {
       gridcolor: themeColors.grid,
       gridwidth: 1,
       tickfont: { color: themeColors.font },
-      zeroline: false,
+      zeroline: true,
     },
     annotations: [],
   };

@@ -1196,7 +1196,7 @@ function buildLayout(traces) {
     margin: { t: 32, r: legendRightMargin, b: 70, l: 80 },
     font: {
       color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     legend: {
       orientation: 'v',
@@ -1579,7 +1579,7 @@ function buildPlotLabelTrace(labelPlacement, fontSize, traceOptions = {}) {
     textfont: {
       color: labelPlacement.map((label) => label.color),
       size: fontSize,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     hoverinfo: 'skip',
     cliponaxis: false,
@@ -1618,7 +1618,7 @@ function buildGroupLayout() {
     showlegend: false,
     font: {
       color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     xaxis: {
       title: {
@@ -1854,7 +1854,7 @@ function buildPartialAxesLayout() {
     margin: { t: 20, r: 48, b: 70, l: 80 },
     font: {
       color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     showlegend: false,
     xaxis: {
@@ -2060,7 +2060,7 @@ function buildVarianceLayout() {
     margin: { t: 20, r: 20, b: 60, l: 80 },
     font: {
       color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     bargap: 0.24,
     xaxis: {
@@ -2088,7 +2088,7 @@ function buildCumulativeVarianceLayout() {
     margin: { t: 28, r: 56, b: 60, l: 80 },
     font: {
       color: themeColors.font,
-      family: '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+      family: 'Arial, sans-serif',
     },
     xaxis: {
       showgrid: true,

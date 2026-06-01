@@ -104,6 +104,25 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn(".feature-table-number {\n  text-align: left;", style_css)
             self.assertIn("justify-content: flex-start;", style_css)
             self.assertIn("color-scheme: light;", style_css)
+            self.assertIn("font-family: Arial, sans-serif;", style_css)
+            self.assertNotIn("IBM Plex", style_css)
+            self.assertNotIn("Helvetica Neue", style_css)
+            self.assertIn("font-size: 0.9rem;", style_css)
+            self.assertIn("font-size: 0.92rem;", style_css)
+            self.assertIn("font-size: 0.95rem;", style_css)
+            self.assertIn(
+                ".feature-table-download {\n  appearance: none;\n"
+                "  border: 1px solid var(--control-border);\n"
+                "  border-radius: 8px;\n"
+                "  background: var(--control-bg);\n"
+                "  color: var(--text-muted);",
+                style_css,
+            )
+            self.assertIn(
+                ".filter-placeholder {\n  color: var(--text-main);\n"
+                "  font-size: 0.9rem;",
+                style_css,
+            )
             self.assertIn("resize: horizontal;", style_css)
             self.assertIn("max-width: 100%;", style_css)
             self.assertNotIn(".plot-shell-main::after", style_css)
@@ -113,6 +132,9 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("function bindSamplePlotResizeObserver()", app_js)
             self.assertIn("new ResizeObserver", app_js)
             self.assertIn("Plotly.Plots.resize('sample-plot')", app_js)
+            self.assertIn("family: 'Arial, sans-serif'", app_js)
+            self.assertNotIn("IBM Plex", app_js)
+            self.assertNotIn("Helvetica Neue", app_js)
             self.assertIn("function computeSampleLegendRightMargin(traces)", app_js)
             self.assertIn(
                 "const legendRightMargin = computeSampleLegendRightMargin(traces);",

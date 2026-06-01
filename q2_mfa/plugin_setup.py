@@ -11,7 +11,7 @@ from rachis.core.type import Choices, Float, Range, Str
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
-from q2_mfa.types import MFAResults, MFAResultsDirFmt, PrinceWideTSVFormat
+from q2_mfa.types import MFAResults, MFAResultsDirFmt, NumericTSVFormat
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -28,7 +28,7 @@ plugin = Plugin(
 
 plugin.register_formats(
     MFAResultsDirFmt,
-    PrinceWideTSVFormat,
+    NumericTSVFormat,
 )
 plugin.register_semantic_types(MFAResults)
 plugin.register_artifact_class(

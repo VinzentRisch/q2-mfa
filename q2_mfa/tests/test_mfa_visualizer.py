@@ -135,6 +135,13 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("family: 'Arial, sans-serif'", app_js)
             self.assertNotIn("IBM Plex", app_js)
             self.assertNotIn("Helvetica Neue", app_js)
+            self.assertIn("function formatSampleLegendName(name, samples)", app_js)
+            self.assertIn("return `${name} (${samples.length})`;", app_js)
+            self.assertIn("name: formatSampleLegendName(name, samples),", app_js)
+            self.assertIn(
+                "name: formatSampleLegendName(colorColumn.name, numericSamples),",
+                app_js,
+            )
             self.assertIn("function computeSampleLegendRightMargin(traces)", app_js)
             self.assertIn(
                 "const legendRightMargin = computeSampleLegendRightMargin(traces);",

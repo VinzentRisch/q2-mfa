@@ -918,7 +918,7 @@ function buildSingleTrace(samples, color, name, options = {}) {
   return {
     type: 'scatter',
     mode: 'markers',
-    name,
+    name: formatSampleLegendName(name, samples),
     legendgroup: options.legendgroup,
     showlegend: options.showlegend ?? true,
     x: samples.map((sample) => sample.coords[state.xDimension]),
@@ -932,6 +932,10 @@ function buildSingleTrace(samples, color, name, options = {}) {
       line: { color: getThemeColors().markerLine, width: 1 },
     },
   };
+}
+
+function formatSampleLegendName(name, samples) {
+  return `${name} (${samples.length})`;
 }
 
 function buildNumericTraces(samples, colorColumn) {
@@ -948,7 +952,7 @@ function buildNumericTraces(samples, colorColumn) {
     traces.push({
       type: 'scatter',
       mode: 'markers',
-      name: colorColumn.name,
+      name: formatSampleLegendName(colorColumn.name, numericSamples),
       x: numericSamples.map((sample) => sample.coords[state.xDimension]),
       y: numericSamples.map((sample) => sample.coords[state.yDimension]),
       customdata: numericSamples.map(buildHoverText),

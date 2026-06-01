@@ -43,7 +43,7 @@ const DEFAULT_MARKER_COLOR = '#126782';
 const SELECTED_DIMENSION_COLOR = '#083D5B';
 const ELLIPSE_SCALE = 2.4477;
 const PARTIAL_AXES_X_RANGE = [-1.08, 1.3];
-const PARTIAL_AXES_Y_RANGE = [-1.16, 1.16];
+const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];
 const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 const MAX_FEATURE_OVERLAY_COUNT = 100;
@@ -52,6 +52,7 @@ const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
 const SAMPLE_LEGEND_SYMBOL_WIDTH = 46;
 const SAMPLE_LEGEND_LABEL_PADDING = 34;
 const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
+const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 56, b: 70, l: 90 };
 
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
@@ -1618,7 +1619,7 @@ function buildGroupLayout() {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 20, r: 56, b: 70, l: 90 },
+    margin: SECONDARY_SQUARE_PLOT_MARGIN,
     showlegend: false,
     font: {
       color: themeColors.font,
@@ -1626,11 +1627,14 @@ function buildGroupLayout() {
     },
     xaxis: {
       title: {
-        text: `${dimensionsByKey[state.xDimension].label} partial inertia`,
+        text: dimensionsByKey[state.xDimension].label,
         font: { color: themeColors.font },
       },
       range: [0, 1],
       fixedrange: true,
+      constrain: 'domain',
+      scaleanchor: 'y',
+      scaleratio: 1,
       automargin: true,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
@@ -1641,13 +1645,12 @@ function buildGroupLayout() {
     },
     yaxis: {
       title: {
-        text: `${dimensionsByKey[state.yDimension].label} partial inertia`,
+        text: dimensionsByKey[state.yDimension].label,
         font: { color: themeColors.font },
       },
       range: [0, 1],
       fixedrange: true,
-      scaleanchor: 'x',
-      scaleratio: 1,
+      constrain: 'domain',
       automargin: true,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
@@ -1855,7 +1858,7 @@ function buildPartialAxesLayout() {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    margin: { t: 20, r: 48, b: 70, l: 80 },
+    margin: SECONDARY_SQUARE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',

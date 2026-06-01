@@ -142,6 +142,14 @@ class TestMFAVisualizer(TestPluginBase):
                 "name: formatSampleLegendName(colorColumn.name, numericSamples),",
                 app_js,
             )
+            self.assertIn(
+                "const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 56, b: 70, l: 90 };",
+                app_js,
+            )
+            self.assertEqual(app_js.count("margin: SECONDARY_SQUARE_PLOT_MARGIN"), 2)
+            self.assertIn("const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];", app_js)
+            self.assertEqual(app_js.count("scaleanchor: 'y',"), 2)
+            self.assertGreaterEqual(app_js.count("constrain: 'domain',"), 4)
             self.assertIn("function computeSampleLegendRightMargin(traces)", app_js)
             self.assertIn(
                 "const legendRightMargin = computeSampleLegendRightMargin(traces);",
@@ -155,6 +163,16 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("updateSamplePlotResizeLimits(layout);", app_js)
             self.assertIn(
                 "samplePlotShell.style.minWidth = `min(${minimumShellWidth}px, 100%)`;",
+                app_js,
+            )
+            self.assertIn("text: dimensionsByKey[state.xDimension].label,", app_js)
+            self.assertIn("text: dimensionsByKey[state.yDimension].label,", app_js)
+            self.assertNotIn(
+                "text: `${dimensionsByKey[state.xDimension].label} partial inertia`,",
+                app_js,
+            )
+            self.assertNotIn(
+                "text: `${dimensionsByKey[state.yDimension].label} partial inertia`,",
                 app_js,
             )
             self.assertIn("orientation: 'v',", app_js)

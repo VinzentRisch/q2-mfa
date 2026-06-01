@@ -21,6 +21,20 @@ class TestMFAFormats(TestPluginBase):
         )
         fmt.validate()
 
+    def test_prince_wide_tsv_format_ok_non_finite_values(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-non-finite-values.tsv"),
+            mode="r",
+        )
+        fmt.validate()
+
+    def test_prince_wide_tsv_format_ok_empty_values(self):
+        fmt = PrinceWideTSVFormat(
+            self.get_data_path("prince-wide-empty-values.tsv"),
+            mode="r",
+        )
+        fmt.validate()
+
     def test_prince_wide_tsv_format_error_header(self):
         fmt = PrinceWideTSVFormat(
             self.get_data_path("prince-wide-broken-header.tsv"),

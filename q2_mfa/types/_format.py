@@ -31,7 +31,7 @@ class PrinceWideTSVFormat(model.TextFileFormat):
                     )
 
         try:
-            df = pd.read_csv(str(self), sep="\t", nrows=1)
+            df = pd.read_csv(str(self), sep="\t", dtype=str, keep_default_na=True)
         except pd.errors.EmptyDataError as exc:
             raise ValidationError("File is empty.") from exc
 
@@ -47,9 +47,9 @@ class PrinceWideTSVFormat(model.TextFileFormat):
                 "Expected at least 1 Prince wide TSV value column, " "observed 0."
             )
 
-        df = pd.read_csv(str(self), sep="\t")
-        numeric_values = df[value_columns].apply(pd.to_numeric, errors="coerce")
-        if numeric_values.isna().to_numpy().any():
+        values = df[value_columns]
+        numeric_values = values.apply(pd.to_numeric, errors="coerce")
+        if numeric_values.isna().mask(values.isna(), False).to_numpy().any():
             raise ValidationError("Prince wide TSV value columns must be numeric.")
 
 

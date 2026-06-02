@@ -454,7 +454,6 @@ input[type="number"] {
   background: var(--accent-soft);
 }
 
-.feature-table-rank,
 .feature-table-number {
   font-family: Arial, sans-serif;
   white-space: nowrap;
@@ -462,6 +461,32 @@ input[type="number"] {
 
 .feature-table-number {
   text-align: left;
+}
+
+.feature-name-cell {
+  cursor: help;
+}
+
+.feature-name-tooltip {
+  position: fixed;
+  z-index: 100;
+  display: none;
+  max-width: min(680px, calc(100vw - 32px));
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  box-shadow: var(--shadow);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  white-space: normal;
+}
+
+.feature-name-tooltip.is-visible {
+  display: block;
 }
 
 .feature-table-empty {

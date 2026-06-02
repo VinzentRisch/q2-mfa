@@ -60,7 +60,10 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn('id="top-features-table-body"', index_html)
+            self.assertIn('id="feature-name-tooltip"', index_html)
             self.assertIn('id="download-feature-table"', index_html)
+            self.assertIn('aria-label="Correlated features"', index_html)
+            self.assertIn("Correlated features", index_html)
             self.assertIn(
                 '<label for="top-feature-count">Number of loadings</label>',
                 index_html,
@@ -96,14 +99,10 @@ class TestMFAVisualizer(TestPluginBase):
                 "Ranks all features from feature-correlations.tsv",
             ):
                 self.assertIn(expected_tooltip_text, index_html)
-            for sort_key in (
-                "rank",
-                "feature_name",
-                "group",
-                "x",
-                "y",
-                "rankingScore",
-            ):
+            self.assertNotIn('data-feature-sort="rank"', index_html)
+            self.assertNotIn("<span>Rank</span>", index_html)
+            self.assertIn('<th aria-sort="descending">', index_html)
+            for sort_key in ("feature_name", "group", "x", "y", "rankingScore"):
                 self.assertIn(f'data-feature-sort="{sort_key}"', index_html)
             self.assertNotIn("https://cdn.plot.ly", index_html)
 
@@ -203,20 +202,27 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("x: 1.02,", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
+            self.assertIn("column: 'rankingScore',", app_js)
+            self.assertIn("direction: 'desc',", app_js)
             self.assertIn("showFullFeatureLabels: false,", app_js)
             self.assertIn(
                 "document.getElementById('show-full-feature-labels').checked = "
                 "state.showFullFeatureLabels;",
                 app_js,
             )
-            self.assertIn("function formatFeatureDisplayName(featureName)", app_js)
+            self.assertIn("function formatFeaturePlotLabel(featureName)", app_js)
             self.assertIn("function shortenTaxonomyFeatureName(featureName)", app_js)
             self.assertIn(".split(';')", app_js)
             self.assertIn(
                 "const shortened = lastRank.replace(/^[kpcofgs]__/, '')", app_js
             )
             self.assertIn(
-                "display_feature_name: formatFeatureDisplayName(feature.feature_name),",
+                "display_feature_name: "
+                "shortenTaxonomyFeatureName(feature.feature_name),",
+                app_js,
+            )
+            self.assertIn(
+                "plot_feature_name: formatFeaturePlotLabel(feature.feature_name),",
                 app_js,
             )
             self.assertIn(
@@ -224,10 +230,34 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
+                "const features = getRankedFeatureCorrelations();",
+                app_js,
+            )
+            self.assertIn(".slice(0, MAX_FEATURE_OVERLAY_COUNT);", app_js)
+            self.assertIn(
                 "comparison = left.display_feature_name.localeCompare("
                 "right.display_feature_name);",
                 app_js,
             )
+            self.assertIn(
+                "const cell = buildFeatureTableCell("
+                "feature.display_feature_name, 'feature-name-cell');",
+                app_js,
+            )
+            self.assertIn(
+                "function showFeatureNameTooltip(text, clientX, clientY)", app_js
+            )
+            self.assertIn(
+                "function positionFeatureNameTooltip(clientX, clientY)", app_js
+            )
+            self.assertIn("function hideFeatureNameTooltip()", app_js)
+            self.assertIn("cell.addEventListener('mouseenter'", app_js)
+            self.assertIn("cell.addEventListener('focus'", app_js)
+            self.assertIn("const tooltipText = feature.feature_name;", app_js)
+            self.assertNotIn(
+                "row.appendChild(buildFeatureTableCell(feature.rank", app_js
+            )
+            self.assertIn("text: feature.plot_feature_name,", app_js)
             self.assertIn("hoverinfo: 'skip'", app_js)
             self.assertNotIn(
                 "customdata: labelPlacement.map((label) => label.hoverText)",
@@ -257,7 +287,8 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("function getSortedFeatureTableRows()", app_js)
             self.assertIn("function updateFeatureTableSort(button)", app_js)
             self.assertIn("function downloadFeatureTableTsv()", app_js)
-            self.assertIn("'display_feature',", app_js)
+            self.assertNotIn("'rank',", app_js)
+            self.assertNotIn("'display_feature',", app_js)
             self.assertIn("function escapeTsvValue(value)", app_js)
             self.assertIn("const features = getSortedFeatureTableRows();", app_js)
 

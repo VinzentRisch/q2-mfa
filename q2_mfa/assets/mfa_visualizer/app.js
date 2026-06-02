@@ -75,8 +75,8 @@ const state = {
   showFullFeatureLabels: false,
   topFeatureCount: 10,
   featureTableSort: {
-    column: 'rank',
-    direction: 'asc',
+    column: 'rankingScore',
+    direction: 'desc',
   },
   filterBy: '',
   categoricalFilterValues: new Set(),
@@ -602,7 +602,8 @@ function getRankedFeatureCorrelations(limit = null) {
     .map((feature) => ({
       ...feature,
       rankingScore: Math.hypot(feature.x, feature.y),
-      display_feature_name: formatFeatureDisplayName(feature.feature_name),
+      display_feature_name: shortenTaxonomyFeatureName(feature.feature_name),
+      plot_feature_name: formatFeaturePlotLabel(feature.feature_name),
     }))
     .sort((a, b) =>
       b.rankingScore - a.rankingScore ||
@@ -620,14 +621,15 @@ function getRankedFeatureCorrelations(limit = null) {
 function getSortedFeatureTableRows() {
   const features = getRankedFeatureCorrelations();
   const { column, direction } = state.featureTableSort;
-  return features.slice().sort((left, right) =>
-    compareFeatureTableRows(left, right, column, direction)
-  );
+  return features
+    .slice()
+    .sort((left, right) => compareFeatureTableRows(left, right, column, direction))
+    .slice(0, MAX_FEATURE_OVERLAY_COUNT);
 }
 
 function compareFeatureTableRows(left, right, column, direction) {
   let comparison;
-  if (['rank', 'x', 'y', 'rankingScore'].includes(column)) {
+  if (['x', 'y', 'rankingScore'].includes(column)) {
     comparison = left[column] - right[column];
   } else if (column === 'feature_name') {
     comparison = left.display_feature_name.localeCompare(right.display_feature_name);
@@ -680,7 +682,6 @@ function renderTopFeaturesTable() {
   const fragment = document.createDocumentFragment();
   features.forEach((feature) => {
     const row = document.createElement('tr');
-    row.appendChild(buildFeatureTableCell(feature.rank, 'feature-table-rank'));
     row.appendChild(buildFeatureNameCell(feature));
     row.appendChild(buildFeatureTableCell(feature.group));
     row.appendChild(buildFeatureTableCell(formatValue(feature.x), 'feature-table-number'));
@@ -718,9 +719,56 @@ function updateFeatureTableSortHeaders() {
 }
 
 function buildFeatureNameCell(feature) {
-  const cell = buildFeatureTableCell(feature.display_feature_name);
-  cell.title = feature.feature_id;
+  const tooltipText = feature.feature_name;
+  const cell = buildFeatureTableCell(feature.display_feature_name, 'feature-name-cell');
+  cell.tabIndex = 0;
+  cell.addEventListener('mouseenter', (event) => {
+    showFeatureNameTooltip(tooltipText, event.clientX, event.clientY);
+  });
+  cell.addEventListener('mousemove', (event) => {
+    positionFeatureNameTooltip(event.clientX, event.clientY);
+  });
+  cell.addEventListener('mouseleave', hideFeatureNameTooltip);
+  cell.addEventListener('focus', () => {
+    const rect = cell.getBoundingClientRect();
+    showFeatureNameTooltip(tooltipText, rect.left, rect.bottom);
+  });
+  cell.addEventListener('blur', hideFeatureNameTooltip);
   return cell;
+}
+
+function showFeatureNameTooltip(text, clientX, clientY) {
+  const tooltip = document.getElementById('feature-name-tooltip');
+  if (!tooltip || !text) {
+    return;
+  }
+
+  tooltip.textContent = text;
+  tooltip.classList.add('is-visible');
+  positionFeatureNameTooltip(clientX, clientY);
+}
+
+function positionFeatureNameTooltip(clientX, clientY) {
+  const tooltip = document.getElementById('feature-name-tooltip');
+  if (!tooltip || !tooltip.classList.contains('is-visible')) {
+    return;
+  }
+
+  const offset = 12;
+  const rect = tooltip.getBoundingClientRect();
+  const x = Math.min(clientX + offset, window.innerWidth - rect.width - offset);
+  const y = Math.min(clientY + offset, window.innerHeight - rect.height - offset);
+  tooltip.style.left = `${Math.max(offset, x)}px`;
+  tooltip.style.top = `${Math.max(offset, y)}px`;
+}
+
+function hideFeatureNameTooltip() {
+  const tooltip = document.getElementById('feature-name-tooltip');
+  if (!tooltip) {
+    return;
+  }
+
+  tooltip.classList.remove('is-visible');
 }
 
 function buildFeatureTableCell(value, className) {
@@ -737,10 +785,8 @@ function downloadFeatureTableTsv() {
   const xLabel = dimensionsByKey[state.xDimension].label;
   const yLabel = dimensionsByKey[state.yDimension].label;
   const header = [
-    'rank',
-    'feature_id',
     'feature',
-    'display_feature',
+    'feature_id',
     'group',
     xLabel,
     yLabel,
@@ -749,10 +795,8 @@ function downloadFeatureTableTsv() {
   const lines = [
     header.map(escapeTsvValue).join('\t'),
     ...rows.map((feature) => [
-      feature.rank,
-      feature.feature_id,
-      feature.feature_name,
       feature.display_feature_name,
+      feature.feature_id,
       feature.group,
       feature.x,
       feature.y,
@@ -781,7 +825,7 @@ function buildFeatureTableDownloadFilename() {
   return `mfa-contributing-features-${xLabel}-vs-${yLabel}.tsv`;
 }
 
-function formatFeatureDisplayName(featureName) {
+function formatFeaturePlotLabel(featureName) {
   if (state.showFullFeatureLabels) {
     return featureName;
   }
@@ -1459,7 +1503,7 @@ function placeFeatureCorrelationLabels(features, groupColors) {
       `${state.xDimension}: ${formatValue(feature.x)}<br>` +
       `${state.yDimension}: ${formatValue(feature.y)}<br>` +
       `Plane magnitude: ${formatValue(feature.rankingScore)}`,
-    text: feature.display_feature_name,
+    text: feature.plot_feature_name,
   }));
   return placePlotLabels(items, {
     xRange: computeLabelRange([...items.map((item) => item.anchorX), 0], false),

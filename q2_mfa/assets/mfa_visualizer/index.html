@@ -27,7 +27,7 @@
       </div>
 
       <div class="control-group">
-        <label for="color-by">Color by metadata</label>
+        <label for="color-by">Color by</label>
         <select id="color-by"></select>
       </div>
 
@@ -36,7 +36,7 @@
         <select id="color-palette"></select>
       </div>
 
-      <div class="control-group control-group-toggle">
+      <div class="control-group control-group-toggle control-group-barycenter">
         <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
         <label class="toggle-option" for="show-barycenter">
           <input id="show-barycenter" type="checkbox">
@@ -45,26 +45,9 @@
         </label>
       </div>
 
-      <div class="control-group control-group-toggle">
-        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
-        <label class="toggle-option" for="show-partial-overlay">
-          <input id="show-partial-overlay" type="checkbox">
-          <span>Partial coordinates</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial coordinates help" data-tooltip="Shows each sample's group-specific partial coordinates from partial-sample-coordinates.tsv and connects them to the global sample scores from ordination.txt. Long connectors indicate that a group places that sample away from the consensus position.">?</span>
-        </label>
-      </div>
-
-      <div class="control-group control-group-toggle control-group-feature-correlations">
-        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
-        <label class="toggle-option" for="show-feature-correlations">
-          <input id="show-feature-correlations" type="checkbox">
-          <span>Feature loadings</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Feature correlations help" data-tooltip="Overlays the strongest feature correlations from feature-correlations.tsv for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the current X and Y correlation values.">?</span>
-        </label>
-      </div>
 
       <div class="control-group control-group-top-features">
-        <label for="top-feature-count">Number of loadings</label>
+        <label for="top-feature-count">N of loadings</label>
         <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
       </div>
 
@@ -73,21 +56,26 @@
         <input id="feature-loading-scale" type="number" min="1" step="1" value="1">
       </div>
 
+      <div class="control-group control-group-point-size">
+        <label for="point-size-scale">Point size</label>
+        <input id="point-size-scale" type="number" min="0.5" max="1.5" step="0.1" value="1">
+      </div>
+
       <div class="control-group control-group-toggle control-group-full-feature-labels">
         <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
         <label class="toggle-option" for="show-full-feature-labels">
           <input id="show-full-feature-labels" type="checkbox">
           <span>Full feature labels</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Full feature labels help" data-tooltip="Controls the text used for feature loading labels in the sample score plot. By default, long taxonomy-style feature names are shortened by splitting on semicolons, keeping the most specific non-empty rank, and removing common prefixes such as k__, p__, c__, o__, f__, g__, or s__. Turning this on uses the full feature name from feature-correlations.tsv.">?</span>
         </label>
       </div>
 
-      <div class="control-group control-group-filter-select">
-        <label for="filter-by">Filter samples</label>
-        <select id="filter-by"></select>
+      <div class="control-group control-group-font-size">
+        <label for="font-size">Font size</label>
+        <input id="font-size" type="number" min="8" max="24" step="1" value="12">
       </div>
 
-      <div class="control-group control-group-wide control-group-filter-applied">
-        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
+      <div class="control-group control-group-wide control-group-filters">
         <div id="filter-controls" class="filter-controls"></div>
       </div>
     </section>

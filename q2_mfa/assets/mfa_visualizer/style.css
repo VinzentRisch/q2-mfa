@@ -102,19 +102,29 @@ h1 {
   grid-column: span 3;
 }
 
-.control-group-feature-correlations {
+.control-group-top-features {
   grid-column: 1;
   grid-row: 2;
 }
 
-.control-group-top-features {
+.control-group-feature-scale {
   grid-column: 2;
   grid-row: 2;
 }
 
-.control-group-feature-scale {
+.control-group-point-size {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+.control-group-barycenter {
   grid-column: 3;
   grid-row: 2;
+}
+
+.control-group-font-size {
+  grid-column: 6;
+  grid-row: 1;
 }
 
 .control-group-full-feature-labels {
@@ -122,13 +132,8 @@ h1 {
   grid-row: 2;
 }
 
-.control-group-filter-select {
-  grid-column: 1;
-  grid-row: 3;
-}
-
-.control-group-filter-applied {
-  grid-column: 2 / span 5;
+.control-group-filters {
+  grid-column: 1 / span 6;
   grid-row: 3;
 }
 
@@ -269,14 +274,24 @@ input[type="number"] {
   transform: translate(-50%, 0) rotate(45deg);
 }
 
+.filter-title {
+  color: var(--text-muted);
+  font-family: Arial, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
 .filter-controls {
-  min-height: 34px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--control-border);
-  border-radius: 12px;
-  background: var(--control-bg);
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
   align-items: center;
 }
 
@@ -300,12 +315,71 @@ input[type="number"] {
   font-size: 0.9rem;
 }
 
-.numeric-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 0;
+.filter-option-disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.filter-numeric-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-numeric-cell input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--control-bg);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.filter-numeric-label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.filter-remove,
+.filter-add {
+  appearance: none;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  font-size: 0.9rem;
+}
+
+.filter-remove {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  justify-self: start;
+}
+
+.filter-add {
   width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.filter-remove:hover,
+.filter-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .plot-shell {
@@ -543,8 +617,7 @@ input[type="number"] {
     grid-column: span 1;
   }
 
-  .plot-status,
-  .numeric-filter-grid {
+  .plot-status {
     grid-template-columns: minmax(0, 1fr);
     display: grid;
   }

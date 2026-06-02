@@ -65,9 +65,10 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn('aria-label="Correlated features"', index_html)
             self.assertIn("Correlated features", index_html)
             self.assertIn(
-                '<label for="top-feature-count">Number of loadings</label>',
+                '<label for="top-feature-count">N of loadings</label>',
                 index_html,
             )
+            self.assertIn('<label for="color-by">Color by</label>', index_html)
             self.assertIn(
                 '<input id="top-feature-count" type="number" min="1" '
                 'max="100" step="1" value="10">',
@@ -83,6 +84,15 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn(
+                '<label for="point-size-scale">Point size</label>',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="point-size-scale" type="number" min="0.5" '
+                'max="1.5" step="0.1" value="1">',
+                index_html,
+            )
+            self.assertIn(
                 '<label class="toggle-option" for="show-full-feature-labels">',
                 index_html,
             )
@@ -91,6 +101,18 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn("<span>Full feature labels</span>", index_html)
+            self.assertIn(
+                '<label class="toggle-option" for="show-sample-scores">',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="show-sample-scores" type="checkbox" checked>',
+                index_html,
+            )
+            self.assertIn("<span>Sample scores</span>", index_html)
+            self.assertIn('<span class="filter-title">Filters</span>', index_html)
+            self.assertIn('id="filter-controls"', index_html)
+            self.assertNotIn('id="filter-by"', index_html)
             self.assertIn('class="plot-shell plot-shell-main"', index_html)
             for expected_tooltip_text in (
                 "visible sample scores from ordination.txt",
@@ -140,6 +162,15 @@ class TestMFAVisualizer(TestPluginBase):
                 "  font-size: 0.9rem;",
                 style_css,
             )
+            self.assertIn(".filter-row {\n  display: grid;", style_css)
+            self.assertIn(".control-group-point-size {\n  grid-column: 5;", style_css)
+            self.assertIn(".control-group-barycenter {\n  grid-column: 3;", style_css)
+            self.assertIn(".control-group-font-size {\n  grid-column: 6;", style_css)
+            self.assertIn(
+                ".control-group-full-feature-labels {\n  grid-column: 4;", style_css
+            )
+            self.assertIn(".filter-add {", style_css)
+            self.assertIn(".filter-remove {", style_css)
             self.assertIn("resize: horizontal;", style_css)
             self.assertIn("max-width: 100%;", style_css)
             self.assertIn("container-type: inline-size;", style_css)
@@ -157,6 +188,43 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("function formatSampleLegendName(name, samples)", app_js)
             self.assertIn("return `${name} (n=${samples.length})`;", app_js)
             self.assertIn("name: formatSampleLegendName(name, samples),", app_js)
+            self.assertIn("showSampleScores: true,", app_js)
+            self.assertIn(
+                "document.getElementById('show-sample-scores').checked = "
+                "state.showSampleScores;",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('show-sample-scores').addEventListener",
+                app_js,
+            )
+            self.assertIn(
+                "function buildSampleScoreTraces(samples, colorColumn)", app_js
+            )
+            self.assertIn("if (!state.showSampleScores) {\n    return [];", app_js)
+            self.assertIn("filters: [createDefaultFilter()],", app_js)
+            self.assertIn("const FILTER_TARGETS = {", app_js)
+            self.assertIn("feature_loadings: 'Feature loadings',", app_js)
+            self.assertIn("partial_samples: 'Partial sample scores',", app_js)
+            self.assertIn("function createDefaultFilter()", app_js)
+            self.assertIn("function buildFilterRow(filter, index)", app_js)
+            self.assertIn("function buildFilterTargetSelect(filter)", app_js)
+            self.assertIn("function buildFilterFieldSelect(filter)", app_js)
+            self.assertIn("function buildFilterRemoveButton(index)", app_js)
+            self.assertIn("state.filters.push(createDefaultFilter());", app_js)
+            self.assertIn("state.filters.splice(index, 1);", app_js)
+            self.assertIn("function samplePassesFilter(sample, filter)", app_js)
+            self.assertIn("function getAllowedGroups(target)", app_js)
+            self.assertIn("getAllowedGroups('feature_loadings')", app_js)
+            self.assertIn("getAllowedGroups('partial_samples')", app_js)
+            self.assertIn("Symbols: {", app_js)
+            self.assertIn(
+                "symbols: ['square', 'triangle-up', 'circle', 'x', 'star'],", app_js
+            )
+            self.assertIn("function isColorPaletteAvailable(paletteName)", app_js)
+            self.assertIn("function getCategoricalLevelCount(colorColumn)", app_js)
+            self.assertIn("function getCategoricalSymbols(count)", app_js)
+            self.assertIn("symbol: options.symbol ?? 'circle',", app_js)
             self.assertIn(
                 "name: formatSampleLegendName(colorColumn.name, numericSamples),",
                 app_js,
@@ -239,16 +307,31 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
             self.assertIn("featureLoadingScale: 1,", app_js)
+            self.assertIn("pointSizeScale: 1,", app_js)
             self.assertIn(
                 "document.getElementById('feature-loading-scale').value = "
                 "state.featureLoadingScale;",
                 app_js,
             )
             self.assertIn(
+                "document.getElementById('point-size-scale').value = "
+                "state.pointSizeScale;",
+                app_js,
+            )
+            self.assertIn(
                 "document.getElementById('feature-loading-scale').addEventListener",
                 app_js,
             )
+            self.assertIn(
+                "document.getElementById('point-size-scale').addEventListener",
+                app_js,
+            )
             self.assertIn("state.featureLoadingScale = Math.floor(nextValue);", app_js)
+            self.assertIn("state.pointSizeScale = Math.min(nextValue, 1.5);", app_js)
+            self.assertIn("function scalePointSize(baseSize)", app_js)
+            self.assertIn("return baseSize * state.pointSizeScale;", app_js)
+            for base_size in (8, 9, 11):
+                self.assertIn(f"size: scalePointSize({base_size}),", app_js)
             self.assertIn("column: 'rankingScore',", app_js)
             self.assertIn("direction: 'desc',", app_js)
             self.assertIn("showFullFeatureLabels: false,", app_js)
@@ -287,7 +370,7 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "const features = getRankedFeatureCorrelations();",
+                "const features = getRankedFeatureCorrelations(null, null);",
                 app_js,
             )
             self.assertIn(".slice(0, MAX_FEATURE_OVERLAY_COUNT);", app_js)

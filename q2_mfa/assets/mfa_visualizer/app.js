@@ -11,6 +11,11 @@ const COLOR_PALETTES = {
     kind: 'categorical',
     colors: ['#264653', '#2A9D8F', '#E9C46A', '#F4A261', '#E76F51', '#8AB17D', '#577590', '#BC6C25'],
   },
+  Symbols: {
+    kind: 'categorical',
+    colors: ['#6B7280'],
+    symbols: ['square', 'triangle-up', 'circle', 'x', 'star'],
+  },
   Viridis: {
     kind: 'numeric',
     scale: 'Viridis',
@@ -39,7 +44,8 @@ const COLOR_PALETTES = {
 };
 
 const MISSING_VALUE_TOKEN = '__MISSING__';
-const DEFAULT_MARKER_COLOR = '#126782';
+const DEFAULT_MARKER_COLOR = '#6B7280';
+const VARIANCE_MARKER_COLOR = '#126782';
 const SELECTED_DIMENSION_COLOR = '#083D5B';
 const ELLIPSE_SCALE = 2.4477;
 const PARTIAL_AXES_X_RANGE = [-1.08, 1.3];
@@ -66,32 +72,41 @@ const metadataByName = Object.fromEntries(
 const dimensionsByKey = Object.fromEntries(
   payload.dimensions.map((dimension) => [dimension.key, dimension])
 );
-
 const state = {
   xDimension: payload.default_x,
   yDimension: payload.default_y,
   colorBy: '',
   colorPalette: 'Plotly',
+  showSampleScores: true,
   showBarycenter: false,
   showPartialOverlay: false,
   showFeatureCorrelations: false,
   showFullFeatureLabels: false,
   topFeatureCount: 10,
   featureLoadingScale: 1,
+  pointSizeScale: 1,
   featureTableSort: {
     column: 'rankingScore',
     direction: 'desc',
   },
-  filterBy: '',
-  categoricalFilterValues: new Set(),
-  numericFilterMin: null,
-  numericFilterMax: null,
+  featureLoadingGroups: new Set(payload.partial_groups),
+  partialSampleGroups: new Set(payload.partial_groups),
+  fontSize: 12,
+  filters: [createDefaultSampleFilter()],
 };
+
+function createDefaultSampleFilter() {
+  return {
+    field: '',
+    categoricalValues: new Set(),
+    numericMin: null,
+    numericMax: null,
+  };
+}
 
 function initialize() {
   populateDimensionSelectors();
   populateColorControls();
-  populateFilterSelector();
   bindEvents();
   bindSamplePlotResizeObserver();
   renderFilterControls();
@@ -142,19 +157,11 @@ function populateColorControls() {
 
   repopulateColorPaletteOptions();
   document.getElementById('show-barycenter').checked = state.showBarycenter;
-  document.getElementById('show-partial-overlay').checked = state.showPartialOverlay;
-  document.getElementById('show-feature-correlations').checked = state.showFeatureCorrelations;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
   document.getElementById('feature-loading-scale').value = state.featureLoadingScale;
-}
-
-function populateFilterSelector() {
-  const filterBy = document.getElementById('filter-by');
-  filterBy.add(new Option('None', ''));
-  payload.metadata_columns.forEach((column) => {
-    filterBy.add(new Option(column.name, column.name));
-  });
+  document.getElementById('point-size-scale').value = state.pointSizeScale;
+  document.getElementById('font-size').value = state.fontSize;
 }
 
 function bindEvents() {
@@ -184,16 +191,6 @@ function bindEvents() {
     renderPlot();
   });
 
-  document.getElementById('show-partial-overlay').addEventListener('change', (event) => {
-    state.showPartialOverlay = event.target.checked;
-    renderPlot();
-  });
-
-  document.getElementById('show-feature-correlations').addEventListener('change', (event) => {
-    state.showFeatureCorrelations = event.target.checked;
-    renderPlot();
-  });
-
   document.getElementById('show-full-feature-labels').addEventListener('change', (event) => {
     state.showFullFeatureLabels = event.target.checked;
     renderPlot();
@@ -219,6 +216,26 @@ function bindEvents() {
     renderPlot();
   });
 
+  document.getElementById('point-size-scale').addEventListener('input', (event) => {
+    const nextValue = Number(event.target.value);
+    if (!Number.isFinite(nextValue) || nextValue < 0.5) {
+      return;
+    }
+    state.pointSizeScale = Math.min(nextValue, 1.5);
+    event.target.value = state.pointSizeScale;
+    renderPlot();
+  });
+
+  document.getElementById('font-size').addEventListener('input', (event) => {
+    const nextValue = Math.round(Number(event.target.value));
+    if (!Number.isFinite(nextValue) || nextValue < 8) {
+      return;
+    }
+    state.fontSize = Math.min(nextValue, 24);
+    event.target.value = state.fontSize;
+    renderPlot();
+  });
+
   document.querySelectorAll('[data-feature-sort]').forEach((button) => {
     button.addEventListener('click', (event) => {
       updateFeatureTableSort(event.currentTarget);
@@ -230,121 +247,213 @@ function bindEvents() {
     downloadFeatureTableTsv();
   });
 
-  document.getElementById('filter-by').addEventListener('change', (event) => {
-    state.filterBy = event.target.value;
-    resetFilterState();
-    renderFilterControls();
-    renderPlot();
-  });
-}
-
-function resetFilterState() {
-  state.categoricalFilterValues = new Set();
-  state.numericFilterMin = null;
-  state.numericFilterMax = null;
 }
 
 function renderFilterControls() {
   const container = document.getElementById('filter-controls');
-  container.innerHTML = '';
+  container.replaceChildren();
 
-  if (!state.filterBy) {
-    container.innerHTML = '<span class="filter-placeholder">No metadata filter applied.</span>';
-    return;
-  }
+  container.appendChild(buildFeatureLoadingsRow());
+  container.appendChild(buildPartialCoordinatesRow());
 
-  const column = metadataByName[state.filterBy];
-  if (column.type === 'categorical') {
-    renderCategoricalFilterControls(container, column);
-    return;
-  }
-
-  renderNumericFilterControls(container, column);
-}
-
-function renderCategoricalFilterControls(container, column) {
-  if (!state.categoricalFilterValues.size) {
-    column.values.forEach((value) => state.categoricalFilterValues.add(value));
-    if (column.has_missing) {
-      state.categoricalFilterValues.add(MISSING_VALUE_TOKEN);
-    }
-  }
-
-  const options = document.createElement('div');
-  options.className = 'filter-options';
-
-  column.values.forEach((value) => {
-    options.appendChild(
-      buildCategoricalFilterOption(value, value, state.categoricalFilterValues.has(value))
-    );
+  state.filters.forEach((filter, index) => {
+    container.appendChild(buildSampleFilterRow(filter, index));
   });
 
-  if (column.has_missing) {
-    options.appendChild(
-      buildCategoricalFilterOption(
-        MISSING_VALUE_TOKEN,
-        'Missing',
-        state.categoricalFilterValues.has(MISSING_VALUE_TOKEN)
-      )
-    );
-  }
+  const addRow = document.createElement('div');
+  addRow.className = 'filter-row';
 
-  container.appendChild(options);
+  const addButton = document.createElement('button');
+  addButton.className = 'filter-add';
+  addButton.type = 'button';
+  addButton.textContent = 'Add filter...';
+  addButton.style.gridColumn = '2';
+  addButton.addEventListener('click', () => {
+    state.filters.push(createDefaultSampleFilter());
+    renderFilterControls();
+  });
+  addRow.appendChild(addButton);
+  container.appendChild(addRow);
 }
 
-function buildCategoricalFilterOption(value, label, checked) {
-  const wrapper = document.createElement('label');
-  wrapper.className = 'filter-option';
+function buildOverlayToggle(labelText, checked, onChange, tooltipText) {
+  const label = document.createElement('label');
+  label.className = 'toggle-option';
 
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = checked;
-  checkbox.value = value;
-  checkbox.addEventListener('change', (event) => {
-    if (event.target.checked) {
-      state.categoricalFilterValues.add(value);
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  input.addEventListener('change', (event) => onChange(event.target.checked));
+
+  const span = document.createElement('span');
+  span.textContent = labelText;
+
+  label.appendChild(input);
+  label.appendChild(span);
+
+  if (tooltipText) {
+    const help = document.createElement('span');
+    help.className = 'help-tooltip';
+    help.tabIndex = 0;
+    help.setAttribute('role', 'button');
+    help.setAttribute('aria-label', `${labelText} help`);
+    help.setAttribute('data-tooltip', tooltipText);
+    help.textContent = '?';
+    label.appendChild(help);
+  }
+
+  return label;
+}
+
+function buildGroupTogglesContainer(selectedGroups, disabled) {
+  const container = document.createElement('div');
+  container.className = 'filter-options';
+  (payload.partial_groups || []).forEach((group) => {
+    container.appendChild(
+      buildCheckboxFilterOption(group, group, selectedGroups.has(group), selectedGroups, disabled)
+    );
+  });
+  return container;
+}
+
+function buildFeatureLoadingsRow() {
+  const row = document.createElement('div');
+  row.className = 'filter-row';
+
+  const toggle = buildOverlayToggle(
+    'Feature loadings',
+    state.showFeatureCorrelations,
+    (checked) => {
+      state.showFeatureCorrelations = checked;
+      if (checked) state.featureLoadingGroups = new Set(payload.partial_groups);
+      renderFilterControls();
+      renderPlot();
+    },
+    'Overlays the strongest feature correlations from feature-correlations.tsv for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the current X and Y correlation values.'
+  );
+  row.appendChild(toggle);
+
+  const groups = buildGroupTogglesContainer(state.featureLoadingGroups, !state.showFeatureCorrelations);
+  groups.style.gridColumn = '2 / -1';
+  row.appendChild(groups);
+
+  return row;
+}
+
+function buildPartialCoordinatesRow() {
+  const row = document.createElement('div');
+  row.className = 'filter-row';
+
+  const toggle = buildOverlayToggle(
+    'Partial coordinates',
+    state.showPartialOverlay,
+    (checked) => {
+      state.showPartialOverlay = checked;
+      if (checked) state.partialSampleGroups = new Set(payload.partial_groups);
+      renderFilterControls();
+      renderPlot();
+    },
+    "Shows each sample's group-specific partial coordinates from partial-sample-coordinates.tsv and connects them to the global sample scores from ordination.txt. Long connectors indicate that a group places that sample away from the consensus position."
+  );
+  row.appendChild(toggle);
+
+  const groups = buildGroupTogglesContainer(state.partialSampleGroups, !state.showPartialOverlay);
+  groups.style.gridColumn = '2 / -1';
+  row.appendChild(groups);
+
+  return row;
+}
+
+function buildSampleFilterRow(filter, index) {
+  const row = document.createElement('div');
+  row.className = 'filter-row';
+  const isFirstRow = index === 0;
+  const isNumeric = filter.field && metadataByName[filter.field]?.type === 'numeric';
+
+  if (isFirstRow) {
+    const toggle = buildOverlayToggle(
+      'Sample scores',
+      state.showSampleScores,
+      (checked) => {
+        state.showSampleScores = checked;
+        renderPlot();
+      },
+      'Shows the global MFA sample coordinates from ordination.txt on the selected X and Y axes. Each point is one sample score; coloring and sample filters use the sample metadata table provided to the visualizer. These scores are calculated from the input feature tables during the MFA action, then stored in the ordination results.'
+    );
+    row.appendChild(toggle); // col 1
+
+    const fieldSelect = buildSampleMetadataSelect(filter);
+    fieldSelect.style.gridColumn = '2';
+    row.appendChild(fieldSelect);
+
+    if (isNumeric) {
+      const column = metadataByName[filter.field];
+      if (filter.numericMin === null) { filter.numericMin = column.min; filter.numericMax = column.max; }
+      const minCell = buildNumericFilterCell('Min:', filter.numericMin, (v) => { filter.numericMin = v; renderPlot(); });
+      minCell.style.gridColumn = '3';
+      row.appendChild(minCell);
+      const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => { filter.numericMax = v; renderPlot(); });
+      maxCell.style.gridColumn = '4';
+      row.appendChild(maxCell);
     } else {
-      state.categoricalFilterValues.delete(value);
+      const valueControls = buildFilterValueControls(filter);
+      valueControls.style.gridColumn = '3 / -1';
+      row.appendChild(valueControls);
     }
+  } else {
+    const fieldSelect = buildSampleMetadataSelect(filter);
+    fieldSelect.style.gridColumn = '2';
+    row.appendChild(fieldSelect);
+
+    if (isNumeric) {
+      const column = metadataByName[filter.field];
+      if (filter.numericMin === null) { filter.numericMin = column.min; filter.numericMax = column.max; }
+      const minCell = buildNumericFilterCell('Min:', filter.numericMin, (v) => { filter.numericMin = v; renderPlot(); });
+      minCell.style.gridColumn = '3';
+      row.appendChild(minCell);
+      const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => { filter.numericMax = v; renderPlot(); });
+      maxCell.style.gridColumn = '4';
+      row.appendChild(maxCell);
+    } else {
+      const valueControls = buildFilterValueControls(filter);
+      valueControls.style.gridColumn = '3 / 6';
+      row.appendChild(valueControls);
+    }
+
+    const removeButton = buildFilterRemoveButton(index);
+    removeButton.style.gridColumn = isNumeric ? '5' : '6';
+    row.appendChild(removeButton);
+  }
+
+  return row;
+}
+
+function buildSampleMetadataSelect(filter) {
+  const select = document.createElement('select');
+  select.add(new Option('Select metadata…', ''));
+  payload.metadata_columns.forEach((column) => {
+    select.add(new Option(column.name, column.name));
+  });
+  select.value = filter.field;
+  select.addEventListener('change', (event) => {
+    filter.field = event.target.value;
+    filter.categoricalValues = new Set();
+    filter.numericMin = null;
+    filter.numericMax = null;
+    renderFilterControls();
     renderPlot();
   });
-
-  const text = document.createElement('span');
-  text.textContent = label;
-
-  wrapper.appendChild(checkbox);
-  wrapper.appendChild(text);
-  return wrapper;
+  return select;
 }
 
-function renderNumericFilterControls(container, column) {
-  if (state.numericFilterMin === null) {
-    state.numericFilterMin = column.min;
-    state.numericFilterMax = column.max;
-  }
+function buildNumericFilterCell(labelText, value, onInput) {
+  const cell = document.createElement('div');
+  cell.className = 'filter-numeric-cell';
 
-  const grid = document.createElement('div');
-  grid.className = 'numeric-filter-grid';
-  grid.appendChild(
-    buildNumericFilterInput('Minimum', state.numericFilterMin, (value) => {
-      state.numericFilterMin = value;
-      renderPlot();
-    })
-  );
-  grid.appendChild(
-    buildNumericFilterInput('Maximum', state.numericFilterMax, (value) => {
-      state.numericFilterMax = value;
-      renderPlot();
-    })
-  );
-
-  container.appendChild(grid);
-}
-
-function buildNumericFilterInput(label, value, onInput) {
-  const wrapper = document.createElement('label');
-  wrapper.className = 'control-group';
-  wrapper.textContent = label;
+  const label = document.createElement('span');
+  label.className = 'filter-numeric-label';
+  label.textContent = labelText;
+  cell.appendChild(label);
 
   const input = document.createElement('input');
   input.type = 'number';
@@ -354,35 +463,127 @@ function buildNumericFilterInput(label, value, onInput) {
     const nextValue = event.target.value === '' ? null : Number(event.target.value);
     onInput(nextValue);
   });
+  cell.appendChild(input);
 
-  wrapper.appendChild(input);
-  return wrapper;
+  return cell;
 }
 
-function getFilteredSamples() {
-  if (!state.filterBy) {
-    return payload.samples;
+function buildFilterValueControls(filter) {
+  const container = document.createElement('div');
+  container.className = 'filter-values';
+
+  if (!filter.field) {
+    return container;
   }
 
-  const column = metadataByName[state.filterBy];
-  if (column.type === 'categorical') {
-    return payload.samples.filter((sample) => {
-      const value = sample.metadata[state.filterBy];
-      const normalizedValue = value === null ? MISSING_VALUE_TOKEN : value;
-      return state.categoricalFilterValues.has(normalizedValue);
+  const column = metadataByName[filter.field];
+  renderCategoricalFilterControls(container, filter, column);
+  return container;
+}
+
+function buildFilterRemoveButton(index) {
+  const button = document.createElement('button');
+  button.className = 'filter-remove';
+  button.type = 'button';
+  button.textContent = 'x';
+  button.addEventListener('click', () => {
+    state.filters.splice(index, 1);
+    renderFilterControls();
+    renderPlot();
+  });
+  return button;
+}
+
+function renderCategoricalFilterControls(container, filter, column) {
+  if (!filter.categoricalValues.size) {
+    column.values.forEach((value) => filter.categoricalValues.add(value));
+    if (column.has_missing) {
+      filter.categoricalValues.add(MISSING_VALUE_TOKEN);
+    }
+  }
+
+  const options = document.createElement('div');
+  options.className = 'filter-options';
+
+  column.values.forEach((value) => {
+    options.appendChild(
+      buildCheckboxFilterOption(
+        value,
+        value,
+        filter.categoricalValues.has(value),
+        filter.categoricalValues
+      )
+    );
+  });
+
+  if (column.has_missing) {
+    options.appendChild(
+      buildCheckboxFilterOption(
+        MISSING_VALUE_TOKEN,
+        'Missing',
+        filter.categoricalValues.has(MISSING_VALUE_TOKEN),
+        filter.categoricalValues
+      )
+    );
+  }
+
+  container.appendChild(options);
+}
+
+function buildCheckboxFilterOption(value, label, checked, selectedValues, disabled = false) {
+  const wrapper = document.createElement('label');
+  wrapper.className = disabled ? 'filter-option filter-option-disabled' : 'filter-option';
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = checked;
+  checkbox.disabled = disabled;
+  checkbox.value = value;
+  if (!disabled) {
+    checkbox.addEventListener('change', (event) => {
+      if (event.target.checked) {
+        selectedValues.add(value);
+      } else {
+        selectedValues.delete(value);
+      }
+      renderPlot();
     });
   }
 
-  return payload.samples.filter((sample) => {
-    const value = sample.metadata[state.filterBy];
-    if (value === null) {
-      return false;
-    }
+  const text = document.createElement('span');
+  text.textContent = label;
 
-    const lowerBound = state.numericFilterMin ?? column.min;
-    const upperBound = state.numericFilterMax ?? column.max;
-    return value >= lowerBound && value <= upperBound;
-  });
+  wrapper.appendChild(checkbox);
+  wrapper.appendChild(text);
+  return wrapper;
+}
+
+
+function getFilteredSamples() {
+  return payload.samples.filter((sample) =>
+    state.filters.every((filter) => samplePassesFilter(sample, filter))
+  );
+}
+
+function samplePassesFilter(sample, filter) {
+  if (!filter.field) {
+    return true;
+  }
+
+  const column = metadataByName[filter.field];
+  const value = sample.metadata[filter.field];
+  if (column.type === 'categorical') {
+    const normalizedValue = value === null ? MISSING_VALUE_TOKEN : value;
+    return filter.categoricalValues.has(normalizedValue);
+  }
+
+  if (value === null) {
+    return false;
+  }
+
+  const lowerBound = filter.numericMin ?? column.min;
+  const upperBound = filter.numericMax ?? column.max;
+  return value >= lowerBound && value <= upperBound;
 }
 
 function renderPlot() {
@@ -448,7 +649,9 @@ function repopulateColorPaletteOptions() {
   const colorPalette = document.getElementById('color-palette');
   const paletteKind = getActivePaletteKind();
   const paletteNames = Object.keys(COLOR_PALETTES).filter(
-    (paletteName) => COLOR_PALETTES[paletteName].kind === paletteKind
+    (paletteName) =>
+      COLOR_PALETTES[paletteName].kind === paletteKind &&
+      isColorPaletteAvailable(paletteName)
   );
 
   colorPalette.innerHTML = '';
@@ -466,6 +669,22 @@ function repopulateColorPaletteOptions() {
 function getActivePaletteKind() {
   const colorColumn = metadataByName[state.colorBy];
   return colorColumn?.type === 'numeric' ? 'numeric' : 'categorical';
+}
+
+function isColorPaletteAvailable(paletteName) {
+  if (paletteName !== 'Symbols') {
+    return true;
+  }
+
+  const colorColumn = metadataByName[state.colorBy];
+  return (
+    colorColumn?.type === 'categorical' &&
+    getCategoricalLevelCount(colorColumn) <= COLOR_PALETTES.Symbols.symbols.length
+  );
+}
+
+function getCategoricalLevelCount(colorColumn) {
+  return colorColumn.values.length + Number(colorColumn.has_missing);
 }
 
 function getOrderedGroupNames() {
@@ -486,29 +705,28 @@ function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
   const featureCorrelationTraces = buildFeatureCorrelationTraces();
-
-  if (!colorColumn) {
-    const traces = [
-      buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples'),
-      ...partialOverlayTraces,
-      ...featureCorrelationTraces,
-    ];
-    return appendBarycenterTraces(traces, samples, colorColumn);
-  }
-
-  if (colorColumn.type === 'numeric') {
-    return appendBarycenterTraces(
-      [...buildNumericTraces(samples, colorColumn), ...partialOverlayTraces, ...featureCorrelationTraces],
-      samples,
-      colorColumn
-    );
-  }
-
+  const sampleScoreTraces = buildSampleScoreTraces(samples, colorColumn);
   return appendBarycenterTraces(
-    [...buildCategoricalTraces(samples, colorColumn), ...partialOverlayTraces, ...featureCorrelationTraces],
+    [...sampleScoreTraces, ...partialOverlayTraces, ...featureCorrelationTraces],
     samples,
     colorColumn
   );
+}
+
+function buildSampleScoreTraces(samples, colorColumn) {
+  if (!state.showSampleScores) {
+    return [];
+  }
+
+  if (!colorColumn) {
+    return [buildSingleTrace(samples, DEFAULT_MARKER_COLOR, 'Samples')];
+  }
+
+  if (colorColumn.type === 'numeric') {
+    return buildNumericTraces(samples, colorColumn);
+  }
+
+  return buildCategoricalTraces(samples, colorColumn);
 }
 
 function buildFeatureCorrelationTraces() {
@@ -517,7 +735,10 @@ function buildFeatureCorrelationTraces() {
   }
 
   const themeColors = getThemeColors();
-  const rankedFeatures = getRankedFeatureCorrelations(state.topFeatureCount);
+  const rankedFeatures = getRankedFeatureCorrelations(
+    state.topFeatureCount,
+    getAllowedGroups('feature_loadings')
+  );
   if (!rankedFeatures.length) {
     return [];
   }
@@ -563,6 +784,27 @@ function buildFeatureCorrelationTraces() {
       name: `${group} (n=${groupFeatures.length})`,
       legendgroup: groupLegend,
       showlegend: true,
+      x: [null],
+      y: [null],
+      hoverinfo: 'skip',
+      marker: {
+        color: groupColors[group],
+        size: scalePointSize(9),
+        opacity: 0.95,
+        symbol: 'triangle-up',
+        line: {
+          color: themeColors.markerLine,
+          width: 1,
+        },
+      },
+    });
+
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      name: `${group} feature loading endpoints`,
+      legendgroup: groupLegend,
+      showlegend: false,
       x: groupFeatures.map((feature) => feature.plotX),
       y: groupFeatures.map((feature) => feature.plotY),
       hovertemplate:
@@ -580,9 +822,10 @@ function buildFeatureCorrelationTraces() {
       ]),
       marker: {
         color: groupColors[group],
-        size: 9,
+        size: scalePointSize(9),
         opacity: 0.95,
-        symbol: 'circle',
+        symbol: 'triangle-up',
+        angle: groupFeatures.map((feature) => featureLoadingMarkerAngle(feature)),
         line: {
           color: themeColors.markerLine,
           width: 1,
@@ -593,7 +836,7 @@ function buildFeatureCorrelationTraces() {
     traces.push(...buildPlotLabelConnectorTraces(groupLabelPlacement, {
       legendgroup: groupLegend,
     }));
-    const labelTrace = buildPlotLabelTrace(groupLabelPlacement, 11, {
+    const labelTrace = buildPlotLabelTrace(groupLabelPlacement, state.fontSize, {
       legendgroup: groupLegend,
       name: `${group} feature labels`,
     });
@@ -605,11 +848,19 @@ function buildFeatureCorrelationTraces() {
   return traces;
 }
 
-function getRankedFeatureCorrelations(limit = null) {
+function featureLoadingMarkerAngle(feature) {
+  const angleFromXAxis = Math.atan2(feature.plotY, feature.plotX) * 180 / Math.PI;
+  return 90 - angleFromXAxis;
+}
+
+function getRankedFeatureCorrelations(limit = null, allowedFeatureGroups = null) {
   // Rank by correlation magnitude in the currently displayed 2D plane so the
-  // table and overlay surface the variables best represented in the exact view
-  // the user is inspecting.
-  const rankedFeatures = payload.feature_correlations
+  // overlay surfaces the variables best represented in the exact view the user
+  // is inspecting.
+  const featureCorrelations = allowedFeatureGroups === null
+    ? payload.feature_correlations
+    : payload.feature_correlations.filter((feature) => allowedFeatureGroups.has(feature.group));
+  const rankedFeatures = featureCorrelations
     .map((feature) => ({
       ...feature,
       x: feature.coords[state.xDimension],
@@ -637,8 +888,18 @@ function getRankedFeatureCorrelations(limit = null) {
   return limit === null ? rankedFeatures : rankedFeatures.slice(0, limit);
 }
 
+function getAllowedGroups(target) {
+  if (target === 'feature_loadings') {
+    return state.showFeatureCorrelations ? state.featureLoadingGroups : new Set();
+  }
+  if (target === 'partial_samples') {
+    return state.showPartialOverlay ? state.partialSampleGroups : new Set();
+  }
+  return new Set(payload.partial_groups);
+}
+
 function getSortedFeatureTableRows() {
-  const features = getRankedFeatureCorrelations();
+  const features = getRankedFeatureCorrelations(null, null);
   const { column, direction } = state.featureTableSort;
   return features
     .slice()
@@ -879,11 +1140,13 @@ function buildPartialOverlayTraces(samples, colorColumn) {
   }
 
   const visibleSampleIds = new Set(samples.map((sample) => sample.sample_id));
+  const allowedPartialGroups = getAllowedGroups('partial_samples');
   const visibleSamplesById = Object.fromEntries(
     samples.map((sample) => [sample.sample_id, sample])
   );
   const visiblePartialSamples = payload.partial_samples.filter(
     (entry) =>
+      allowedPartialGroups.has(entry.group) &&
       visibleSampleIds.has(entry.sample_id) &&
       entry.coords[state.xDimension] !== undefined &&
       entry.coords[state.yDimension] !== undefined
@@ -1018,7 +1281,7 @@ function buildPartialPointTrace(groupEntries, color, group, legendgroup, showleg
     hovertemplate: '%{text}<extra></extra>',
     marker: {
       color,
-      size: 8,
+      size: scalePointSize(8),
       opacity: 0.9,
       symbol: 'diamond-open',
       line: { color, width: 2 },
@@ -1039,8 +1302,9 @@ function buildSingleTrace(samples, color, name, options = {}) {
     hovertemplate: '%{customdata}<extra></extra>',
     marker: {
       color,
-      size: 11,
+      size: scalePointSize(8),
       opacity: 0.9,
+      symbol: options.symbol ?? 'circle',
       line: { color: getThemeColors().markerLine, width: 1 },
     },
   };
@@ -1048,6 +1312,10 @@ function buildSingleTrace(samples, color, name, options = {}) {
 
 function formatSampleLegendName(name, samples) {
   return `${name} (n=${samples.length})`;
+}
+
+function scalePointSize(baseSize) {
+  return baseSize * state.pointSizeScale;
 }
 
 function buildNumericTraces(samples, colorColumn) {
@@ -1076,7 +1344,7 @@ function buildNumericTraces(samples, colorColumn) {
         colorbar: {
           title: {
             text: formatSampleLegendName(colorColumn.name, numericSamples),
-            font: { color: themeColors.font },
+            font: { color: themeColors.font, size: themeColors.fontSize },
           },
           x: 1.02,
           xanchor: 'left',
@@ -1084,9 +1352,9 @@ function buildNumericTraces(samples, colorColumn) {
           yanchor: 'top',
           len: SAMPLE_NUMERIC_COLORBAR_LENGTH,
           thickness: 18,
-          tickfont: { color: themeColors.font },
+          tickfont: { color: themeColors.font, size: themeColors.fontSize },
         },
-        size: 11,
+        size: scalePointSize(8),
         opacity: 0.9,
         line: { color: themeColors.markerLine, width: 1 },
         cmin: colorColumn.min,
@@ -1103,7 +1371,8 @@ function buildNumericTraces(samples, colorColumn) {
 }
 
 function buildCategoricalTraces(samples, colorColumn) {
-  const palette = getCategoricalColors(colorColumn.values.length + Number(colorColumn.has_missing));
+  const palette = getCategoricalColors(getCategoricalLevelCount(colorColumn));
+  const symbols = getCategoricalSymbols(getCategoricalLevelCount(colorColumn));
   const orderedCategories = [...colorColumn.values];
   if (colorColumn.has_missing) {
     orderedCategories.push(MISSING_VALUE_TOKEN);
@@ -1123,6 +1392,7 @@ function buildCategoricalTraces(samples, colorColumn) {
       const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
       return buildSingleTrace(subset, palette[index % palette.length], label, {
         legendgroup: `metadata:${label}`,
+        symbol: symbols[index % symbols.length],
       });
     })
     .filter(Boolean);
@@ -1283,6 +1553,12 @@ function getCategoricalColors(count) {
   return Array.from({ length: count }, (_, index) => colors[index % colors.length]);
 }
 
+function getCategoricalSymbols(count) {
+  const palette = COLOR_PALETTES[state.colorPalette] ?? COLOR_PALETTES.Plotly;
+  const symbols = palette.symbols ?? ['circle'];
+  return Array.from({ length: count }, (_, index) => symbols[index % symbols.length]);
+}
+
 function getNumericColorscale(paletteName) {
   const palette = COLOR_PALETTES[paletteName] ?? COLOR_PALETTES.Viridis;
   if (palette.scale) {
@@ -1321,6 +1597,7 @@ function buildLayout(traces) {
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
+      size: themeColors.fontSize,
     },
     legend: {
       orientation: 'v',
@@ -1329,12 +1606,12 @@ function buildLayout(traces) {
       y: legendY,
       xanchor: 'left',
       x: 1.02,
-      font: { color: themeColors.font },
+      font: { color: themeColors.font, size: themeColors.fontSize },
     },
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].axis_title,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       scaleanchor: 'y',
       scaleratio: 1,
@@ -1346,12 +1623,12 @@ function buildLayout(traces) {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].axis_title,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       tickmode: 'linear',
       tick0: 0,
@@ -1361,7 +1638,7 @@ function buildLayout(traces) {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
   };
 }
@@ -1497,7 +1774,7 @@ function renderGroupPlot() {
     trace,
     ...buildPlotLabelConnectorTraces(labelPlacement),
   ];
-  const labelTrace = buildPlotLabelTrace(labelPlacement, 12);
+  const labelTrace = buildPlotLabelTrace(labelPlacement, state.fontSize);
   if (labelTrace) {
     traces.push(labelTrace);
   }
@@ -1563,7 +1840,7 @@ function placeGroupInertiaLabels(groups, groupColors) {
   return placePlotLabels(items, {
     xRange: [0, 1],
     yRange: [0, 1],
-    fontSize: 12,
+    fontSize: state.fontSize,
     pointClearancePx: 16,
     plotWidth: DEFAULT_LABEL_PLOT_WIDTH,
     plotHeight: DEFAULT_LABEL_PLOT_HEIGHT,
@@ -1587,7 +1864,7 @@ function placeFeatureCorrelationLabels(features, groupColors) {
   return placePlotLabels(items, {
     xRange: computeLabelRange([...items.map((item) => item.anchorX), 0], false),
     yRange: computeLabelRange([...items.map((item) => item.anchorY), 0], false),
-    fontSize: 11,
+    fontSize: state.fontSize,
     pointClearancePx: 14,
     plotWidth: DEFAULT_LABEL_PLOT_WIDTH,
     plotHeight: DEFAULT_LABEL_PLOT_HEIGHT,
@@ -1795,11 +2072,12 @@ function buildGroupLayout() {
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
+      size: themeColors.fontSize,
     },
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].label,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       range: [0, 1],
       fixedrange: true,
@@ -1812,12 +2090,12 @@ function buildGroupLayout() {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].label,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       range: [0, 1],
       fixedrange: true,
@@ -1828,7 +2106,7 @@ function buildGroupLayout() {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     annotations: [],
   };
@@ -1887,7 +2165,7 @@ function renderPartialAxesPlot() {
     buildPartialAxesVectorTrace(series, themeColors),
   ]);
   traces.push(...buildPlotLabelConnectorTraces(labelPlacement));
-  const labelTrace = buildPlotLabelTrace(labelPlacement, 12);
+  const labelTrace = buildPlotLabelTrace(labelPlacement, state.fontSize);
   if (labelTrace) {
     traces.push(labelTrace);
   }
@@ -1970,7 +2248,7 @@ function placePartialAxesLabels(vectorSeries) {
   return placePlotLabels(items, {
     xRange: [PARTIAL_AXES_X_RANGE[0] + 0.04, PARTIAL_AXES_X_RANGE[1] - 0.04],
     yRange: [PARTIAL_AXES_Y_RANGE[0] + 0.04, PARTIAL_AXES_Y_RANGE[1] - 0.04],
-    fontSize: 12,
+    fontSize: state.fontSize,
     pointClearancePx: 14,
     plotWidth: 520,
     plotHeight: 460,
@@ -2033,12 +2311,13 @@ function buildPartialAxesLayout() {
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
+      size: themeColors.fontSize,
     },
     showlegend: false,
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].label,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       range: PARTIAL_AXES_X_RANGE,
       constrain: 'domain',
@@ -2050,12 +2329,12 @@ function buildPartialAxesLayout() {
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].label,
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       range: PARTIAL_AXES_Y_RANGE,
       constrain: 'domain',
@@ -2065,7 +2344,7 @@ function buildPartialAxesLayout() {
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     annotations: [],
   };
@@ -2102,7 +2381,7 @@ function renderVariancePlot() {
       color: components.map((component) =>
         selectedDimensions.has(component.key)
           ? SELECTED_DIMENSION_COLOR
-          : DEFAULT_MARKER_COLOR
+          : VARIANCE_MARKER_COLOR
       ),
       line: {
         color: themeColors.markerLine,
@@ -2170,14 +2449,14 @@ function renderCumulativeVariancePlot(components, themeColors) {
       return cumulativeTotal;
     }),
     line: {
-      color: DEFAULT_MARKER_COLOR,
+      color: VARIANCE_MARKER_COLOR,
       width: 3,
     },
     marker: {
       color: components.map((component) =>
         selectedDimensions.has(component.key)
           ? SELECTED_DIMENSION_COLOR
-          : DEFAULT_MARKER_COLOR
+          : VARIANCE_MARKER_COLOR
       ),
       size: 8,
       line: {
@@ -2239,20 +2518,21 @@ function buildVarianceLayout() {
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
+      size: themeColors.fontSize,
     },
     bargap: 0.24,
     xaxis: {
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     yaxis: {
       title: {
         text: 'Explained variance (%)',
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       rangemode: 'tozero',
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     annotations: [],
   };
@@ -2267,22 +2547,23 @@ function buildCumulativeVarianceLayout() {
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
+      size: themeColors.fontSize,
     },
     xaxis: {
       showgrid: true,
       gridcolor: themeColors.gridSoft,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
     },
     yaxis: {
       title: {
         text: 'Cumulative explained variance (%)',
-        font: { color: themeColors.font },
+        font: { color: themeColors.font, size: themeColors.fontSize },
       },
       range: [0, 104],
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font },
+      tickfont: { color: themeColors.font, size: themeColors.fontSize },
       zeroline: true,
     },
     annotations: [],
@@ -2298,6 +2579,7 @@ function getThemeColors() {
     zeroline: styles.getPropertyValue('--plot-zero').trim(),
     annotation: styles.getPropertyValue('--plot-annotation').trim(),
     markerLine: styles.getPropertyValue('--plot-marker-line').trim(),
+    fontSize: state.fontSize,
   };
 }
 

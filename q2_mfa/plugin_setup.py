@@ -22,7 +22,7 @@ from rachis.plugin import Citations, Plugin
 from q2_mfa import __version__, transform_clr
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
-from q2_mfa.types import MFAResults, MFAResultsDirFmt, PrinceWideTSVFormat
+from q2_mfa.types import MFAResults, MFAResultsDirFmt, NumericTSVFormat
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -38,7 +38,7 @@ plugin = Plugin(
 
 plugin.register_formats(
     MFAResultsDirFmt,
-    PrinceWideTSVFormat,
+    NumericTSVFormat,
 )
 plugin.register_semantic_types(MFAResults)
 plugin.register_artifact_class(

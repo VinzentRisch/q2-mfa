@@ -72,6 +72,7 @@ const state = {
   showBarycenter: false,
   showPartialOverlay: false,
   showFeatureCorrelations: false,
+  showFullFeatureLabels: false,
   topFeatureCount: 10,
   featureTableSort: {
     column: 'rank',
@@ -139,6 +140,7 @@ function populateColorControls() {
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-partial-overlay').checked = state.showPartialOverlay;
   document.getElementById('show-feature-correlations').checked = state.showFeatureCorrelations;
+  document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
 }
 
@@ -184,6 +186,11 @@ function bindEvents() {
 
   document.getElementById('show-feature-correlations').addEventListener('change', (event) => {
     state.showFeatureCorrelations = event.target.checked;
+    renderPlot();
+  });
+
+  document.getElementById('show-full-feature-labels').addEventListener('change', (event) => {
+    state.showFullFeatureLabels = event.target.checked;
     renderPlot();
   });
 
@@ -595,11 +602,12 @@ function getRankedFeatureCorrelations(limit = null) {
     .map((feature) => ({
       ...feature,
       rankingScore: Math.hypot(feature.x, feature.y),
+      display_feature_name: formatFeatureDisplayName(feature.feature_name),
     }))
     .sort((a, b) =>
       b.rankingScore - a.rankingScore ||
       a.group.localeCompare(b.group) ||
-      a.feature_name.localeCompare(b.feature_name)
+      a.display_feature_name.localeCompare(b.display_feature_name)
     )
     .map((feature, index) => ({
       ...feature,
@@ -621,6 +629,8 @@ function compareFeatureTableRows(left, right, column, direction) {
   let comparison;
   if (['rank', 'x', 'y', 'rankingScore'].includes(column)) {
     comparison = left[column] - right[column];
+  } else if (column === 'feature_name') {
+    comparison = left.display_feature_name.localeCompare(right.display_feature_name);
   } else {
     comparison = String(left[column]).localeCompare(String(right[column]));
   }
@@ -708,7 +718,7 @@ function updateFeatureTableSortHeaders() {
 }
 
 function buildFeatureNameCell(feature) {
-  const cell = buildFeatureTableCell(feature.feature_name);
+  const cell = buildFeatureTableCell(feature.display_feature_name);
   cell.title = feature.feature_id;
   return cell;
 }
@@ -726,13 +736,23 @@ function downloadFeatureTableTsv() {
   const rows = getSortedFeatureTableRows();
   const xLabel = dimensionsByKey[state.xDimension].label;
   const yLabel = dimensionsByKey[state.yDimension].label;
-  const header = ['rank', 'feature_id', 'feature', 'group', xLabel, yLabel, 'plane_magnitude'];
+  const header = [
+    'rank',
+    'feature_id',
+    'feature',
+    'display_feature',
+    'group',
+    xLabel,
+    yLabel,
+    'plane_magnitude',
+  ];
   const lines = [
     header.map(escapeTsvValue).join('\t'),
     ...rows.map((feature) => [
       feature.rank,
       feature.feature_id,
       feature.feature_name,
+      feature.display_feature_name,
       feature.group,
       feature.x,
       feature.y,
@@ -759,6 +779,32 @@ function buildFeatureTableDownloadFilename() {
   const xLabel = state.xDimension.toLowerCase().replace(/\s+/g, '-');
   const yLabel = state.yDimension.toLowerCase().replace(/\s+/g, '-');
   return `mfa-contributing-features-${xLabel}-vs-${yLabel}.tsv`;
+}
+
+function formatFeatureDisplayName(featureName) {
+  if (state.showFullFeatureLabels) {
+    return featureName;
+  }
+
+  return shortenTaxonomyFeatureName(featureName);
+}
+
+function shortenTaxonomyFeatureName(featureName) {
+  const ranks = String(featureName)
+    .split(';')
+    .map((rank) => rank.trim())
+    .filter(Boolean);
+  if (ranks.length < 2) {
+    return featureName;
+  }
+
+  const lastRank = ranks[ranks.length - 1];
+  if (!/^[a-z]__/.test(lastRank)) {
+    return featureName;
+  }
+
+  const shortened = lastRank.replace(/^[kpcofgs]__/, '').trim();
+  return shortened || featureName;
 }
 
 function buildPartialOverlayTraces(samples, colorColumn) {
@@ -1413,7 +1459,7 @@ function placeFeatureCorrelationLabels(features, groupColors) {
       `${state.xDimension}: ${formatValue(feature.x)}<br>` +
       `${state.yDimension}: ${formatValue(feature.y)}<br>` +
       `Plane magnitude: ${formatValue(feature.rankingScore)}`,
-    text: feature.feature_name,
+    text: feature.display_feature_name,
   }));
   return placePlotLabels(items, {
     xRange: computeLabelRange([...items.map((item) => item.anchorX), 0], false),

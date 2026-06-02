@@ -68,12 +68,20 @@
         <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
       </div>
 
-      <div class="control-group">
+      <div class="control-group control-group-toggle control-group-full-feature-labels">
+        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
+        <label class="toggle-option" for="show-full-feature-labels">
+          <input id="show-full-feature-labels" type="checkbox">
+          <span>Full feature labels</span>
+        </label>
+      </div>
+
+      <div class="control-group control-group-filter-select">
         <label for="filter-by">Filter samples</label>
         <select id="filter-by"></select>
       </div>
 
-      <div class="control-group control-group-wide">
+      <div class="control-group control-group-wide control-group-filter-applied">
         <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
         <div id="filter-controls" class="filter-controls"></div>
       </div>

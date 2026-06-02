@@ -70,6 +70,15 @@ class TestMFAVisualizer(TestPluginBase):
                 'max="100" step="1" value="10">',
                 index_html,
             )
+            self.assertIn(
+                '<label class="toggle-option" for="show-full-feature-labels">',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="show-full-feature-labels" type="checkbox">',
+                index_html,
+            )
+            self.assertIn("<span>Full feature labels</span>", index_html)
             self.assertIn('class="plot-shell plot-shell-main"', index_html)
             for expected_tooltip_text in (
                 "visible sample scores from ordination.txt",
@@ -194,6 +203,31 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("x: 1.02,", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
+            self.assertIn("showFullFeatureLabels: false,", app_js)
+            self.assertIn(
+                "document.getElementById('show-full-feature-labels').checked = "
+                "state.showFullFeatureLabels;",
+                app_js,
+            )
+            self.assertIn("function formatFeatureDisplayName(featureName)", app_js)
+            self.assertIn("function shortenTaxonomyFeatureName(featureName)", app_js)
+            self.assertIn(".split(';')", app_js)
+            self.assertIn(
+                "const shortened = lastRank.replace(/^[kpcofgs]__/, '')", app_js
+            )
+            self.assertIn(
+                "display_feature_name: formatFeatureDisplayName(feature.feature_name),",
+                app_js,
+            )
+            self.assertIn(
+                "a.display_feature_name.localeCompare(b.display_feature_name)",
+                app_js,
+            )
+            self.assertIn(
+                "comparison = left.display_feature_name.localeCompare("
+                "right.display_feature_name);",
+                app_js,
+            )
             self.assertIn("hoverinfo: 'skip'", app_js)
             self.assertNotIn(
                 "customdata: labelPlacement.map((label) => label.hoverText)",
@@ -223,6 +257,7 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("function getSortedFeatureTableRows()", app_js)
             self.assertIn("function updateFeatureTableSort(button)", app_js)
             self.assertIn("function downloadFeatureTableTsv()", app_js)
+            self.assertIn("'display_feature',", app_js)
             self.assertIn("function escapeTsvValue(value)", app_js)
             self.assertIn("const features = getSortedFeatureTableRows();", app_js)
 
@@ -439,6 +474,17 @@ class TestMFAVisualizer(TestPluginBase):
                     "group": "B",
                     "feature_name": "taxon:b:variant",
                     "coords": {"Dim 1": 0.62, "Dim 2": 0.44},
+                },
+                {
+                    "feature_id": (
+                        "B:k__Bacteria; p__Firmicutes; g__Blautia; "
+                        "s__Blautia_wexlerae"
+                    ),
+                    "group": "B",
+                    "feature_name": (
+                        "k__Bacteria; p__Firmicutes; g__Blautia; " "s__Blautia_wexlerae"
+                    ),
+                    "coords": {"Dim 1": 0.51, "Dim 2": 0.33},
                 },
             ],
         )

@@ -77,6 +77,7 @@ const state = {
   showFeatureCorrelations: false,
   showFullFeatureLabels: false,
   topFeatureCount: 10,
+  featureLoadingScale: 1,
   featureTableSort: {
     column: 'rankingScore',
     direction: 'desc',
@@ -145,6 +146,7 @@ function populateColorControls() {
   document.getElementById('show-feature-correlations').checked = state.showFeatureCorrelations;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
+  document.getElementById('feature-loading-scale').value = state.featureLoadingScale;
 }
 
 function populateFilterSelector() {
@@ -204,6 +206,16 @@ function bindEvents() {
     }
     state.topFeatureCount = Math.min(Math.floor(nextValue), MAX_FEATURE_OVERLAY_COUNT);
     event.target.value = state.topFeatureCount;
+    renderPlot();
+  });
+
+  document.getElementById('feature-loading-scale').addEventListener('input', (event) => {
+    const nextValue = Number(event.target.value);
+    if (!Number.isFinite(nextValue) || nextValue < 1) {
+      return;
+    }
+    state.featureLoadingScale = Math.floor(nextValue);
+    event.target.value = state.featureLoadingScale;
     renderPlot();
   });
 
@@ -526,8 +538,8 @@ function buildFeatureCorrelationTraces() {
     const lineX = [];
     const lineY = [];
     groupFeatures.forEach((feature) => {
-      lineX.push(0, feature.x, null);
-      lineY.push(0, feature.y, null);
+      lineX.push(0, feature.plotX, null);
+      lineY.push(0, feature.plotY, null);
     });
 
     traces.push({
@@ -551,17 +563,19 @@ function buildFeatureCorrelationTraces() {
       name: `${group} (n=${groupFeatures.length})`,
       legendgroup: groupLegend,
       showlegend: true,
-      x: groupFeatures.map((feature) => feature.x),
-      y: groupFeatures.map((feature) => feature.y),
+      x: groupFeatures.map((feature) => feature.plotX),
+      y: groupFeatures.map((feature) => feature.plotY),
       hovertemplate:
         '<b>%{customdata[0]}</b><br>' +
         'Group: %{customdata[1]}<br>' +
-        `${state.xDimension}: %{x:.3f}<br>` +
-        `${state.yDimension}: %{y:.3f}<br>` +
-        'Plane magnitude: %{customdata[2]:.3f}<extra></extra>',
+        `${state.xDimension}: %{customdata[2]:.3f}<br>` +
+        `${state.yDimension}: %{customdata[3]:.3f}<br>` +
+        'Plane magnitude: %{customdata[4]:.3f}<extra></extra>',
       customdata: groupFeatures.map((feature) => [
         feature.feature_id,
         feature.group,
+        feature.x,
+        feature.y,
         feature.rankingScore,
       ]),
       marker: {
@@ -616,6 +630,8 @@ function getRankedFeatureCorrelations(limit = null) {
     .map((feature, index) => ({
       ...feature,
       rank: index + 1,
+      plotX: feature.x * state.featureLoadingScale,
+      plotY: feature.y * state.featureLoadingScale,
     }));
 
   return limit === null ? rankedFeatures : rankedFeatures.slice(0, limit);
@@ -1556,8 +1572,8 @@ function placeGroupInertiaLabels(groups, groupColors) {
 
 function placeFeatureCorrelationLabels(features, groupColors) {
   const items = features.map((feature) => ({
-    anchorX: feature.x,
-    anchorY: feature.y,
+    anchorX: feature.plotX,
+    anchorY: feature.plotY,
     color: groupColors[feature.group],
     group: feature.group,
     hoverText:

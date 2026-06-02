@@ -74,6 +74,15 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn(
+                '<label for="feature-loading-scale">Loading scale</label>',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="feature-loading-scale" type="number" min="1" '
+                'step="1" value="1">',
+                index_html,
+            )
+            self.assertIn(
                 '<label class="toggle-option" for="show-full-feature-labels">',
                 index_html,
             )
@@ -229,6 +238,17 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("x: 1.02,", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
+            self.assertIn("featureLoadingScale: 1,", app_js)
+            self.assertIn(
+                "document.getElementById('feature-loading-scale').value = "
+                "state.featureLoadingScale;",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('feature-loading-scale').addEventListener",
+                app_js,
+            )
+            self.assertIn("state.featureLoadingScale = Math.floor(nextValue);", app_js)
             self.assertIn("column: 'rankingScore',", app_js)
             self.assertIn("direction: 'desc',", app_js)
             self.assertIn("showFullFeatureLabels: false,", app_js)
@@ -252,6 +272,14 @@ class TestMFAVisualizer(TestPluginBase):
                 "plot_feature_name: formatFeaturePlotLabel(feature.feature_name),",
                 app_js,
             )
+            self.assertIn("plotX: feature.x * state.featureLoadingScale,", app_js)
+            self.assertIn("plotY: feature.y * state.featureLoadingScale,", app_js)
+            self.assertIn("lineX.push(0, feature.plotX, null);", app_js)
+            self.assertIn("x: groupFeatures.map((feature) => feature.plotX),", app_js)
+            self.assertIn("anchorX: feature.plotX,", app_js)
+            self.assertIn("${state.xDimension}: %{customdata[2]:.3f}<br>", app_js)
+            self.assertIn("${state.yDimension}: %{customdata[3]:.3f}<br>", app_js)
+            self.assertIn("feature.x,\n        feature.y,", app_js)
             self.assertIn(
                 "a.display_feature_name.localeCompare(b.display_feature_name)",
                 app_js,

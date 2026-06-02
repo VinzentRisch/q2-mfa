@@ -1294,13 +1294,14 @@ function buildLayout(traces) {
   const themeColors = getThemeColors();
   const legendRightMargin = computeSampleLegendRightMargin(traces);
   const legendY = hasSampleNumericColorbar(traces) ? SAMPLE_LEGEND_BELOW_COLORBAR_Y : 1;
+  const sharedGridStep = computeSharedSampleGridStep(traces);
 
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
     dragmode: 'zoom',
     hovermode: 'closest',
-    margin: { t: 32, r: legendRightMargin, b: 96, l: 80 },
+    margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
@@ -1319,6 +1320,11 @@ function buildLayout(traces) {
         text: dimensionsByKey[state.xDimension].axis_title,
         font: { color: themeColors.font },
       },
+      scaleanchor: 'y',
+      scaleratio: 1,
+      tickmode: 'linear',
+      tick0: 0,
+      dtick: sharedGridStep,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
@@ -1331,6 +1337,9 @@ function buildLayout(traces) {
         text: dimensionsByKey[state.yDimension].axis_title,
         font: { color: themeColors.font },
       },
+      tickmode: 'linear',
+      tick0: 0,
+      dtick: sharedGridStep,
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
@@ -1339,6 +1348,46 @@ function buildLayout(traces) {
       tickfont: { color: themeColors.font },
     },
   };
+}
+
+function computeSharedSampleGridStep(traces) {
+  const values = traces.flatMap((trace) => [
+    ...extractFiniteTraceValues(trace.x),
+    ...extractFiniteTraceValues(trace.y),
+  ]);
+  if (!values.length) {
+    return 1;
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = Math.max(maxValue - minValue, 1e-12);
+  return computeNiceTickStep(span / 10);
+}
+
+function extractFiniteTraceValues(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.filter((value) => Number.isFinite(value));
+}
+
+function computeNiceTickStep(rawStep) {
+  const exponent = Math.floor(Math.log10(rawStep));
+  const magnitude = 10 ** exponent;
+  const normalized = rawStep / magnitude;
+
+  if (normalized <= 1) {
+    return magnitude;
+  }
+  if (normalized <= 2) {
+    return 2 * magnitude;
+  }
+  if (normalized <= 5) {
+    return 5 * magnitude;
+  }
+  return 10 * magnitude;
 }
 
 function hasSampleNumericColorbar(traces) {

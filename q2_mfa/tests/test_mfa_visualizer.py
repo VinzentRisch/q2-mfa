@@ -173,7 +173,16 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("margin: VARIANCE_PLOT_MARGIN,", app_js)
             self.assertIn("margin: CUMULATIVE_VARIANCE_PLOT_MARGIN,", app_js)
             self.assertIn("const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];", app_js)
-            self.assertEqual(app_js.count("scaleanchor: 'y',"), 2)
+            self.assertEqual(app_js.count("scaleanchor: 'y',"), 3)
+            self.assertIn(
+                "const sharedGridStep = computeSharedSampleGridStep(traces);", app_js
+            )
+            self.assertIn("function computeSharedSampleGridStep(traces)", app_js)
+            self.assertIn("return computeNiceTickStep(span / 10);", app_js)
+            self.assertIn("function computeNiceTickStep(rawStep)", app_js)
+            self.assertEqual(app_js.count("tickmode: 'linear',"), 2)
+            self.assertEqual(app_js.count("tick0: 0,"), 2)
+            self.assertEqual(app_js.count("dtick: sharedGridStep,"), 2)
             self.assertGreaterEqual(app_js.count("constrain: 'domain',"), 4)
             self.assertNotIn("zeroline: false,", app_js)
             self.assertNotIn("zerolinewidth: 2,", app_js)
@@ -183,7 +192,7 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "margin: { t: 32, r: legendRightMargin, b: 96, l: 80 },", app_js
+                "margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },", app_js
             )
             self.assertIn("SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;", app_js)
             self.assertIn("const SAMPLE_NUMERIC_COLORBAR_Y = 1;", app_js)

@@ -146,10 +146,14 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertNotIn("IBM Plex", app_js)
             self.assertNotIn("Helvetica Neue", app_js)
             self.assertIn("function formatSampleLegendName(name, samples)", app_js)
-            self.assertIn("return `${name} (${samples.length})`;", app_js)
+            self.assertIn("return `${name} (n=${samples.length})`;", app_js)
             self.assertIn("name: formatSampleLegendName(name, samples),", app_js)
             self.assertIn(
                 "name: formatSampleLegendName(colorColumn.name, numericSamples),",
+                app_js,
+            )
+            self.assertIn(
+                "text: formatSampleLegendName(colorColumn.name, numericSamples),",
                 app_js,
             )
             self.assertIn(
@@ -179,9 +183,23 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "margin: { t: 32, r: legendRightMargin, b: 70, l: 80 },", app_js
+                "margin: { t: 32, r: legendRightMargin, b: 96, l: 80 },", app_js
             )
             self.assertIn("SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;", app_js)
+            self.assertIn("const SAMPLE_NUMERIC_COLORBAR_Y = 1;", app_js)
+            self.assertIn("const SAMPLE_NUMERIC_COLORBAR_LENGTH = 0.28;", app_js)
+            self.assertIn("const SAMPLE_LEGEND_BELOW_COLORBAR_Y = 0.72;", app_js)
+            self.assertIn("y: SAMPLE_NUMERIC_COLORBAR_Y,", app_js)
+            self.assertIn("yanchor: 'top',", app_js)
+            self.assertIn("len: SAMPLE_NUMERIC_COLORBAR_LENGTH,", app_js)
+            self.assertIn("showlegend: false,", app_js)
+            self.assertIn("function hasSampleNumericColorbar(traces)", app_js)
+            self.assertIn(
+                "const legendY = hasSampleNumericColorbar(traces) ? "
+                "SAMPLE_LEGEND_BELOW_COLORBAR_Y : 1;",
+                app_js,
+            )
+            self.assertIn("y: legendY,", app_js)
             self.assertIn("function updateSamplePlotResizeLimits(layout)", app_js)
             self.assertIn("updateSamplePlotResizeLimits(layout);", app_js)
             self.assertIn(
@@ -267,6 +285,7 @@ class TestMFAVisualizer(TestPluginBase):
                 "const groupLegend = `feature-correlations:${group}`;",
                 app_js,
             )
+            self.assertIn("name: `${group} (n=${groupFeatures.length})`,", app_js)
             self.assertIn(
                 "const groupLabelPlacement = labelPlacement.filter("
                 "(label) => label.group === group);",

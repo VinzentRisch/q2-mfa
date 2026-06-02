@@ -52,6 +52,9 @@ const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
 const SAMPLE_LEGEND_SYMBOL_WIDTH = 46;
 const SAMPLE_LEGEND_LABEL_PADDING = 34;
 const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
+const SAMPLE_NUMERIC_COLORBAR_Y = 1;
+const SAMPLE_NUMERIC_COLORBAR_LENGTH = 0.28;
+const SAMPLE_LEGEND_BELOW_COLORBAR_Y = 0.72;
 const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };
 const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };
 const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
@@ -545,7 +548,7 @@ function buildFeatureCorrelationTraces() {
     traces.push({
       type: 'scatter',
       mode: 'markers',
-      name: group,
+      name: `${group} (n=${groupFeatures.length})`,
       legendgroup: groupLegend,
       showlegend: true,
       x: groupFeatures.map((feature) => feature.x),
@@ -1028,7 +1031,7 @@ function buildSingleTrace(samples, color, name, options = {}) {
 }
 
 function formatSampleLegendName(name, samples) {
-  return `${name} (${samples.length})`;
+  return `${name} (n=${samples.length})`;
 }
 
 function buildNumericTraces(samples, colorColumn) {
@@ -1046,6 +1049,7 @@ function buildNumericTraces(samples, colorColumn) {
       type: 'scatter',
       mode: 'markers',
       name: formatSampleLegendName(colorColumn.name, numericSamples),
+      showlegend: false,
       x: numericSamples.map((sample) => sample.coords[state.xDimension]),
       y: numericSamples.map((sample) => sample.coords[state.yDimension]),
       customdata: numericSamples.map(buildHoverText),
@@ -1055,9 +1059,14 @@ function buildNumericTraces(samples, colorColumn) {
         colorscale: getNumericColorscale(state.colorPalette),
         colorbar: {
           title: {
-            text: colorColumn.name,
+            text: formatSampleLegendName(colorColumn.name, numericSamples),
             font: { color: themeColors.font },
           },
+          x: 1.02,
+          xanchor: 'left',
+          y: SAMPLE_NUMERIC_COLORBAR_Y,
+          yanchor: 'top',
+          len: SAMPLE_NUMERIC_COLORBAR_LENGTH,
           thickness: 18,
           tickfont: { color: themeColors.font },
         },
@@ -1284,13 +1293,14 @@ function withAlpha(hexColor, alpha) {
 function buildLayout(traces) {
   const themeColors = getThemeColors();
   const legendRightMargin = computeSampleLegendRightMargin(traces);
+  const legendY = hasSampleNumericColorbar(traces) ? SAMPLE_LEGEND_BELOW_COLORBAR_Y : 1;
 
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
     dragmode: 'zoom',
     hovermode: 'closest',
-    margin: { t: 32, r: legendRightMargin, b: 70, l: 80 },
+    margin: { t: 32, r: legendRightMargin, b: 96, l: 80 },
     font: {
       color: themeColors.font,
       family: 'Arial, sans-serif',
@@ -1299,7 +1309,7 @@ function buildLayout(traces) {
       orientation: 'v',
       groupclick: 'togglegroup',
       yanchor: 'top',
-      y: 1,
+      y: legendY,
       xanchor: 'left',
       x: 1.02,
       font: { color: themeColors.font },
@@ -1329,6 +1339,10 @@ function buildLayout(traces) {
       tickfont: { color: themeColors.font },
     },
   };
+}
+
+function hasSampleNumericColorbar(traces) {
+  return traces.some((trace) => trace.marker?.colorbar);
 }
 
 function updateSamplePlotResizeLimits(layout) {

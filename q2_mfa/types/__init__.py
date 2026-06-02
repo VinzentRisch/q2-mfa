@@ -5,11 +5,11 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from ._format import MFAResultsDirFmt, PrinceWideTSVFormat
+from ._format import MFAResultsDirFmt, NumericTSVFormat
 from ._type import MFAResults
 
 __all__ = [
     "MFAResults",
     "MFAResultsDirFmt",
-    "PrinceWideTSVFormat",
+    "NumericTSVFormat",
 ]

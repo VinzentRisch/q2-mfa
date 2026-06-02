@@ -279,7 +279,9 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("anchorX: feature.plotX,", app_js)
             self.assertIn("${state.xDimension}: %{customdata[2]:.3f}<br>", app_js)
             self.assertIn("${state.yDimension}: %{customdata[3]:.3f}<br>", app_js)
+            self.assertIn("feature.feature_name,\n        feature.group,", app_js)
             self.assertIn("feature.x,\n        feature.y,", app_js)
+            self.assertIn("<b>${feature.feature_name}</b><br>", app_js)
             self.assertIn(
                 "a.display_feature_name.localeCompare(b.display_feature_name)",
                 app_js,

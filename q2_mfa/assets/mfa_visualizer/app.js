@@ -572,7 +572,7 @@ function buildFeatureCorrelationTraces() {
         `${state.yDimension}: %{customdata[3]:.3f}<br>` +
         'Plane magnitude: %{customdata[4]:.3f}<extra></extra>',
       customdata: groupFeatures.map((feature) => [
-        feature.feature_id,
+        feature.feature_name,
         feature.group,
         feature.x,
         feature.y,
@@ -1577,7 +1577,7 @@ function placeFeatureCorrelationLabels(features, groupColors) {
     color: groupColors[feature.group],
     group: feature.group,
     hoverText:
-      `<b>${feature.feature_id}</b><br>` +
+      `<b>${feature.feature_name}</b><br>` +
       `Group: ${feature.group}<br>` +
       `${state.xDimension}: ${formatValue(feature.x)}<br>` +
       `${state.yDimension}: ${formatValue(feature.y)}<br>` +

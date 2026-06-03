@@ -38,13 +38,13 @@ class NumericTSVFormat(model.TextFileFormat):
         header = list(df.columns)
         if "id" not in header:
             raise ValidationError(
-                f"Invalid header for Numeric TSV: {header}, must contain " "'id'."
+                f"Invalid header for Numeric TSV: {header}, must contain 'id'."
             )
 
         value_columns = [column for column in header if column != "id"]
         if len(value_columns) < 1:
             raise ValidationError(
-                "Expected at least 1 Numeric TSV value column, " "observed 0."
+                "Expected at least 1 Numeric TSV value column, observed 0."
             )
 
         values = df[value_columns]

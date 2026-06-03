@@ -5,6 +5,8 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import importlib
+
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from q2_types.ordination import PCoAResults
 from rachis.core.type import (
@@ -169,3 +171,5 @@ plugin.register_artifact_class(
         "package."
     ),
 )
+
+importlib.import_module("q2_mfa.types._transformer")

@@ -8,8 +8,7 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from q2_types.ordination import PCoAResults
-from rachis.core.type import Bool, Choices, Float, Int, Properties, Range, Str
+from rachis.core.type import Bool, Choices, Float, Int, Range, Str
 from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
@@ -85,7 +84,7 @@ plugin.methods.register_function(
         "random_state": Int,
         "engine": Str % Choices(["sklearn", "scipy"]),
     },
-    outputs=[("pca_results", PCoAResults % Properties("pca"))],
+    outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "n_components": "Number of principal components to compute.",

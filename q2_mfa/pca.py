@@ -9,9 +9,10 @@ import secrets
 
 import pandas as pd
 import prince
-import skbio
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
+
+from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 def pca(
@@ -22,9 +23,9 @@ def pca(
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
-) -> skbio.OrdinationResults:
+) -> ComponentAnalysisDirFmt:
     """
-    Perform principal component analysis with prince and return ordination results.
+    Perform principal component analysis with prince.
 
     Args:
         table (pd.DataFrame): Feature table with samples as rows and features as
@@ -41,8 +42,8 @@ def pca(
         engine (str): SVD engine used by prince.
 
     Returns:
-        skbio.OrdinationResults: PCA results containing sample scores, feature
-            coordinates, eigenvalues, and percentage of variance explained.
+        ComponentAnalysisDirFmt: PCA results containing ordination results and
+            Prince result tables.
     """
     if engine == "sklearn":
         random_state = CaptureHolder.get_or_set(
@@ -51,16 +52,10 @@ def pca(
     else:
         random_state = CaptureHolder.get_or_set(random_state, lambda: None)
 
-    pca = prince.PCA(
-        rescale_with_mean=rescale_with_mean,
-        rescale_with_std=rescale_with_std,
-        n_components=n_components,
-        n_iter=n_iter,
-        copy=True,
-        check_input=True,
-        random_state=random_state,
-        engine=engine,
-    ).fit(table)
+    pca_params = locals()
+    pca_params.pop("table")
+
+    pca = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
 
     ordination = OrdinationResults(
         short_method_name="PCA",
@@ -71,4 +66,16 @@ def pca(
         proportion_explained=pd.Series(pca.percentage_of_variance_),
     )
 
-    return ordination
+    results = ComponentAnalysisDirFmt()
+    results.ordination.write_data(ordination, OrdinationResults)
+    numeric_outputs = {
+        results.sample_cosine_similarities: pca.row_cosine_similarities(table),
+        results.sample_contributions: pca.row_contributions_,
+        results.feature_correlations: pca.column_correlations,
+        results.feature_contributions: pca.column_contributions_,
+        results.feature_cosine_similarities: pca.column_cosine_similarities_,
+    }
+    for output, data in numeric_outputs.items():
+        output.write_data(data, pd.DataFrame)
+
+    return results

@@ -20,7 +20,7 @@ from q2_mfa.mfa import (
     _to_ordination,
     mfa,
 )
-from q2_mfa.types import MFAResultsDirFmt
+from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 class TestMFA(TestPluginBase):
@@ -125,7 +125,7 @@ class TestMFA(TestPluginBase):
 
         results = _create_mfa_results(ordn, tables)
 
-        self.assertIsInstance(results, MFAResultsDirFmt)
+        self.assertIsInstance(results, ComponentAnalysisDirFmt)
         self.assertTrue((results.path / "test-table.tsv").exists())
         self.assertTrue((results.path / "ordination.txt").exists())
 
@@ -138,7 +138,7 @@ class TestMFA(TestPluginBase):
             random_state=None,
         )
 
-        self.assertIsInstance(results, MFAResultsDirFmt)
+        self.assertIsInstance(results, ComponentAnalysisDirFmt)
         results.validate()
 
         ordn = OrdinationResults.read(str(results.path / "ordination.txt"))

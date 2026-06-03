@@ -22,7 +22,7 @@ from rachis.plugin import Citations, Plugin
 from q2_mfa import __version__, transform_clr
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
-from q2_mfa.types import MFAResults, MFAResultsDirFmt, NumericTSVFormat
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt, NumericTSVFormat
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -36,19 +36,6 @@ plugin = Plugin(
     citations=[],
 )
 
-plugin.register_formats(
-    MFAResultsDirFmt,
-    NumericTSVFormat,
-)
-plugin.register_semantic_types(MFAResults)
-plugin.register_artifact_class(
-    MFAResults,
-    directory_format=MFAResultsDirFmt,
-    description=(
-        "Represents the global MFA ordination together with MFA-specific "
-        "Prince-style sample, group, partial, and feature tables."
-    ),
-)
 
 plugin.methods.register_function(
     function=transform_clr,
@@ -153,7 +140,7 @@ plugin.methods.register_function(
     function=mfa,
     inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
-    outputs=[("mfa_results", MFAResults)],
+    outputs=[("mfa_results", ComponentAnalysis)],
     input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
     parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"mfa_results": "MFA results"},
@@ -167,4 +154,18 @@ plugin.methods.register_function(
         citations["escofier1994multiple"],
         citations["Halford_Prince"],
     ],
+)
+
+plugin.register_formats(
+    ComponentAnalysisDirFmt,
+    NumericTSVFormat,
+)
+plugin.register_semantic_types(ComponentAnalysis)
+plugin.register_artifact_class(
+    ComponentAnalysis,
+    directory_format=ComponentAnalysisDirFmt,
+    description=(
+        "Represents the output for PCA and MFA actions implemented with the Prince "
+        "package."
+    ),
 )

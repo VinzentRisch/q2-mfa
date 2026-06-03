@@ -14,7 +14,7 @@ import prince
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 
-from q2_mfa.types import MFAResultsDirFmt
+from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 def _build_prince_input(
@@ -94,8 +94,8 @@ def _to_ordination(mfa_result: prince.MFA, table: pd.DataFrame) -> OrdinationRes
 def _create_mfa_results(
     ordination: OrdinationResults,
     prince_tables: dict,
-) -> MFAResultsDirFmt:
-    results = MFAResultsDirFmt()
+) -> ComponentAnalysisDirFmt:
+    results = ComponentAnalysisDirFmt()
 
     ordination.write(str(results.path / "ordination.txt"))
     for filename, table in prince_tables.items():
@@ -114,7 +114,7 @@ def mfa(
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
-) -> MFAResultsDirFmt:
+) -> ComponentAnalysisDirFmt:
     """
     Run Multiple Factor Analysis with the prince package.
     """
@@ -141,6 +141,7 @@ def mfa(
     prince_tables = {
         "partial-sample-coordinates.tsv": mfa_result.partial_row_coordinates(table),
         "sample-cosine-similarities.tsv": mfa_result.row_cosine_similarities(table),
+        "sample-contributions.tsv": mfa_result.row_contributions_,
         "group-coordinates.tsv": mfa_result.group_coordinates_,
         "group-contributions.tsv": mfa_result.group_contributions_,
         "group-cosine-similarities.tsv": mfa_result.group_cosine_similarities_,

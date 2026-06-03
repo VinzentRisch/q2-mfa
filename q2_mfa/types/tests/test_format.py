@@ -8,7 +8,7 @@
 from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.types import MFAResultsDirFmt, NumericTSVFormat
+from q2_mfa.types import ComponentAnalysisDirFmt, NumericTSVFormat
 
 
 class TestMFAFormats(TestPluginBase):
@@ -71,5 +71,9 @@ class TestMFAFormats(TestPluginBase):
             fmt.validate()
 
     def test_mfa_results_directory_format_ok(self):
-        fmt = MFAResultsDirFmt(self.get_data_path("mfa-results"), mode="r")
+        fmt = ComponentAnalysisDirFmt(self.get_data_path("mfa-results"), mode="r")
+        fmt.validate()
+
+    def test_pca_results_directory_format_ok(self):
+        fmt = ComponentAnalysisDirFmt(self.get_data_path("pca-results"), mode="r")
         fmt.validate()

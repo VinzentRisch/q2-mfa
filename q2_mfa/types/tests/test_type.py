@@ -7,14 +7,16 @@
 # ----------------------------------------------------------------------------
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.types import MFAResults, MFAResultsDirFmt
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 
 
 class TestMFATypes(TestPluginBase):
     package = "q2_mfa.types.tests"
 
-    def test_mfa_results_semantic_type_registration(self):
-        self.assertRegisteredSemanticType(MFAResults)
+    def test_component_analysis_semantic_type_registration(self):
+        self.assertRegisteredSemanticType(ComponentAnalysis)
 
-    def test_mfa_results_semantic_type_to_format_registration(self):
-        self.assertSemanticTypeRegisteredToFormat(MFAResults, MFAResultsDirFmt)
+    def test_component_analysis_semantic_type_to_format_registration(self):
+        self.assertSemanticTypeRegisteredToFormat(
+            ComponentAnalysis, ComponentAnalysisDirFmt
+        )

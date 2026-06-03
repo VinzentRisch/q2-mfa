@@ -61,6 +61,9 @@ class ComponentAnalysisDirFmt(model.DirectoryFormat):
     sample_cosine_similarities = model.File(
         "sample-cosine-similarities.tsv", format=NumericTSVFormat
     )
+    sample_contributions = model.File(
+        "sample-contributions.tsv", format=NumericTSVFormat
+    )
     group_coordinates = model.File(
         "group-coordinates.tsv", format=NumericTSVFormat, optional=True
     )

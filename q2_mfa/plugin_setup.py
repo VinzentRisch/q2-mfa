@@ -12,6 +12,7 @@ from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
 from q2_mfa.pca import pca
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt, NumericTSVFormat
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -24,6 +25,7 @@ plugin = Plugin(
     short_description="PCA and MFA analysis",
     citations=[],
 )
+
 
 plugin.methods.register_function(
     function=transform_clr,
@@ -119,4 +121,18 @@ plugin.methods.register_function(
     citations=[
         citations["Halford_Prince"],
     ],
+)
+
+plugin.register_formats(
+    ComponentAnalysisDirFmt,
+    NumericTSVFormat,
+)
+plugin.register_semantic_types(ComponentAnalysis)
+plugin.register_artifact_class(
+    ComponentAnalysis,
+    directory_format=ComponentAnalysisDirFmt,
+    description=(
+        "Represents the output for PCA and MFA actions implemented with the Prince "
+        "package."
+    ),
 )

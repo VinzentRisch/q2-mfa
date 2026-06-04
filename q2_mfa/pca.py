@@ -15,10 +15,16 @@ from skbio import OrdinationResults
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
+def resolve_random_state(random_state: CaptureHolder[int], engine: str):
+    if engine == "sklearn":
+        return CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+    return CaptureHolder.get_or_set(random_state, lambda: None)
+
+
 def pca(
     table: pd.DataFrame,
     rescale_with_mean: bool = True,
-    rescale_with_std: bool = False,
+    rescale_with_std: bool = True,
     n_components: int = 2,
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
@@ -27,12 +33,7 @@ def pca(
     """
     Perform principal component analysis with prince.
     """
-    if engine == "sklearn":
-        random_state = CaptureHolder.get_or_set(
-            random_state, lambda: secrets.randbits(32)
-        )
-    else:
-        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
+    random_state = resolve_random_state(random_state, engine)
 
     pca_params = locals()
     pca_params.pop("table")

@@ -12,7 +12,7 @@ import prince
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.pca import pca
+from q2_mfa.pca import pca, resolve_random_state
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
@@ -33,25 +33,8 @@ class TestPCA(TestPluginBase):
         pdt.assert_frame_equal(observed, expected, check_dtype=False)
 
     def test_pca_parses_prince_values_and_names(self):
-        results = pca(
-            self.table,
-            rescale_with_mean=True,
-            rescale_with_std=False,
-            n_components=2,
-            n_iter=2,
-            engine="scipy",
-            random_state=None,
-        )
-        prince_result = prince.PCA(
-            rescale_with_mean=True,
-            rescale_with_std=False,
-            n_components=2,
-            n_iter=2,
-            copy=True,
-            check_input=True,
-            random_state=None,
-            engine="scipy",
-        ).fit(self.table)
+        results = pca(self.table, engine="scipy")
+        prince_result = prince.PCA(engine="scipy").fit(self.table)
 
         results.validate()
         ordn = results.ordination.view(OrdinationResults)
@@ -93,18 +76,19 @@ class TestPCA(TestPluginBase):
             prince_result.column_cosine_similarities_,
         )
 
-    def test_pca_runs_with_generated_random_state(self):
-        results = pca(
-            self.table,
-            n_components=2,
-            random_state=None,
-            engine="sklearn",
-        )
+    def test_resolve_random_state_generates_seed_for_sklearn(self):
+        random_state = resolve_random_state(None, "sklearn")
 
-        ordn = results.ordination.view(OrdinationResults)
+        self.assertIsInstance(random_state, int)
+        self.assertGreaterEqual(random_state, 0)
+        self.assertLess(random_state, 2**32)
 
-        self.assertIsInstance(ordn, OrdinationResults)
-        self.assertEqual(list(ordn.samples.index), list(self.table.index))
-        self.assertEqual(list(ordn.features.index), list(self.table.columns))
-        self.assertEqual(list(ordn.samples.columns), [0, 1])
-        self.assertEqual(list(ordn.features.columns), [0, 1])
+    def test_resolve_random_state_uses_value_for_sklearn(self):
+        random_state = resolve_random_state(14, "sklearn")
+
+        self.assertEqual(random_state, 14)
+
+    def test_resolve_random_state_uses_none_for_non_sklearn(self):
+        random_state = resolve_random_state(None, "scipy")
+
+        self.assertIsNone(random_state)

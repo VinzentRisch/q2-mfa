@@ -26,24 +26,6 @@ def pca(
 ) -> ComponentAnalysisDirFmt:
     """
     Perform principal component analysis with prince.
-
-    Args:
-        table (pd.DataFrame): Feature table with samples as rows and features as
-            columns.
-        rescale_with_mean (bool): Whether to subtract each column's mean before
-            performing SVD.
-        rescale_with_std (bool): Whether to standardize each column before
-            performing SVD.
-        n_components (int): Number of principal components to compute.
-        n_iter (int): Number of iterations used for computing the SVD.
-        random_state (CaptureHolder[int] | int | None): Random seed used by
-            stochastic SVD engines. If not provided for the sklearn engine, a
-            seed is generated and captured in provenance.
-        engine (str): SVD engine used by prince.
-
-    Returns:
-        ComponentAnalysisDirFmt: PCA results containing ordination results and
-            Prince result tables.
     """
     if engine == "sklearn":
         random_state = CaptureHolder.get_or_set(

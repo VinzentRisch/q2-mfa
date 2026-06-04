@@ -129,9 +129,10 @@ plugin.methods.register_function(
     description=(
         "Principal component analysis implementation with the 'prince' package. "
         "The output is an ordination result: eigenvalues correspond to prince "
-        "eigenvalues, sites correspond to sample scores, species correspond to "
+        "eigenvalues, sites correspond to sample coordinates, species correspond to "
         "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance."
+        "percentage of variance. All other outputs come directly from the Prince "
+        "package. Please check the prince package docs for more information."
     ),
     citations=[
         citations["Halford_Prince"],

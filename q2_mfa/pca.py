@@ -15,10 +15,16 @@ from skbio import OrdinationResults
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
+def resolve_random_state(random_state: CaptureHolder[int], engine: str):
+    if engine == "sklearn":
+        return CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+    return CaptureHolder.get_or_set(random_state, lambda: None)
+
+
 def pca(
     table: pd.DataFrame,
     rescale_with_mean: bool = True,
-    rescale_with_std: bool = False,
+    rescale_with_std: bool = True,
     n_components: int = 2,
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
@@ -26,31 +32,8 @@ def pca(
 ) -> ComponentAnalysisDirFmt:
     """
     Perform principal component analysis with prince.
-
-    Args:
-        table (pd.DataFrame): Feature table with samples as rows and features as
-            columns.
-        rescale_with_mean (bool): Whether to subtract each column's mean before
-            performing SVD.
-        rescale_with_std (bool): Whether to standardize each column before
-            performing SVD.
-        n_components (int): Number of principal components to compute.
-        n_iter (int): Number of iterations used for computing the SVD.
-        random_state (CaptureHolder[int] | int | None): Random seed used by
-            stochastic SVD engines. If not provided for the sklearn engine, a
-            seed is generated and captured in provenance.
-        engine (str): SVD engine used by prince.
-
-    Returns:
-        ComponentAnalysisDirFmt: PCA results containing ordination results and
-            Prince result tables.
     """
-    if engine == "sklearn":
-        random_state = CaptureHolder.get_or_set(
-            random_state, lambda: secrets.randbits(32)
-        )
-    else:
-        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
+    random_state = resolve_random_state(random_state, engine)
 
     pca_params = locals()
     pca_params.pop("table")

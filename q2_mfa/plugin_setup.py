@@ -141,10 +141,10 @@ plugin.methods.register_function(
 
 plugin.methods.register_function(
     function=mfa,
-    inputs={"feature_tables": Collection[FeatureTable[Unconstrained]]},
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=ordination_parameters,
     outputs=[("mfa_results", ComponentAnalysis)],
-    input_descriptions={"feature_tables": "A list of feature tables (one per group)."},
+    input_descriptions={"tables": "A list of feature tables (one per group)."},
     parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",

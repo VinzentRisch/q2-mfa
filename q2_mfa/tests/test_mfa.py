@@ -42,8 +42,8 @@ class TestMFA(TestPluginBase):
         pdt.assert_frame_equal(observed, expected, check_dtype=False)
 
     def test_build_prince_input_success(self):
-        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        table, groups = _build_prince_input(feature_tables)
+        tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        table, groups = _build_prince_input(tables)
 
         self.assertEqual(len(table.index), 3)
         self.assertEqual(len(table.columns), 4)
@@ -80,10 +80,10 @@ class TestMFA(TestPluginBase):
             _build_prince_input({"metabolome": self.table_a, "other": self.disjoint})
 
     def test_mfa_parses_prince_values_and_names(self):
-        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        results = mfa(feature_tables, engine="scipy")
+        tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        results = mfa(tables=tables, engine="scipy")
 
-        table, groups = _build_prince_input(feature_tables)
+        table, groups = _build_prince_input(tables)
         prince_result = prince.MFA(engine="scipy").fit(table, groups=groups)
 
         results.validate()

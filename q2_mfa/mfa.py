@@ -18,22 +18,22 @@ from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 def _build_prince_input(
-    feature_tables: dict,
+    tables: dict,
 ) -> tuple[pd.DataFrame, dict]:
-    feature_tables = getattr(feature_tables, "collection", feature_tables)
+    tables = getattr(tables, "collection", tables)
 
-    if len(feature_tables) < 2:
+    if len(tables) < 2:
         raise ValueError("MFA requires at least two feature tables.")
 
-    for group_name in feature_tables:
+    for group_name in tables:
         if ":" in group_name:
             raise ValueError("MFA group names cannot contain ':'.")
 
-    tables = list(feature_tables.values())
+    table_values = list(tables.values())
     consensus_samples = reduce(
         lambda shared, table: shared.intersection(table.index),
-        tables[1:],
-        tables[0].index,
+        table_values[1:],
+        table_values[0].index,
     )
 
     if consensus_samples.empty:
@@ -41,7 +41,7 @@ def _build_prince_input(
 
     prefixed_tables = []
     groups = {}
-    for group_name, table in feature_tables.items():
+    for group_name, table in tables.items():
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
@@ -59,7 +59,7 @@ def _build_prince_input(
 
 
 def mfa(
-    feature_tables: pd.DataFrame,
+    tables: pd.DataFrame,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
     n_components: int = 2,
@@ -73,9 +73,9 @@ def mfa(
     random_state = resolve_random_state(random_state, engine)
 
     mfa_params = locals()
-    mfa_params.pop("feature_tables")
+    mfa_params.pop("tables")
 
-    table, groups = _build_prince_input(feature_tables)
+    table, groups = _build_prince_input(tables)
 
     mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
 

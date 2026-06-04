@@ -5,7 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import secrets
 import warnings
 from functools import reduce
 
@@ -14,6 +13,7 @@ import prince
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 
+from q2_mfa.pca import resolve_random_state
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
@@ -58,54 +58,6 @@ def _build_prince_input(
     return pd.concat(prefixed_tables, axis=1), groups
 
 
-def _as_prince_wide_table(table: pd.DataFrame) -> pd.DataFrame:
-    """
-    Normalize a Prince component table for the MFA result directory.
-
-    Prince partial tables can use MultiIndex row or column labels, so those
-    labels are flattened with ':' before writing a single-header TSV.
-    """
-    table = table.copy()
-    if isinstance(table.index, pd.MultiIndex):
-        table.index = [
-            ":".join(str(value) for value in index_values)
-            for index_values in table.index
-        ]
-    if isinstance(table.columns, pd.MultiIndex):
-        table.columns = [
-            ":".join(str(value) for value in column_values)
-            for column_values in table.columns
-        ]
-    table.index.name = "id"
-    return table.reset_index()
-
-
-def _to_ordination(mfa_result: prince.MFA, table: pd.DataFrame) -> OrdinationResults:
-    return OrdinationResults(
-        short_method_name="MFA",
-        long_method_name="Multiple Factor Analysis",
-        eigvals=pd.Series(mfa_result.eigenvalues_),
-        samples=mfa_result.row_coordinates(table),
-        features=mfa_result.column_coordinates_,
-        proportion_explained=pd.Series(mfa_result.percentage_of_variance_),
-    )
-
-
-def _create_mfa_results(
-    ordination: OrdinationResults,
-    prince_tables: dict,
-) -> ComponentAnalysisDirFmt:
-    results = ComponentAnalysisDirFmt()
-
-    ordination.write(str(results.path / "ordination.txt"))
-    for filename, table in prince_tables.items():
-        _as_prince_wide_table(table).to_csv(
-            results.path / filename, sep="\t", index=False
-        )
-
-    return results
-
-
 def mfa(
     feature_tables: pd.DataFrame,
     rescale_with_mean: bool = True,
@@ -118,41 +70,39 @@ def mfa(
     """
     Run Multiple Factor Analysis with the prince package.
     """
-    if engine == "sklearn":
-        random_state = CaptureHolder.get_or_set(
-            random_state, lambda: secrets.randbits(32)
-        )
-    else:
-        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
+    random_state = resolve_random_state(random_state, engine)
+
+    mfa_params = locals()
+    mfa_params.pop("feature_tables")
 
     table, groups = _build_prince_input(feature_tables)
-    mfa_result = prince.MFA(
-        rescale_with_mean=rescale_with_mean,
-        rescale_with_std=rescale_with_std,
-        n_components=n_components,
-        n_iter=n_iter,
-        copy=True,
-        check_input=True,
-        random_state=random_state,
-        engine=engine,
-    ).fit(table, groups=groups)
 
-    ordination = _to_ordination(mfa_result, table)
-    prince_tables = {
-        "partial-sample-coordinates.tsv": mfa_result.partial_row_coordinates(table),
-        "sample-cosine-similarities.tsv": mfa_result.row_cosine_similarities(table),
-        "sample-contributions.tsv": mfa_result.row_contributions_,
-        "group-coordinates.tsv": mfa_result.group_coordinates_,
-        "group-contributions.tsv": mfa_result.group_contributions_,
-        "group-cosine-similarities.tsv": mfa_result.group_cosine_similarities_,
-        "partial-correlations.tsv": mfa_result.partial_correlations_,
-        "partial-contributions.tsv": mfa_result.partial_contributions_,
-        "feature-correlations.tsv": mfa_result.column_correlations,
-        "feature-contributions.tsv": mfa_result.column_contributions_,
-        "feature-cosine-similarities.tsv": mfa_result.column_cosine_similarities_,
-    }
+    mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
 
-    return _create_mfa_results(
-        ordination,
-        prince_tables,
+    ordination = OrdinationResults(
+        short_method_name="MFA",
+        long_method_name="Multiple Factor Analysis",
+        eigvals=pd.Series(mfa_result.eigenvalues_),
+        samples=mfa_result.row_coordinates(table),
+        features=mfa_result.column_coordinates_,
+        proportion_explained=pd.Series(mfa_result.percentage_of_variance_),
     )
+    results = ComponentAnalysisDirFmt()
+    results.ordination.write_data(ordination, OrdinationResults)
+    numeric_outputs = {
+        results.partial_sample_coordinates: mfa_result.partial_row_coordinates(table),
+        results.sample_cosine_similarities: mfa_result.row_cosine_similarities(table),
+        results.sample_contributions: mfa_result.row_contributions_,
+        results.group_coordinates: mfa_result.group_coordinates_,
+        results.group_contributions: mfa_result.group_contributions_,
+        results.group_cosine_similarities: mfa_result.group_cosine_similarities_,
+        results.partial_correlations: mfa_result.partial_correlations_,
+        results.partial_contributions: mfa_result.partial_contributions_,
+        results.feature_correlations: mfa_result.column_correlations,
+        results.feature_contributions: mfa_result.column_contributions_,
+        results.feature_cosine_similarities: mfa_result.column_cosine_similarities_,
+    }
+    for output, data in numeric_outputs.items():
+        output.write_data(data, pd.DataFrame)
+
+    return results

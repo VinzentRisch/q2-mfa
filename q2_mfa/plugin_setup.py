@@ -152,6 +152,11 @@ plugin.methods.register_function(
         "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
         "table is treated as a separate group, and the analysis is performed "
         "with the prince python package."
+        "The output is an ordination result: eigenvalues correspond to prince "
+        "eigenvalues, sites correspond to sample coordinates, species correspond to "
+        "feature coordinates, and proportion explained corresponds to prince "
+        "percentage of variance. All other outputs come directly from the prince "
+        "package. Please check the prince package docs for more information."
     ),
     citations=[
         citations["escofier1994multiple"],

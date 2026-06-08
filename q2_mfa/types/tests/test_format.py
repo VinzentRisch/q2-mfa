@@ -5,10 +5,12 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import pandas as pd
 from rachis.core.exceptions import ValidationError
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.types import MFAResultsDirFmt, NumericTSVFormat
+import q2_mfa.plugin_setup  # noqa: F401
+from q2_mfa.types import ComponentAnalysisDirFmt, NumericTSVFormat
 
 
 class TestMFAFormats(TestPluginBase):
@@ -71,5 +73,54 @@ class TestMFAFormats(TestPluginBase):
             fmt.validate()
 
     def test_mfa_results_directory_format_ok(self):
-        fmt = MFAResultsDirFmt(self.get_data_path("mfa-results"), mode="r")
+        fmt = ComponentAnalysisDirFmt(self.get_data_path("mfa-results"), mode="r")
         fmt.validate()
+
+    def test_pca_results_directory_format_ok(self):
+        fmt = ComponentAnalysisDirFmt(self.get_data_path("pca-results"), mode="r")
+        fmt.validate()
+
+    def test_dataframe_to_numeric_tsv_flattens_multiindex_rows(self):
+        df = pd.DataFrame(
+            {"val": [1, 2]},
+            index=pd.MultiIndex.from_tuples(
+                [("A", "x"), ("B", "y")], names=["L1", "L2"]
+            ),
+        )
+        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
+        fmt = transformer(df)
+
+        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
+
+        self.assertEqual(list(result.index), ["A:x", "B:y"])
+
+    def test_dataframe_to_numeric_tsv_flattens_multiindex_columns(self):
+        df = pd.DataFrame(
+            [[1, 2]],
+            index=["s1"],
+            columns=pd.MultiIndex.from_tuples(
+                [("A", "x"), ("B", "y")], names=["L1", "L2"]
+            ),
+        )
+        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
+        fmt = transformer(df)
+
+        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
+
+        self.assertEqual(list(result.columns), ["A:x", "B:y"])
+        self.assertEqual(list(result.index), ["s1"])
+
+    def test_dataframe_to_numeric_tsv_writes_flat_table(self):
+        df = pd.DataFrame(
+            {"0": [1, 2], "1": [3, 4]},
+            index=["s1", "s2"],
+        )
+
+        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
+        fmt = transformer(df)
+        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
+
+        self.assertEqual(list(result.columns), ["0", "1"])
+        self.assertEqual(list(result.index), ["s1", "s2"])
+        self.assertEqual(list(result["0"]), [1, 2])
+        self.assertEqual(list(result["1"]), [3, 4])

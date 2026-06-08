@@ -6,21 +6,17 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
-from unittest.mock import Mock, patch
 
 import numpy.testing as npt
 import pandas as pd
+import pandas.testing as pdt
+import prince
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.mfa import (
-    _as_prince_wide_table,
-    _build_prince_input,
-    _create_mfa_results,
-    _to_ordination,
-    mfa,
-)
-from q2_mfa.types import MFAResultsDirFmt
+from q2_mfa.mfa import _build_prince_input, mfa
+from q2_mfa.types import ComponentAnalysisDirFmt
+from q2_mfa.types._transformer import _dataframe_to_numeric_tsv
 
 
 class TestMFA(TestPluginBase):
@@ -39,12 +35,18 @@ class TestMFA(TestPluginBase):
     def _load_table(self, filename):
         return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
 
-    def test_build_prince_input_success(self):
-        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        table, groups = _build_prince_input(feature_tables)
+    def _assert_prince_table_written(self, results, output, expected):
+        observed = pd.read_csv(output.path_maker(), sep="\t")
+        expected_format = _dataframe_to_numeric_tsv(expected)
+        expected = pd.read_csv(str(expected_format), sep="\t")
+        pdt.assert_frame_equal(observed, expected, check_dtype=False)
 
-        self.assertEqual(len(table.index), 3)  # common samples
-        self.assertEqual(len(table.columns), 4)  # 2+2 features
+    def test_build_prince_input_success(self):
+        tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        table, groups = _build_prince_input(tables)
+
+        self.assertEqual(len(table.index), 3)
+        self.assertEqual(len(table.columns), 4)
         self.assertIn("metabolome:feature-a1", table.columns)
         self.assertIn("microbiome:feature-b1", table.columns)
         self.assertEqual(
@@ -77,98 +79,79 @@ class TestMFA(TestPluginBase):
         with self.assertRaisesRegex(ValueError, "do not share any sample IDs"):
             _build_prince_input({"metabolome": self.table_a, "other": self.disjoint})
 
-    def test_as_prince_wide_table_multiindex_rows(self):
-        df = pd.DataFrame(
-            {"val": [1, 2]},
-            index=pd.MultiIndex.from_tuples(
-                [("A", "x"), ("B", "y")], names=["L1", "L2"]
-            ),
-        )
-        result = _as_prince_wide_table(df)
-        self.assertEqual(list(result["id"]), ["A:x", "B:y"])
+    def test_mfa_parses_prince_values_and_names(self):
+        tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        results = mfa(tables=tables, engine="scipy")
 
-    def test_as_prince_wide_table_multiindex_columns(self):
-        df = pd.DataFrame(
-            [[1, 2]],
-            index=["s1"],
-            columns=pd.MultiIndex.from_tuples(
-                [("A", "x"), ("B", "y")], names=["L1", "L2"]
-            ),
-        )
-        result = _as_prince_wide_table(df)
-        self.assertEqual(list(result.columns), ["id", "A:x", "B:y"])
-        self.assertEqual(result["id"].iloc[0], "s1")
+        table, groups = _build_prince_input(tables)
+        prince_result = prince.MFA(engine="scipy").fit(table, groups=groups)
 
-    def test_to_ordination(self):
-        mock_mfa = Mock()
-        mock_mfa.eigenvalues_ = [0.5, 0.3]
-        mock_mfa.percentage_of_variance_ = [0.6, 0.4]
-        expected_samples = pd.DataFrame({"comp1": [1, 2]}, index=["s1", "s2"])
-        mock_mfa.row_coordinates.return_value = expected_samples
-        expected_features = pd.DataFrame({"comp1": [0.1, 0.2]}, index=["f1", "f2"])
-        mock_mfa.column_coordinates_ = expected_features
-
-        table = pd.DataFrame()
-        ordn = _to_ordination(mock_mfa, table)
-
-        self.assertIsInstance(ordn, OrdinationResults)
-        npt.assert_array_equal(ordn.eigvals, [0.5, 0.3])
-        npt.assert_array_equal(ordn.proportion_explained, [0.6, 0.4])
-        pd.testing.assert_frame_equal(ordn.samples, expected_samples)
-        pd.testing.assert_frame_equal(ordn.features, expected_features)
-
-    def test_create_mfa_results(self):
-        ordn = OrdinationResults(
-            "MFA", "MFA", pd.Series([1, 2]), pd.DataFrame({"0": [1]}, index=["s1"])
-        )
-        tables = {"test-table.tsv": pd.DataFrame({"col": [1]}, index=["s1"])}
-
-        results = _create_mfa_results(ordn, tables)
-
-        self.assertIsInstance(results, MFAResultsDirFmt)
-        self.assertTrue((results.path / "test-table.tsv").exists())
-        self.assertTrue((results.path / "ordination.txt").exists())
-
-    def test_mfa_integration(self):
-        feature_tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        results = mfa(
-            feature_tables,
-            n_components=2,
-            engine="scipy",
-            random_state=None,
-        )
-
-        self.assertIsInstance(results, MFAResultsDirFmt)
         results.validate()
+        ordn = results.ordination.view(OrdinationResults)
+        prince_samples = prince_result.row_coordinates(table)
+        prince_features = prince_result.column_coordinates_
+        self.assertIsInstance(results, ComponentAnalysisDirFmt)
+        self.assertIsInstance(ordn, OrdinationResults)
 
-        ordn = OrdinationResults.read(str(results.path / "ordination.txt"))
-        self.assertEqual(len(ordn.samples), 3)
-        self.assertEqual(len(ordn.features), 4)
-
-    @patch("q2_mfa.mfa._create_mfa_results")
-    @patch("q2_mfa.mfa._to_ordination")
-    @patch("q2_mfa.mfa._build_prince_input")
-    @patch("q2_mfa.mfa.prince.MFA")
-    @patch("q2_mfa.mfa.secrets.randbits", return_value=12345)
-    def test_mfa_runs_with_generated_random_state(
-        self,
-        randbits,
-        prince_mfa,
-        build_prince_input,
-        to_ordination,
-        create_mfa_results,
-    ):
-        table = pd.DataFrame({"feature": [1.0]}, index=["sample"])
-        build_prince_input.return_value = (table, {"group": ["feature"]})
-        prince_mfa.return_value.fit.return_value = Mock()
-
-        mfa(
-            {"metabolome": self.table_a, "microbiome": self.table_b},
-            n_components=2,
-            random_state=None,
-            engine="sklearn",
+        npt.assert_allclose(ordn.samples.to_numpy(), prince_samples.to_numpy())
+        npt.assert_allclose(ordn.features.to_numpy(), prince_features.to_numpy())
+        npt.assert_allclose(ordn.eigvals.to_numpy(), prince_result.eigenvalues_)
+        npt.assert_allclose(
+            ordn.proportion_explained.to_numpy(),
+            prince_result.percentage_of_variance_,
         )
-
-        randbits.assert_called_once_with(32)
-        self.assertEqual(prince_mfa.call_args.kwargs["random_state"], 12345)
-        create_mfa_results.assert_called_once()
+        self._assert_prince_table_written(
+            results,
+            results.partial_sample_coordinates,
+            prince_result.partial_row_coordinates(table),
+        )
+        self._assert_prince_table_written(
+            results,
+            results.sample_cosine_similarities,
+            prince_result.row_cosine_similarities(table),
+        )
+        self._assert_prince_table_written(
+            results,
+            results.sample_contributions,
+            prince_result.row_contributions_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.group_coordinates,
+            prince_result.group_coordinates_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.group_contributions,
+            prince_result.group_contributions_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.group_cosine_similarities,
+            prince_result.group_cosine_similarities_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.partial_correlations,
+            prince_result.partial_correlations_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.partial_contributions,
+            prince_result.partial_contributions_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.feature_correlations,
+            prince_result.column_correlations,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.feature_contributions,
+            prince_result.column_contributions_,
+        )
+        self._assert_prince_table_written(
+            results,
+            results.feature_cosine_similarities,
+            prince_result.column_cosine_similarities_,
+        )

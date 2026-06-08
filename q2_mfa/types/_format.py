@@ -38,13 +38,13 @@ class NumericTSVFormat(model.TextFileFormat):
         header = list(df.columns)
         if "id" not in header:
             raise ValidationError(
-                f"Invalid header for Numeric TSV: {header}, must contain " "'id'."
+                f"Invalid header for Numeric TSV: {header}, must contain 'id'."
             )
 
         value_columns = [column for column in header if column != "id"]
         if len(value_columns) < 1:
             raise ValidationError(
-                "Expected at least 1 Numeric TSV value column, " "observed 0."
+                "Expected at least 1 Numeric TSV value column, observed 0."
             )
 
         values = df[value_columns]
@@ -53,24 +53,31 @@ class NumericTSVFormat(model.TextFileFormat):
             raise ValidationError("Numeric TSV value columns must be numeric.")
 
 
-class MFAResultsDirFmt(model.DirectoryFormat):
+class ComponentAnalysisDirFmt(model.DirectoryFormat):
     ordination = model.File("ordination.txt", format=OrdinationFormat)
     partial_sample_coordinates = model.File(
-        "partial-sample-coordinates.tsv", format=NumericTSVFormat
+        "partial-sample-coordinates.tsv", format=NumericTSVFormat, optional=True
     )
     sample_cosine_similarities = model.File(
         "sample-cosine-similarities.tsv", format=NumericTSVFormat
     )
-    group_coordinates = model.File("group-coordinates.tsv", format=NumericTSVFormat)
-    group_contributions = model.File("group-contributions.tsv", format=NumericTSVFormat)
+    sample_contributions = model.File(
+        "sample-contributions.tsv", format=NumericTSVFormat
+    )
+    group_coordinates = model.File(
+        "group-coordinates.tsv", format=NumericTSVFormat, optional=True
+    )
+    group_contributions = model.File(
+        "group-contributions.tsv", format=NumericTSVFormat, optional=True
+    )
     group_cosine_similarities = model.File(
-        "group-cosine-similarities.tsv", format=NumericTSVFormat
+        "group-cosine-similarities.tsv", format=NumericTSVFormat, optional=True
     )
     partial_correlations = model.File(
-        "partial-correlations.tsv", format=NumericTSVFormat
+        "partial-correlations.tsv", format=NumericTSVFormat, optional=True
     )
     partial_contributions = model.File(
-        "partial-contributions.tsv", format=NumericTSVFormat
+        "partial-contributions.tsv", format=NumericTSVFormat, optional=True
     )
     feature_correlations = model.File(
         "feature-correlations.tsv", format=NumericTSVFormat

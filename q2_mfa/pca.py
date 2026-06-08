@@ -9,58 +9,36 @@ import secrets
 
 import pandas as pd
 import prince
-import skbio
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
+
+from q2_mfa.types import ComponentAnalysisDirFmt
+
+
+def resolve_random_state(random_state: CaptureHolder[int], engine: str):
+    if engine == "sklearn":
+        return CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
+    return CaptureHolder.get_or_set(random_state, lambda: None)
 
 
 def pca(
     table: pd.DataFrame,
     rescale_with_mean: bool = True,
-    rescale_with_std: bool = False,
+    rescale_with_std: bool = True,
     n_components: int = 2,
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
-) -> skbio.OrdinationResults:
+) -> ComponentAnalysisDirFmt:
     """
-    Perform principal component analysis with prince and return ordination results.
-
-    Args:
-        table (pd.DataFrame): Feature table with samples as rows and features as
-            columns.
-        rescale_with_mean (bool): Whether to subtract each column's mean before
-            performing SVD.
-        rescale_with_std (bool): Whether to standardize each column before
-            performing SVD.
-        n_components (int): Number of principal components to compute.
-        n_iter (int): Number of iterations used for computing the SVD.
-        random_state (CaptureHolder[int] | int | None): Random seed used by
-            stochastic SVD engines. If not provided for the sklearn engine, a
-            seed is generated and captured in provenance.
-        engine (str): SVD engine used by prince.
-
-    Returns:
-        skbio.OrdinationResults: PCA results containing sample scores, feature
-            coordinates, eigenvalues, and percentage of variance explained.
+    Perform principal component analysis with prince.
     """
-    if engine == "sklearn":
-        random_state = CaptureHolder.get_or_set(
-            random_state, lambda: secrets.randbits(32)
-        )
-    else:
-        random_state = CaptureHolder.get_or_set(random_state, lambda: None)
+    random_state = resolve_random_state(random_state, engine)
 
-    pca = prince.PCA(
-        rescale_with_mean=rescale_with_mean,
-        rescale_with_std=rescale_with_std,
-        n_components=n_components,
-        n_iter=n_iter,
-        copy=True,
-        check_input=True,
-        random_state=random_state,
-        engine=engine,
-    ).fit(table)
+    pca_params = locals()
+    pca_params.pop("table")
+
+    pca = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
 
     ordination = OrdinationResults(
         short_method_name="PCA",
@@ -71,4 +49,16 @@ def pca(
         proportion_explained=pd.Series(pca.percentage_of_variance_),
     )
 
-    return ordination
+    results = ComponentAnalysisDirFmt()
+    results.ordination.write_data(ordination, OrdinationResults)
+    numeric_outputs = {
+        results.sample_cosine_similarities: pca.row_cosine_similarities(table),
+        results.sample_contributions: pca.row_contributions_,
+        results.feature_correlations: pca.column_correlations,
+        results.feature_contributions: pca.column_contributions_,
+        results.feature_cosine_similarities: pca.column_cosine_similarities_,
+    }
+    for output, data in numeric_outputs.items():
+        output.write_data(data, pd.DataFrame)
+
+    return results

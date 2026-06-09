@@ -118,6 +118,9 @@ def _build_payload(
     partial_correlations_payload = _build_partial_correlation_payload(
         partial_correlations, dimensions
     )
+    feature_coordinate_payload = _build_feature_coordinate_payload(
+        ordination.features, dimensions
+    )
     feature_correlation_payload = _build_feature_correlation_payload(
         feature_correlations, dimensions
     )
@@ -162,6 +165,7 @@ def _build_payload(
         "partial_samples": partial_samples,
         "group_summary": group_summary_payload,
         "partial_correlations": partial_correlations_payload,
+        "feature_coordinates": feature_coordinate_payload,
         "feature_correlations": feature_correlation_payload,
     }
 
@@ -284,6 +288,44 @@ def _build_feature_correlation_payload(
         )
 
     return payload
+
+
+def _build_feature_coordinate_payload(
+    feature_coordinates: pd.DataFrame,
+    dimensions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    dimension_columns = {
+        str(dimension["source_key"]): dimension["key"] for dimension in dimensions
+    }
+
+    payload = []
+    feature_coordinates = feature_coordinates.copy()
+    feature_coordinates.index = feature_coordinates.index.astype(str)
+    feature_coordinates.columns = feature_coordinates.columns.astype(str)
+    for feature_id, row in feature_coordinates.iterrows():
+        group, feature_name = _split_feature_id(feature_id)
+        coords = {}
+        for column_name, dimension_key in dimension_columns.items():
+            value = row[column_name]
+            coords[dimension_key] = None if pd.isna(value) else float(value)
+
+        payload.append(
+            {
+                "feature_id": feature_id,
+                "group": group,
+                "feature_name": feature_name,
+                "coords": coords,
+            }
+        )
+
+    return payload
+
+
+def _split_feature_id(feature_id: str) -> tuple[str, str]:
+    if ":" not in feature_id:
+        return "Ungrouped", feature_id
+
+    return feature_id.split(":", 1)
 
 
 def _read_prince_wide_tsv(path: Path) -> pd.DataFrame:

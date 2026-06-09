@@ -118,7 +118,7 @@ h1 {
 }
 
 .control-group-barycenter {
-  grid-column: 3;
+  grid-column: 5;
   grid-row: 2;
 }
 
@@ -132,8 +132,13 @@ h1 {
   grid-row: 2;
 }
 
+.control-group-scale-circle {
+  grid-column: 3;
+  grid-row: 2;
+}
+
 .control-group-point-size {
-  grid-column: 5;
+  grid-column: 6;
   grid-row: 2;
 }
 
@@ -195,6 +200,19 @@ input[type="number"] {
   width: 18px;
   height: 18px;
   margin: 0;
+}
+
+.toggle-option-with-select select {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.9rem;
 }
 
 .help-tooltip {

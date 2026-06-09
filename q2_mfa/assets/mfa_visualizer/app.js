@@ -74,6 +74,21 @@ const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
 const SAMPLE_NUMERIC_COLORBAR_Y = 1;
 const SAMPLE_NUMERIC_COLORBAR_LENGTH = 0.28;
 const SAMPLE_LEGEND_BELOW_COLORBAR_Y = 0.72;
+const FEATURE_SOURCE_OPTIONS = {
+  coordinates: {
+    label: 'coordinates',
+    payloadKey: 'feature_coordinates',
+    tooltip:
+      'Uses feature coordinates from ordination.txt. The scale circle is only a visual reference for one coordinate unit after feature scaling.',
+  },
+  correlations: {
+    label: 'correlations',
+    payloadKey: 'feature_correlations',
+    tooltip:
+      'Uses feature correlations from feature-correlations.tsv. The scale circle represents correlation magnitude 1 after feature scaling.',
+  },
+};
+const FEATURE_SCALE_CIRCLE_COLOR = 'rgba(148, 163, 184, 0.72)';
 const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };
 const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };
 const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
@@ -93,16 +108,18 @@ const state = {
   showSampleScores: true,
   showBarycenter: false,
   showPartialOverlay: false,
-  showFeatureCorrelations: false,
+  showFeatures: false,
+  showFeatureScaleCircle: false,
+  featureSource: 'coordinates',
   showFullFeatureLabels: false,
   topFeatureCount: 10,
-  featureLoadingScale: 1,
+  featureScale: 1,
   pointSizeScale: 1,
   featureTableSort: {
     column: 'rankingScore',
     direction: 'desc',
   },
-  featureLoadingGroups: new Set(payload.partial_groups),
+  featureGroups: new Set(payload.partial_groups),
   partialSampleGroups: new Set(payload.partial_groups),
   fontFamily: SCIENTIFIC_FONTS[0].family,
   fontSize: 12,
@@ -177,8 +194,9 @@ function populateColorControls() {
   repopulateColorPaletteOptions();
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
+  document.getElementById('show-feature-scale-circle').checked = state.showFeatureScaleCircle;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
-  document.getElementById('feature-loading-scale').value = state.featureLoadingScale;
+  document.getElementById('feature-scale').value = state.featureScale;
   document.getElementById('point-size-scale').value = state.pointSizeScale;
   fontFamily.value = state.fontFamily;
   document.getElementById('font-size').value = state.fontSize;
@@ -216,6 +234,11 @@ function bindEvents() {
     renderPlot();
   });
 
+  document.getElementById('show-feature-scale-circle').addEventListener('change', (event) => {
+    state.showFeatureScaleCircle = event.target.checked;
+    renderPlot();
+  });
+
   document.getElementById('top-feature-count').addEventListener('input', (event) => {
     const nextValue = Number(event.target.value);
     if (!Number.isFinite(nextValue) || nextValue < 1) {
@@ -226,13 +249,13 @@ function bindEvents() {
     renderPlot();
   });
 
-  document.getElementById('feature-loading-scale').addEventListener('input', (event) => {
+  document.getElementById('feature-scale').addEventListener('input', (event) => {
     const nextValue = Number(event.target.value);
     if (!Number.isFinite(nextValue) || nextValue < 1) {
       return;
     }
-    state.featureLoadingScale = Math.floor(nextValue);
-    event.target.value = state.featureLoadingScale;
+    state.featureScale = Math.floor(nextValue);
+    event.target.value = state.featureScale;
     renderPlot();
   });
 
@@ -278,7 +301,7 @@ function renderFilterControls() {
   const container = document.getElementById('filter-controls');
   container.replaceChildren();
 
-  container.appendChild(buildFeatureLoadingsRow());
+  container.appendChild(buildFeaturesRow());
   container.appendChild(buildPartialCoordinatesRow());
 
   state.filters.forEach((filter, index) => {
@@ -330,10 +353,58 @@ function buildOverlayToggle(labelText, checked, onChange, tooltipText) {
   return label;
 }
 
-function buildGroupTogglesContainer(selectedGroups, disabled) {
+function buildFeatureSourceToggle() {
+  const container = document.createElement('div');
+  container.className = 'toggle-option toggle-option-with-select';
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = state.showFeatures;
+  input.addEventListener('change', (event) => {
+    state.showFeatures = event.target.checked;
+    if (state.showFeatures) state.featureGroups = new Set(getFeatureGroups());
+    renderFilterControls();
+    renderPlot();
+  });
+
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', 'Feature source');
+  select.add(new Option('Feature coord.', 'coordinates'));
+  select.add(new Option('Feature corr.', 'correlations'));
+  select.value = state.featureSource;
+  select.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+  select.addEventListener('change', (event) => {
+    event.stopPropagation();
+    state.featureSource = event.target.value;
+    state.featureGroups = new Set(getFeatureGroups());
+    renderFilterControls();
+    renderPlot();
+  });
+
+  const help = document.createElement('span');
+  help.className = 'help-tooltip';
+  help.tabIndex = 0;
+  help.setAttribute('role', 'button');
+  help.setAttribute('aria-label', 'Features help');
+  help.setAttribute(
+    'data-tooltip',
+    'Overlays the strongest features from the selected source for the selected axes. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y values. Feature coordinates come from ordination.txt; feature correlations come from feature-correlations.tsv. The checkbox controls whether features are drawn.'
+  );
+  help.textContent = '?';
+
+  container.appendChild(input);
+  container.appendChild(select);
+  container.appendChild(help);
+
+  return container;
+}
+
+function buildGroupTogglesContainer(selectedGroups, disabled, groups = payload.partial_groups || []) {
   const container = document.createElement('div');
   container.className = 'filter-options';
-  (payload.partial_groups || []).forEach((group) => {
+  groups.forEach((group) => {
     container.appendChild(
       buildCheckboxFilterOption(group, group, selectedGroups.has(group), selectedGroups, disabled)
     );
@@ -341,24 +412,19 @@ function buildGroupTogglesContainer(selectedGroups, disabled) {
   return container;
 }
 
-function buildFeatureLoadingsRow() {
+function buildFeaturesRow() {
   const row = document.createElement('div');
   row.className = 'filter-row';
 
-  const toggle = buildOverlayToggle(
-    'Feature loadings',
-    state.showFeatureCorrelations,
-    (checked) => {
-      state.showFeatureCorrelations = checked;
-      if (checked) state.featureLoadingGroups = new Set(payload.partial_groups);
-      renderFilterControls();
-      renderPlot();
-    },
-    'Overlays the strongest feature correlations from feature-correlations.tsv for the selected axes. Arrows point toward samples associated with higher feature values; longer arrows mean stronger representation in this two-dimensional view. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the current X and Y correlation values.'
-  );
+  const toggle = buildFeatureSourceToggle();
+  toggle.style.gridColumn = '1';
   row.appendChild(toggle);
 
-  const groups = buildGroupTogglesContainer(state.featureLoadingGroups, !state.showFeatureCorrelations);
+  const groups = buildGroupTogglesContainer(
+    state.featureGroups,
+    !state.showFeatures,
+    getFeatureGroups()
+  );
   groups.style.gridColumn = '2 / -1';
   row.appendChild(groups);
 
@@ -728,11 +794,12 @@ function getGroupColorMap(groups = getOrderedGroupNames()) {
 
 function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
+  const featureScaleCircleTraces = buildFeatureScaleCircleTrace();
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
-  const featureCorrelationTraces = buildFeatureCorrelationTraces();
+  const featureTraces = buildFeatureTraces();
   const sampleScoreTraces = buildSampleScoreTraces(samples, colorColumn);
   return appendBarycenterTraces(
-    [...sampleScoreTraces, ...partialOverlayTraces, ...featureCorrelationTraces],
+    [...featureScaleCircleTraces, ...sampleScoreTraces, ...partialOverlayTraces, ...featureTraces],
     samples,
     colorColumn
   );
@@ -754,15 +821,46 @@ function buildSampleScoreTraces(samples, colorColumn) {
   return buildCategoricalTraces(samples, colorColumn);
 }
 
-function buildFeatureCorrelationTraces() {
-  if (!state.showFeatureCorrelations) {
+function buildFeatureScaleCircleTrace() {
+  if (!state.showFeatureScaleCircle) {
+    return [];
+  }
+
+  const radius = state.featureScale;
+  const steps = 96;
+  const x = [];
+  const y = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const angle = 2 * Math.PI * index / steps;
+    x.push(Math.cos(angle) * radius);
+    y.push(Math.sin(angle) * radius);
+  }
+
+  return [{
+    type: 'scatter',
+    mode: 'lines',
+    name: 'Feature scale circle',
+    x,
+    y,
+    line: {
+      color: FEATURE_SCALE_CIRCLE_COLOR,
+      width: 1.5,
+      dash: 'dot',
+    },
+    hoverinfo: 'skip',
+    showlegend: false,
+  }];
+}
+
+function buildFeatureTraces() {
+  if (!state.showFeatures) {
     return [];
   }
 
   const themeColors = getThemeColors();
-  const rankedFeatures = getRankedFeatureCorrelations(
+  const rankedFeatures = getRankedFeatures(
     state.topFeatureCount,
-    getAllowedGroups('feature_loadings')
+    getAllowedGroups('features')
   );
   if (!rankedFeatures.length) {
     return [];
@@ -770,7 +868,7 @@ function buildFeatureCorrelationTraces() {
 
   const groupOrder = [...new Set(rankedFeatures.map((feature) => feature.group))].sort();
   const groupColors = getGroupColorMap(groupOrder);
-  const labelPlacement = placeFeatureCorrelationLabels(rankedFeatures, groupColors);
+  const labelPlacement = placeFeatureLabels(rankedFeatures, groupColors);
 
   const traces = [];
   groupOrder.forEach((group) => {
@@ -778,7 +876,7 @@ function buildFeatureCorrelationTraces() {
     if (!groupFeatures.length) {
       return;
     }
-    const groupLegend = `feature-correlations:${group}`;
+    const groupLegend = `features:${state.featureSource}:${group}`;
     const groupLabelPlacement = labelPlacement.filter((label) => label.group === group);
 
     const lineX = [];
@@ -827,7 +925,7 @@ function buildFeatureCorrelationTraces() {
     traces.push({
       type: 'scatter',
       mode: 'markers',
-      name: `${group} feature loading endpoints`,
+      name: `${group} feature endpoints`,
       legendgroup: groupLegend,
       showlegend: false,
       x: groupFeatures.map((feature) => feature.plotX),
@@ -850,7 +948,7 @@ function buildFeatureCorrelationTraces() {
         size: scalePointSize(9),
         opacity: 0.95,
         symbol: 'triangle-up',
-        angle: groupFeatures.map((feature) => featureLoadingMarkerAngle(feature)),
+        angle: groupFeatures.map((feature) => featureMarkerAngle(feature)),
         line: {
           color: themeColors.markerLine,
           width: 1,
@@ -873,19 +971,29 @@ function buildFeatureCorrelationTraces() {
   return traces;
 }
 
-function featureLoadingMarkerAngle(feature) {
+function featureMarkerAngle(feature) {
   const angleFromXAxis = Math.atan2(feature.plotY, feature.plotX) * 180 / Math.PI;
   return 90 - angleFromXAxis;
 }
 
-function getRankedFeatureCorrelations(limit = null, allowedFeatureGroups = null) {
-  // Rank by correlation magnitude in the currently displayed 2D plane so the
+function getSelectedFeatureSource() {
+  const source = FEATURE_SOURCE_OPTIONS[state.featureSource] ?? FEATURE_SOURCE_OPTIONS.coordinates;
+  return payload[source.payloadKey] ?? [];
+}
+
+function getFeatureGroups() {
+  return [...new Set(getSelectedFeatureSource().map((feature) => feature.group))].sort();
+}
+
+function getRankedFeatures(limit = null, allowedFeatureGroups = null) {
+  // Rank by source-vector magnitude in the currently displayed 2D plane so the
   // overlay surfaces the variables best represented in the exact view the user
   // is inspecting.
-  const featureCorrelations = allowedFeatureGroups === null
-    ? payload.feature_correlations
-    : payload.feature_correlations.filter((feature) => allowedFeatureGroups.has(feature.group));
-  const rankedFeatures = featureCorrelations
+  const selectedFeatures = getSelectedFeatureSource();
+  const features = allowedFeatureGroups === null
+    ? selectedFeatures
+    : selectedFeatures.filter((feature) => allowedFeatureGroups.has(feature.group));
+  const rankedFeatures = features
     .map((feature) => ({
       ...feature,
       x: feature.coords[state.xDimension],
@@ -906,16 +1014,16 @@ function getRankedFeatureCorrelations(limit = null, allowedFeatureGroups = null)
     .map((feature, index) => ({
       ...feature,
       rank: index + 1,
-      plotX: feature.x * state.featureLoadingScale,
-      plotY: feature.y * state.featureLoadingScale,
+      plotX: feature.x * state.featureScale,
+      plotY: feature.y * state.featureScale,
     }));
 
   return limit === null ? rankedFeatures : rankedFeatures.slice(0, limit);
 }
 
 function getAllowedGroups(target) {
-  if (target === 'feature_loadings') {
-    return state.showFeatureCorrelations ? state.featureLoadingGroups : new Set();
+  if (target === 'features') {
+    return state.showFeatures ? state.featureGroups : new Set();
   }
   if (target === 'partial_samples') {
     return state.showPartialOverlay ? state.partialSampleGroups : new Set();
@@ -924,7 +1032,7 @@ function getAllowedGroups(target) {
 }
 
 function getSortedFeatureTableRows() {
-  const features = getRankedFeatureCorrelations(null, null);
+  const features = getRankedFeatures(null, null);
   const { column, direction } = state.featureTableSort;
   return features
     .slice()
@@ -973,16 +1081,16 @@ function renderTopFeaturesTable() {
   const xHeading = document.getElementById('feature-table-x-heading');
   const yHeading = document.getElementById('feature-table-y-heading');
   if (xHeading) {
-    xHeading.textContent = dimensionsByKey[state.xDimension].label;
+    xHeading.textContent = buildFeatureValueColumnLabel(state.xDimension);
   }
   if (yHeading) {
-    yHeading.textContent = dimensionsByKey[state.yDimension].label;
+    yHeading.textContent = buildFeatureValueColumnLabel(state.yDimension);
   }
 
   body.replaceChildren();
   const features = getSortedFeatureTableRows();
   updateFeatureTableSortHeaders();
-  empty.textContent = features.length ? '' : 'No finite feature correlations for the selected dimensions.';
+  empty.textContent = features.length ? '' : 'No finite features for the selected source and dimensions.';
 
   const fragment = document.createDocumentFragment();
   features.forEach((feature) => {
@@ -997,6 +1105,10 @@ function renderTopFeaturesTable() {
     fragment.appendChild(row);
   });
   body.appendChild(fragment);
+}
+
+function buildFeatureValueColumnLabel(dimensionKey) {
+  return `${dimensionsByKey[dimensionKey].label} ${state.featureSource}`;
 }
 
 function updateFeatureTableSortHeaders() {
@@ -1087,8 +1199,8 @@ function buildFeatureTableCell(value, className) {
 
 function downloadFeatureTableTsv() {
   const rows = getSortedFeatureTableRows();
-  const xLabel = dimensionsByKey[state.xDimension].label;
-  const yLabel = dimensionsByKey[state.yDimension].label;
+  const xLabel = buildFeatureValueColumnLabel(state.xDimension);
+  const yLabel = buildFeatureValueColumnLabel(state.yDimension);
   const header = [
     'feature',
     'feature_id',
@@ -1872,7 +1984,7 @@ function placeGroupInertiaLabels(groups, groupColors) {
   });
 }
 
-function placeFeatureCorrelationLabels(features, groupColors) {
+function placeFeatureLabels(features, groupColors) {
   const items = features.map((feature) => ({
     anchorX: feature.plotX,
     anchorY: feature.plotY,

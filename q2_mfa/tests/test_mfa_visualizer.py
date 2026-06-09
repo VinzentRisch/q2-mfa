@@ -62,10 +62,11 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn('id="top-features-table-body"', index_html)
             self.assertIn('id="feature-name-tooltip"', index_html)
             self.assertIn('id="download-feature-table"', index_html)
-            self.assertIn('aria-label="Correlated features"', index_html)
-            self.assertIn("Correlated features", index_html)
+            self.assertIn('aria-label="Features"', index_html)
+            self.assertIn("Features", index_html)
+            self.assertNotIn('id="feature-source"', index_html)
             self.assertIn(
-                '<label for="top-feature-count">N of loadings</label>',
+                '<label for="top-feature-count">Number of features</label>',
                 index_html,
             )
             self.assertIn('<label for="color-by">Color by</label>', index_html)
@@ -75,11 +76,11 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn(
-                '<label for="feature-loading-scale">Loading scale</label>',
+                '<label for="feature-scale">Feature scale</label>',
                 index_html,
             )
             self.assertIn(
-                '<input id="feature-loading-scale" type="number" min="1" '
+                '<input id="feature-scale" type="number" min="1" '
                 'step="1" value="1">',
                 index_html,
             )
@@ -103,6 +104,15 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn("<span>Full feature labels</span>", index_html)
+            self.assertIn(
+                '<label class="toggle-option" for="show-feature-scale-circle">',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="show-feature-scale-circle" type="checkbox">',
+                index_html,
+            )
+            self.assertIn("<span>Scale circle</span>", index_html)
             self.assertIn('id="filter-controls"', index_html)
             self.assertNotIn('id="filter-by"', index_html)
             self.assertIn('class="plot-shell plot-shell-main"', index_html)
@@ -113,6 +123,7 @@ class TestMFAVisualizer(TestPluginBase):
                 "partial coordinates from partial-sample-coordinates.tsv",
                 "global sample scores from ordination.txt",
                 "feature correlations from feature-correlations.tsv",
+                "feature coordinates from ordination.txt",
                 "sqrt(x^2 + y^2)",
                 "proportion explained values stored in ordination.txt",
                 "running total calculated from the component proportion "
@@ -121,7 +132,9 @@ class TestMFAVisualizer(TestPluginBase):
                 "contribution values from group-contributions.tsv",
                 "cos2 values from group-cosine-similarities.tsv",
                 "partial axis correlations from partial-correlations.tsv",
-                "Ranks all features from feature-correlations.tsv",
+                "Ranks all features from the selected feature source",
+                "Features are ordered by plane magnitude",
+                "For correlations, it marks correlation magnitude 1 after scaling",
             ):
                 self.assertIn(expected_tooltip_text, visualization_assets)
             self.assertNotIn('data-feature-sort="rank"', index_html)
@@ -157,16 +170,21 @@ class TestMFAVisualizer(TestPluginBase):
                 style_css,
             )
             self.assertIn(".filter-row {\n  display: grid;", style_css)
+            self.assertNotIn(".control-group-feature-source", style_css)
             self.assertIn(".control-group-font-family {\n  grid-column: 5;", style_css)
             self.assertIn(
-                ".control-group-point-size {\n  grid-column: 5;\n  grid-row: 2;",
+                ".control-group-point-size {\n  grid-column: 6;\n  grid-row: 2;",
                 style_css,
             )
-            self.assertIn(".control-group-barycenter {\n  grid-column: 3;", style_css)
+            self.assertIn(".control-group-barycenter {\n  grid-column: 5;", style_css)
             self.assertIn(".control-group-font-size {\n  grid-column: 6;", style_css)
             self.assertIn(
                 ".control-group-full-feature-labels {\n  grid-column: 4;", style_css
             )
+            self.assertIn(".control-group-scale-circle {\n  grid-column: 3;", style_css)
+            self.assertIn(".toggle-option-with-select select {", style_css)
+            self.assertIn("  border: 0;", style_css)
+            self.assertIn("  background: transparent;", style_css)
             self.assertIn(".filter-add {", style_css)
             self.assertIn(".filter-remove {", style_css)
             self.assertIn("resize: horizontal;", style_css)
@@ -235,7 +253,7 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("state.filters.splice(index, 1);", app_js)
             self.assertIn("function samplePassesFilter(sample, filter)", app_js)
             self.assertIn("function getAllowedGroups(target)", app_js)
-            self.assertIn("getAllowedGroups('feature_loadings')", app_js)
+            self.assertIn("getAllowedGroups('features')", app_js)
             self.assertIn("getAllowedGroups('partial_samples')", app_js)
             self.assertIn("Symbols: {", app_js)
             self.assertIn(
@@ -325,12 +343,17 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("orientation: 'v',", app_js)
             self.assertIn("x: 1.02,", app_js)
             self.assertIn("const MAX_FEATURE_OVERLAY_COUNT = 100;", app_js)
+            self.assertIn("const FEATURE_SOURCE_OPTIONS = {", app_js)
+            self.assertIn("const FEATURE_SCALE_CIRCLE_COLOR =", app_js)
             self.assertIn("topFeatureCount: 10,", app_js)
-            self.assertIn("featureLoadingScale: 1,", app_js)
+            self.assertIn("showFeatures: false,", app_js)
+            self.assertIn("showFeatureScaleCircle: false,", app_js)
+            self.assertIn("featureSource: 'coordinates',", app_js)
+            self.assertIn("featureScale: 1,", app_js)
             self.assertIn("pointSizeScale: 1,", app_js)
             self.assertIn(
-                "document.getElementById('feature-loading-scale').value = "
-                "state.featureLoadingScale;",
+                "document.getElementById('feature-scale').value = "
+                "state.featureScale;",
                 app_js,
             )
             self.assertIn(
@@ -339,15 +362,40 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "document.getElementById('feature-loading-scale').addEventListener",
+                "document.getElementById('show-feature-scale-circle').checked = "
+                "state.showFeatureScaleCircle;",
                 app_js,
             )
+            self.assertIn(
+                "document.getElementById('feature-scale').addEventListener",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('show-feature-scale-circle').addEventListener",
+                app_js,
+            )
+            self.assertIn("function buildFeatureSourceToggle()", app_js)
+            self.assertIn(
+                "select.setAttribute('aria-label', 'Feature source');", app_js
+            )
+            self.assertIn(
+                "select.add(new Option('Feature coord.', 'coordinates'));", app_js
+            )
+            self.assertIn(
+                "select.add(new Option('Feature corr.', 'correlations'));", app_js
+            )
+            self.assertIn("select.value = state.featureSource;", app_js)
+            self.assertIn("toggle.style.gridColumn = '1';", app_js)
+            self.assertIn("groups.style.gridColumn = '2 / -1';", app_js)
             self.assertIn(
                 "document.getElementById('point-size-scale').addEventListener",
                 app_js,
             )
-            self.assertIn("state.featureLoadingScale = Math.floor(nextValue);", app_js)
+            self.assertIn("state.featureScale = Math.floor(nextValue);", app_js)
             self.assertIn("state.pointSizeScale = Math.min(nextValue, 1.5);", app_js)
+            self.assertIn("function buildFeatureScaleCircleTrace()", app_js)
+            self.assertIn("if (!state.showFeatureScaleCircle) {", app_js)
+            self.assertIn("const radius = state.featureScale;", app_js)
             self.assertIn("function scalePointSize(baseSize)", app_js)
             self.assertIn("return baseSize * state.pointSizeScale;", app_js)
             for base_size in (8, 9):
@@ -375,8 +423,8 @@ class TestMFAVisualizer(TestPluginBase):
                 "plot_feature_name: formatFeaturePlotLabel(feature.feature_name),",
                 app_js,
             )
-            self.assertIn("plotX: feature.x * state.featureLoadingScale,", app_js)
-            self.assertIn("plotY: feature.y * state.featureLoadingScale,", app_js)
+            self.assertIn("plotX: feature.x * state.featureScale,", app_js)
+            self.assertIn("plotY: feature.y * state.featureScale,", app_js)
             self.assertIn("lineX.push(0, feature.plotX, null);", app_js)
             self.assertIn("x: groupFeatures.map((feature) => feature.plotX),", app_js)
             self.assertIn("anchorX: feature.plotX,", app_js)
@@ -390,7 +438,7 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "const features = getRankedFeatureCorrelations(null, null);",
+                "const features = getRankedFeatures(null, null);",
                 app_js,
             )
             self.assertIn(".slice(0, MAX_FEATURE_OVERLAY_COUNT);", app_js)
@@ -424,7 +472,7 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "const groupLegend = `feature-correlations:${group}`;",
+                "const groupLegend = `features:${state.featureSource}:${group}`;",
                 app_js,
             )
             self.assertIn("name: `${group} (n=${groupFeatures.length})`,", app_js)
@@ -446,6 +494,22 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn("function getSortedFeatureTableRows()", app_js)
+            self.assertIn("function buildFeatureValueColumnLabel(dimensionKey)", app_js)
+            self.assertIn(
+                "return "
+                "`${dimensionsByKey[dimensionKey].label} ${state.featureSource}`;",
+                app_js,
+            )
+            self.assertIn(
+                "xHeading.textContent = "
+                "buildFeatureValueColumnLabel(state.xDimension);",
+                app_js,
+            )
+            self.assertIn(
+                "yHeading.textContent = "
+                "buildFeatureValueColumnLabel(state.yDimension);",
+                app_js,
+            )
             self.assertIn("function updateFeatureTableSort(button)", app_js)
             self.assertIn("function downloadFeatureTableTsv()", app_js)
             self.assertNotIn("'rank',", app_js)
@@ -534,6 +598,8 @@ class TestMFAVisualizer(TestPluginBase):
                 (2, "Dim 2"),
             },
         )
+        for feature in payload["feature_coordinates"]:
+            self.assertEqual(set(feature["coords"]), {"Dim 1", "Dim 2"})
         for feature in payload["feature_correlations"]:
             self.assertEqual(set(feature["coords"]), {"Dim 1", "Dim 2"})
         self.assertEqual(
@@ -648,6 +714,35 @@ class TestMFAVisualizer(TestPluginBase):
                     "partial_axis": 2,
                     "global_dim": "Dim 2",
                     "value": 0.82,
+                },
+            ],
+        )
+
+        self.assertEqual(
+            payload["feature_coordinates"],
+            [
+                {
+                    "feature_id": "A:feature-a",
+                    "group": "A",
+                    "feature_name": "feature-a",
+                    "coords": {"Dim 1": 0.1, "Dim 2": 0.01},
+                },
+                {
+                    "feature_id": "B:taxon:b:variant",
+                    "group": "B",
+                    "feature_name": "taxon:b:variant",
+                    "coords": {"Dim 1": 0.3, "Dim 2": 0.03},
+                },
+                {
+                    "feature_id": (
+                        "B:k__Bacteria; p__Firmicutes; g__Blautia; "
+                        "s__Blautia_wexlerae"
+                    ),
+                    "group": "B",
+                    "feature_name": (
+                        "k__Bacteria; p__Firmicutes; g__Blautia; " "s__Blautia_wexlerae"
+                    ),
+                    "coords": {"Dim 1": 0.4, "Dim 2": 0.04},
                 },
             ],
         )

@@ -45,15 +45,14 @@
         </label>
       </div>
 
-
       <div class="control-group control-group-top-features">
-        <label for="top-feature-count">N of loadings</label>
+        <label for="top-feature-count">Number of features</label>
         <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
       </div>
 
       <div class="control-group control-group-feature-scale">
-        <label for="feature-loading-scale">Loading scale</label>
-        <input id="feature-loading-scale" type="number" min="1" step="1" value="1">
+        <label for="feature-scale">Feature scale</label>
+        <input id="feature-scale" type="number" min="1" step="1" value="1">
       </div>
 
       <div class="control-group control-group-font-family">
@@ -66,7 +65,16 @@
         <label class="toggle-option" for="show-full-feature-labels">
           <input id="show-full-feature-labels" type="checkbox">
           <span>Full feature labels</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Full feature labels help" data-tooltip="Controls the text used for feature loading labels in the sample score plot. By default, long taxonomy-style feature names are shortened by splitting on semicolons, keeping the most specific non-empty rank, and removing common prefixes such as k__, p__, c__, o__, f__, g__, or s__. Turning this on uses the full feature name from feature-correlations.tsv.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Full feature labels help" data-tooltip="Controls the text used for feature labels in the sample score plot. By default, long taxonomy-style feature names are shortened by splitting on semicolons, keeping the most specific non-empty rank, and removing common prefixes such as k__, p__, c__, o__, f__, g__, or s__. Turning this on uses the full feature name.">?</span>
+        </label>
+      </div>
+
+      <div class="control-group control-group-toggle control-group-scale-circle">
+        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
+        <label class="toggle-option" for="show-feature-scale-circle">
+          <input id="show-feature-scale-circle" type="checkbox">
+          <span>Scale circle</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Scale circle help" data-tooltip="Draws a light grey circle centered at zero with radius equal to the current Feature scale. For correlations, it marks correlation magnitude 1 after scaling; for coordinates, it is only a visual scale reference.">?</span>
         </label>
       </div>
 
@@ -121,9 +129,9 @@
       </div>
     </section>
 
-    <section class="feature-table-shell" aria-label="Correlated features">
+    <section class="feature-table-shell" aria-label="Features">
       <div class="plot-status">
-        <span class="plot-title-with-help">Correlated features <span class="help-tooltip" tabindex="0" role="button" aria-label="Correlated features help" data-tooltip="Ranks all features from feature-correlations.tsv by the magnitude of their correlations in the currently selected two-dimensional MFA plane. Plane magnitude is calculated as sqrt(x^2 + y^2) from the selected X and Y axis correlation values; larger values indicate features more strongly represented by the selected axes.">?</span></span>
+        <span class="plot-title-with-help">Features <span class="help-tooltip" tabindex="0" role="button" aria-label="Features help" data-tooltip="Ranks all features from the selected feature source by their magnitude in the currently selected two-dimensional MFA plane. Plane magnitude is calculated as sqrt(x^2 + y^2) from the selected X and Y axis values; larger values indicate features more strongly represented in this view.">?</span></span>
         <button id="download-feature-table" class="feature-table-download" type="button">Download tsv</button>
       </div>
       <div class="feature-table-wrapper">

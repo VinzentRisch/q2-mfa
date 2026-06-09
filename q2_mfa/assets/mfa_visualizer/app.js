@@ -43,6 +43,19 @@ const COLOR_PALETTES = {
   },
 };
 
+const SCIENTIFIC_FONTS = [
+  { label: 'Arial', family: 'Arial, sans-serif' },
+  { label: 'Helvetica', family: 'Helvetica, Arial, sans-serif' },
+  { label: 'Times New Roman', family: '"Times New Roman", Times, serif' },
+  { label: 'Georgia', family: 'Georgia, serif' },
+  { label: 'Garamond', family: 'Garamond, "Times New Roman", serif' },
+  { label: 'Palatino', family: '"Palatino Linotype", Palatino, serif' },
+  { label: 'Cambria', family: 'Cambria, Georgia, serif' },
+  { label: 'Calibri', family: 'Calibri, Arial, sans-serif' },
+  { label: 'Verdana', family: 'Verdana, Arial, sans-serif' },
+  { label: 'Computer Modern', family: '"Computer Modern", "Latin Modern Roman", "Times New Roman", serif' },
+];
+
 const MISSING_VALUE_TOKEN = '__MISSING__';
 const DEFAULT_MARKER_COLOR = '#6B7280';
 const VARIANCE_MARKER_COLOR = '#126782';
@@ -91,6 +104,7 @@ const state = {
   },
   featureLoadingGroups: new Set(payload.partial_groups),
   partialSampleGroups: new Set(payload.partial_groups),
+  fontFamily: SCIENTIFIC_FONTS[0].family,
   fontSize: 12,
   filters: [createDefaultSampleFilter()],
 };
@@ -155,12 +169,18 @@ function populateColorControls() {
     colorBy.add(new Option(column.name, column.name));
   });
 
+  const fontFamily = document.getElementById('font-family');
+  SCIENTIFIC_FONTS.forEach((font) => {
+    fontFamily.add(new Option(font.label, font.family));
+  });
+
   repopulateColorPaletteOptions();
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
   document.getElementById('feature-loading-scale').value = state.featureLoadingScale;
   document.getElementById('point-size-scale').value = state.pointSizeScale;
+  fontFamily.value = state.fontFamily;
   document.getElementById('font-size').value = state.fontSize;
 }
 
@@ -223,6 +243,11 @@ function bindEvents() {
     }
     state.pointSizeScale = Math.min(nextValue, 1.5);
     event.target.value = state.pointSizeScale;
+    renderPlot();
+  });
+
+  document.getElementById('font-family').addEventListener('change', (event) => {
+    state.fontFamily = event.target.value;
     renderPlot();
   });
 
@@ -1344,7 +1369,7 @@ function buildNumericTraces(samples, colorColumn) {
         colorbar: {
           title: {
             text: formatSampleLegendName(colorColumn.name, numericSamples),
-            font: { color: themeColors.font, size: themeColors.fontSize },
+            font: buildPlotFont(themeColors),
           },
           x: 1.02,
           xanchor: 'left',
@@ -1352,7 +1377,7 @@ function buildNumericTraces(samples, colorColumn) {
           yanchor: 'top',
           len: SAMPLE_NUMERIC_COLORBAR_LENGTH,
           thickness: 18,
-          tickfont: { color: themeColors.font, size: themeColors.fontSize },
+          tickfont: buildPlotFont(themeColors),
         },
         size: scalePointSize(8),
         opacity: 0.9,
@@ -1596,7 +1621,7 @@ function buildLayout(traces) {
     margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },
     font: {
       color: themeColors.font,
-      family: 'Arial, sans-serif',
+      family: themeColors.fontFamily,
       size: themeColors.fontSize,
     },
     legend: {
@@ -1606,12 +1631,12 @@ function buildLayout(traces) {
       y: legendY,
       xanchor: 'left',
       x: 1.02,
-      font: { color: themeColors.font, size: themeColors.fontSize },
+      font: buildPlotFont(themeColors),
     },
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].axis_title,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       scaleanchor: 'y',
       scaleratio: 1,
@@ -1623,12 +1648,12 @@ function buildLayout(traces) {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].axis_title,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       tickmode: 'linear',
       tick0: 0,
@@ -1638,7 +1663,7 @@ function buildLayout(traces) {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
   };
 }
@@ -2032,7 +2057,7 @@ function buildPlotLabelTrace(labelPlacement, fontSize, traceOptions = {}) {
     textfont: {
       color: labelPlacement.map((label) => label.color),
       size: fontSize,
-      family: 'Arial, sans-serif',
+      family: state.fontFamily,
     },
     hoverinfo: 'skip',
     cliponaxis: false,
@@ -2071,13 +2096,13 @@ function buildGroupLayout() {
     showlegend: false,
     font: {
       color: themeColors.font,
-      family: 'Arial, sans-serif',
+      family: themeColors.fontFamily,
       size: themeColors.fontSize,
     },
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].label,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       range: [0, 1],
       fixedrange: true,
@@ -2090,12 +2115,12 @@ function buildGroupLayout() {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].label,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       range: [0, 1],
       fixedrange: true,
@@ -2106,7 +2131,7 @@ function buildGroupLayout() {
       zerolinewidth: 1,
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     annotations: [],
   };
@@ -2310,14 +2335,14 @@ function buildPartialAxesLayout() {
     margin: SECONDARY_SQUARE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
-      family: 'Arial, sans-serif',
+      family: themeColors.fontFamily,
       size: themeColors.fontSize,
     },
     showlegend: false,
     xaxis: {
       title: {
         text: dimensionsByKey[state.xDimension].label,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       range: PARTIAL_AXES_X_RANGE,
       constrain: 'domain',
@@ -2329,12 +2354,12 @@ function buildPartialAxesLayout() {
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     yaxis: {
       title: {
         text: dimensionsByKey[state.yDimension].label,
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       range: PARTIAL_AXES_Y_RANGE,
       constrain: 'domain',
@@ -2344,7 +2369,7 @@ function buildPartialAxesLayout() {
       zeroline: true,
       zerolinecolor: themeColors.zeroline,
       zerolinewidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     annotations: [],
   };
@@ -2517,22 +2542,22 @@ function buildVarianceLayout() {
     margin: VARIANCE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
-      family: 'Arial, sans-serif',
+      family: themeColors.fontFamily,
       size: themeColors.fontSize,
     },
     bargap: 0.24,
     xaxis: {
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     yaxis: {
       title: {
         text: 'Explained variance (%)',
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       rangemode: 'tozero',
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     annotations: [],
   };
@@ -2546,24 +2571,24 @@ function buildCumulativeVarianceLayout() {
     margin: CUMULATIVE_VARIANCE_PLOT_MARGIN,
     font: {
       color: themeColors.font,
-      family: 'Arial, sans-serif',
+      family: themeColors.fontFamily,
       size: themeColors.fontSize,
     },
     xaxis: {
       showgrid: true,
       gridcolor: themeColors.gridSoft,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
     },
     yaxis: {
       title: {
         text: 'Cumulative explained variance (%)',
-        font: { color: themeColors.font, size: themeColors.fontSize },
+        font: buildPlotFont(themeColors),
       },
       range: [0, 104],
       gridcolor: themeColors.grid,
       gridwidth: 1,
-      tickfont: { color: themeColors.font, size: themeColors.fontSize },
+      tickfont: buildPlotFont(themeColors),
       zeroline: true,
     },
     annotations: [],
@@ -2574,12 +2599,21 @@ function getThemeColors() {
   const styles = getComputedStyle(document.body);
   return {
     font: styles.getPropertyValue('--plot-font').trim(),
+    fontFamily: state.fontFamily,
     grid: styles.getPropertyValue('--plot-grid').trim(),
     gridSoft: styles.getPropertyValue('--plot-grid-soft').trim(),
     zeroline: styles.getPropertyValue('--plot-zero').trim(),
     annotation: styles.getPropertyValue('--plot-annotation').trim(),
     markerLine: styles.getPropertyValue('--plot-marker-line').trim(),
     fontSize: state.fontSize,
+  };
+}
+
+function buildPlotFont(themeColors, size = themeColors.fontSize) {
+  return {
+    color: themeColors.font,
+    family: themeColors.fontFamily,
+    size,
   };
 }
 

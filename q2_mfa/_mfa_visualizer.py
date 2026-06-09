@@ -16,7 +16,7 @@ import q2templates
 from rachis import Metadata
 from skbio import OrdinationResults
 
-from q2_mfa.types import MFAResultsDirFmt
+from q2_mfa.types import ComponentAnalysisDirFmt
 
 _TEMPLATE_FILES = ("index.html",)
 _STATIC_ASSET_FILES = (
@@ -28,7 +28,7 @@ _STATIC_ASSET_FILES = (
 
 
 def mfa_visualizer(
-    output_dir: str, mfa_results: MFAResultsDirFmt, sample_metadata: Metadata
+    output_dir: str, mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata
 ):
     (
         ordination,
@@ -50,7 +50,7 @@ def mfa_visualizer(
 
 
 def _load_mfa_visualizer_inputs(
-    mfa_results: MFAResultsDirFmt,
+    mfa_results: ComponentAnalysisDirFmt,
 ) -> tuple[
     OrdinationResults,
     pd.DataFrame,

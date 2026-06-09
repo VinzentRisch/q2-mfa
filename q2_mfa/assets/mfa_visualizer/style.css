@@ -112,7 +112,7 @@ h1 {
   grid-row: 2;
 }
 
-.control-group-point-size {
+.control-group-font-family {
   grid-column: 5;
   grid-row: 1;
 }
@@ -129,6 +129,11 @@ h1 {
 
 .control-group-full-feature-labels {
   grid-column: 4;
+  grid-row: 2;
+}
+
+.control-group-point-size {
+  grid-column: 5;
   grid-row: 2;
 }
 

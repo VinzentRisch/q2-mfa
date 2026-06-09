@@ -13,7 +13,7 @@ from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa._mfa_visualizer import mfa_visualizer
-from q2_mfa.types import MFAResultsDirFmt
+from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 class TestMFAVisualizer(TestPluginBase):
@@ -25,7 +25,7 @@ class TestMFAVisualizer(TestPluginBase):
         cls.metadata = Metadata.load(
             instance.get_data_path("mfa_vis/sample_metadata.tsv")
         )
-        cls.mfa_results = MFAResultsDirFmt(
+        cls.mfa_results = ComponentAnalysisDirFmt(
             instance.get_data_path("mfa/mfa_vis_results"),
             mode="r",
         )
@@ -83,6 +83,8 @@ class TestMFAVisualizer(TestPluginBase):
                 'step="1" value="1">',
                 index_html,
             )
+            self.assertIn('<label for="font-family">Font</label>', index_html)
+            self.assertIn('<select id="font-family"></select>', index_html)
             self.assertIn(
                 '<label for="point-size-scale">Point size</label>',
                 index_html,
@@ -101,19 +103,11 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn("<span>Full feature labels</span>", index_html)
-            self.assertIn(
-                '<label class="toggle-option" for="show-sample-scores">',
-                index_html,
-            )
-            self.assertIn(
-                '<input id="show-sample-scores" type="checkbox" checked>',
-                index_html,
-            )
-            self.assertIn("<span>Sample scores</span>", index_html)
-            self.assertIn('<span class="filter-title">Filters</span>', index_html)
             self.assertIn('id="filter-controls"', index_html)
             self.assertNotIn('id="filter-by"', index_html)
             self.assertIn('class="plot-shell plot-shell-main"', index_html)
+            app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
+            visualization_assets = index_html + app_js
             for expected_tooltip_text in (
                 "visible sample scores from ordination.txt",
                 "partial coordinates from partial-sample-coordinates.tsv",
@@ -129,7 +123,7 @@ class TestMFAVisualizer(TestPluginBase):
                 "partial axis correlations from partial-correlations.tsv",
                 "Ranks all features from feature-correlations.tsv",
             ):
-                self.assertIn(expected_tooltip_text, index_html)
+                self.assertIn(expected_tooltip_text, visualization_assets)
             self.assertNotIn('data-feature-sort="rank"', index_html)
             self.assertNotIn("<span>Rank</span>", index_html)
             self.assertIn('<th aria-sort="descending">', index_html)
@@ -163,7 +157,11 @@ class TestMFAVisualizer(TestPluginBase):
                 style_css,
             )
             self.assertIn(".filter-row {\n  display: grid;", style_css)
-            self.assertIn(".control-group-point-size {\n  grid-column: 5;", style_css)
+            self.assertIn(".control-group-font-family {\n  grid-column: 5;", style_css)
+            self.assertIn(
+                ".control-group-point-size {\n  grid-column: 5;\n  grid-row: 2;",
+                style_css,
+            )
             self.assertIn(".control-group-barycenter {\n  grid-column: 3;", style_css)
             self.assertIn(".control-group-font-size {\n  grid-column: 6;", style_css)
             self.assertIn(
@@ -178,11 +176,36 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertNotIn(".plot-shell-main::after", style_css)
             self.assertNotIn("height: 640px;", style_css)
 
-            app_js = (Path(output_dir) / "app.js").read_text(encoding="utf-8")
             self.assertIn("function bindSamplePlotResizeObserver()", app_js)
             self.assertIn("new ResizeObserver", app_js)
             self.assertIn("Plotly.Plots.resize('sample-plot')", app_js)
-            self.assertIn("family: 'Arial, sans-serif'", app_js)
+            self.assertIn("const SCIENTIFIC_FONTS = [", app_js)
+            for font_name in (
+                "Arial",
+                "Helvetica",
+                "Times New Roman",
+                "Georgia",
+                "Garamond",
+                "Palatino",
+                "Cambria",
+                "Calibri",
+                "Verdana",
+                "Computer Modern",
+            ):
+                self.assertIn(f"label: '{font_name}'", app_js)
+            self.assertIn("fontFamily: SCIENTIFIC_FONTS[0].family,", app_js)
+            self.assertIn(
+                "fontFamily.add(new Option(font.label, font.family));", app_js
+            )
+            self.assertIn("fontFamily.value = state.fontFamily;", app_js)
+            self.assertIn(
+                "document.getElementById('font-family').addEventListener",
+                app_js,
+            )
+            self.assertIn("state.fontFamily = event.target.value;", app_js)
+            self.assertIn("function buildPlotFont(themeColors", app_js)
+            self.assertIn("family: themeColors.fontFamily,", app_js)
+            self.assertIn("family: state.fontFamily,", app_js)
             self.assertNotIn("IBM Plex", app_js)
             self.assertNotIn("Helvetica Neue", app_js)
             self.assertIn("function formatSampleLegendName(name, samples)", app_js)
@@ -190,28 +213,25 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("name: formatSampleLegendName(name, samples),", app_js)
             self.assertIn("showSampleScores: true,", app_js)
             self.assertIn(
-                "document.getElementById('show-sample-scores').checked = "
-                "state.showSampleScores;",
+                "buildOverlayToggle(\n      'Sample scores',\n"
+                "      state.showSampleScores,",
                 app_js,
             )
             self.assertIn(
-                "document.getElementById('show-sample-scores').addEventListener",
+                "state.showSampleScores = checked;",
                 app_js,
             )
             self.assertIn(
                 "function buildSampleScoreTraces(samples, colorColumn)", app_js
             )
             self.assertIn("if (!state.showSampleScores) {\n    return [];", app_js)
-            self.assertIn("filters: [createDefaultFilter()],", app_js)
-            self.assertIn("const FILTER_TARGETS = {", app_js)
-            self.assertIn("feature_loadings: 'Feature loadings',", app_js)
-            self.assertIn("partial_samples: 'Partial sample scores',", app_js)
-            self.assertIn("function createDefaultFilter()", app_js)
-            self.assertIn("function buildFilterRow(filter, index)", app_js)
-            self.assertIn("function buildFilterTargetSelect(filter)", app_js)
-            self.assertIn("function buildFilterFieldSelect(filter)", app_js)
+            self.assertIn("filters: [createDefaultSampleFilter()],", app_js)
+            self.assertIn("function createDefaultSampleFilter()", app_js)
+            self.assertIn("function buildSampleFilterRow(filter, index)", app_js)
+            self.assertIn("function buildSampleMetadataSelect(filter)", app_js)
+            self.assertIn("function buildFilterValueControls(filter)", app_js)
             self.assertIn("function buildFilterRemoveButton(index)", app_js)
-            self.assertIn("state.filters.push(createDefaultFilter());", app_js)
+            self.assertIn("state.filters.push(createDefaultSampleFilter());", app_js)
             self.assertIn("state.filters.splice(index, 1);", app_js)
             self.assertIn("function samplePassesFilter(sample, filter)", app_js)
             self.assertIn("function getAllowedGroups(target)", app_js)
@@ -330,7 +350,7 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("state.pointSizeScale = Math.min(nextValue, 1.5);", app_js)
             self.assertIn("function scalePointSize(baseSize)", app_js)
             self.assertIn("return baseSize * state.pointSizeScale;", app_js)
-            for base_size in (8, 9, 11):
+            for base_size in (8, 9):
                 self.assertIn(f"size: scalePointSize({base_size}),", app_js)
             self.assertIn("column: 'rankingScore',", app_js)
             self.assertIn("direction: 'desc',", app_js)
@@ -421,7 +441,7 @@ class TestMFAVisualizer(TestPluginBase):
                 app_js,
             )
             self.assertIn(
-                "buildPlotLabelTrace(groupLabelPlacement, 11, {\n"
+                "buildPlotLabelTrace(groupLabelPlacement, state.fontSize, {\n"
                 "      legendgroup: groupLegend,",
                 app_js,
             )

@@ -10,6 +10,7 @@ from functools import reduce
 
 import pandas as pd
 import prince
+from rachis import Metadata
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 
@@ -17,17 +18,160 @@ from q2_mfa.pca import resolve_random_state
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
+def _validate_group_name(group_name):
+    """
+    Checks that the group name does not contain the colon character, which is
+    reserved for constructing prefixed MFA feature names in the form
+    ``group:feature``.
+    """
+    if ":" in group_name:
+        raise ValueError("MFA group names cannot contain ':'.")
+
+
+def _parse_metadata_groups(metadata_groups, metadata_columns):
+    """
+    Resolves metadata group specifications into group-to-column mappings.
+
+    Converts optional metadata group input into a dictionary where keys are MFA
+    group names and values are lists of metadata column names. If no mapping is
+    provided, all metadata columns are assigned to the default ``metadata``
+    group. If a string is provided, all metadata columns are assigned to a group
+    with that string as its name. If a mapping is provided, its keys are group
+    names and its comma-separated string values are parsed as metadata columns.
+
+    Args:
+        metadata_groups (str | dict | None): The metadata group specification.
+        metadata_columns (Iterable[str]): The available metadata column names.
+
+    Returns:
+        dict: Metadata group names mapped to lists of metadata column names.
+    """
+    if metadata_groups is None:
+        return {"metadata": list(metadata_columns)}
+
+    if isinstance(metadata_groups, str):
+        metadata_groups = metadata_groups.strip()
+        if not metadata_groups:
+            raise ValueError("Metadata group mapping cannot be empty.")
+        return {metadata_groups: list(metadata_columns)}
+
+    parsed = {}
+    for group_name, columns in metadata_groups.items():
+        if not group_name:
+            raise ValueError("Metadata group names cannot be empty.")
+        columns = [column.strip() for column in columns.split(",") if column.strip()]
+        if not columns:
+            raise ValueError(
+                f"Metadata group '{group_name}' must contain at least one column."
+            )
+        parsed[group_name] = columns
+    return parsed
+
+
+def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
+    """
+    Converts sample metadata into per-group DataFrames for MFA.
+
+    Converts a metadata object to a DataFrame and splits it into one
+    DataFrame per requested metadata group. The function validates that all
+    requested metadata columns exist, that no metadata column is assigned to
+    more than one metadata group, and that metadata group names can be used as
+    MFA group names.
+
+    Args:
+        sample_metadata (Metadata | None): The sample metadata to include in
+            the MFA input.
+        metadata_groups (str | dict | None): The metadata group specification.
+
+    Returns:
+        dict: Metadata group names mapped to DataFrames containing the selected
+            metadata columns.
+    """
+    if sample_metadata is None:
+        if metadata_groups is not None:
+            raise ValueError("metadata_groups requires sample_metadata.")
+        return {}
+
+    metadata = sample_metadata.to_dataframe().copy()
+    group_columns = _parse_metadata_groups(metadata_groups, metadata.columns)
+    missing_columns = sorted(
+        {
+            column
+            for columns in group_columns.values()
+            for column in columns
+            if column not in metadata.columns
+        }
+    )
+    if missing_columns:
+        raise ValueError(
+            "Metadata group mapping references columns not present in the metadata: "
+            f"{', '.join(missing_columns)}"
+        )
+
+    duplicated_columns = sorted(
+        {
+            column
+            for columns in group_columns.values()
+            for column in columns
+            if sum(column in group for group in group_columns.values()) > 1
+        }
+    )
+    if duplicated_columns:
+        raise ValueError(
+            "Metadata columns cannot be assigned to multiple groups: "
+            f"{', '.join(duplicated_columns)}"
+        )
+
+    grouped_tables = {}
+    for group_name, columns in group_columns.items():
+        _validate_group_name(group_name)
+        grouped_tables[group_name] = metadata.loc[:, columns]
+
+    return grouped_tables
+
+
 def _build_prince_input(
-    tables: dict,
+    tables: dict = None,
+    sample_metadata=None,
+    metadata_groups=None,
 ) -> tuple[pd.DataFrame, dict]:
-    tables = getattr(tables, "collection", tables)
+    """
+    Builds the wide input table and group mapping expected by ``prince.MFA``.
+
+    Merges feature-table groups and metadata groups, keeps only sample IDs that
+    are shared across every group, and prefixes each column as
+    ``group:feature``. The returned group mapping tells Prince which columns belong
+    to each MFA group.
+
+    Args:
+        tables (dict | None): Feature table groups where keys are MFA group
+            names and values are DataFrames.
+        sample_metadata (Metadata | None): Optional sample metadata to include
+            as MFA groups.
+        metadata_groups (str | dict | None): Optional metadata group specification.
+
+    Returns:
+        tuple[pd.DataFrame, dict]: A tuple containing:
+            - pd.DataFrame: MFA input table with prefixed feature columns.
+            - dict: MFA group names mapped to column names.
+    """
+    tables = {} if tables is None else dict(getattr(tables, "collection", tables))
+
+    metadata_tables = _metadata_to_grouped_tables(sample_metadata, metadata_groups)
+
+    duplicate_groups = sorted(set(tables).intersection(metadata_tables))
+    if duplicate_groups:
+        raise ValueError(
+            "Metadata group names cannot duplicate feature table group names: "
+            f"{', '.join(duplicate_groups)}"
+        )
+    tables.update(metadata_tables)
 
     if len(tables) < 2:
-        raise ValueError("MFA requires at least two feature tables.")
+        raise ValueError("MFA requires at least two groups.")
 
     for group_name in tables:
-        if ":" in group_name:
-            raise ValueError("MFA group names cannot contain ':'.")
+        _validate_group_name(group_name)
 
     table_values = list(tables.values())
     consensus_samples = reduce(
@@ -37,7 +181,7 @@ def _build_prince_input(
     )
 
     if consensus_samples.empty:
-        raise ValueError("Feature tables do not share any sample IDs.")
+        raise ValueError("MFA inputs do not share any sample IDs.")
 
     prefixed_tables = []
     groups = {}
@@ -59,7 +203,9 @@ def _build_prince_input(
 
 
 def mfa(
-    tables: pd.DataFrame,
+    tables: pd.DataFrame = None,
+    sample_metadata: Metadata = None,
+    metadata_groups: dict = None,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
     n_components: int = 2,
@@ -68,14 +214,43 @@ def mfa(
     engine: str = "sklearn",
 ) -> ComponentAnalysisDirFmt:
     """
-    Run Multiple Factor Analysis with the prince package.
+    Runs Multiple Factor Analysis and writes all Prince-derived outputs.
+
+    Combines feature tables and optional sample metadata into Prince's MFA input
+    representation, fits ``prince.MFA``, and serializes the ordination plus
+    MFA-specific coordinate, contribution, correlation, and cosine-similarity
+    tables into a component-analysis directory format.
+
+    Args:
+        tables (pd.DataFrame | None): Feature table collection where each
+            collection key is treated as an MFA group.
+        sample_metadata (Metadata | None): Optional sample metadata to include
+            as MFA groups.
+        metadata_groups (dict | None): Optional metadata group mapping where
+            keys are group names and values are comma-separated metadata column
+            names.
+        rescale_with_mean (bool): Whether Prince should center features before
+            SVD.
+        rescale_with_std (bool): Whether Prince should standardize features
+            before SVD.
+        n_components (int): Number of principal components to compute.
+        n_iter (int): Number of iterations used by the randomized SVD engine.
+        random_state (CaptureHolder[int] | None): Random seed capture used for
+            reproducible randomized SVD.
+        engine (str): Prince SVD engine to use.
+
+    Returns:
+        ComponentAnalysisDirFmt: Component-analysis directory format containing
+            the MFA ordination and numeric Prince output tables.
     """
     random_state = resolve_random_state(random_state, engine)
 
     mfa_params = locals()
     mfa_params.pop("tables")
+    mfa_params.pop("sample_metadata")
+    mfa_params.pop("metadata_groups")
 
-    table, groups = _build_prince_input(tables)
+    table, groups = _build_prince_input(tables, sample_metadata, metadata_groups)
 
     mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
 

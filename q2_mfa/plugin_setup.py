@@ -15,6 +15,7 @@ from rachis.core.type import (
     Collection,
     Float,
     Int,
+    Metadata,
     Properties,
     Range,
     Str,
@@ -117,6 +118,28 @@ ordination_parameter_descriptions = {
     ),
 }
 
+mfa_parameters = {
+    **ordination_parameters,
+    "sample_metadata": Metadata,
+    "metadata_groups": Collection[Str],
+}
+
+mfa_parameter_descriptions = {
+    **ordination_parameter_descriptions,
+    "sample_metadata": (
+        "Optional sample metadata to include as additional MFA groups."
+    ),
+    "metadata_groups": (
+        "Optional mapping from metadata group names to comma-separated metadata "
+        "column strings. Pass a collection/dict such as "
+        "{'group': 'column1,column2'} to define explicit groups. If only a "
+        "string is provided, all metadata columns are included in a group with "
+        "that string as the group name. If sample metadata is provided without "
+        "this parameter, all metadata columns are included in a group named "
+        "'metadata'."
+    ),
+}
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
@@ -142,10 +165,16 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=mfa,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters=ordination_parameters,
+    parameters=mfa_parameters,
     outputs=[("mfa_results", ComponentAnalysis)],
-    input_descriptions={"tables": "A list of feature tables (one per group)."},
-    parameter_descriptions=ordination_parameter_descriptions,
+    input_descriptions={
+        "tables": (
+            "Optional feature tables to include as MFA groups. At least two "
+            "groups must be provided across feature tables and sample metadata "
+            "groups."
+        )
+    },
+    parameter_descriptions=mfa_parameter_descriptions,
     output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",
     description=(
@@ -156,7 +185,8 @@ plugin.methods.register_function(
         "eigenvalues, sites correspond to sample coordinates, species correspond to "
         "feature coordinates, and proportion explained corresponds to prince "
         "percentage of variance. All other outputs come directly from the prince "
-        "package. Please check the prince package docs for more information."
+        "package. Please check the prince package docs for more information:"
+        "https://maxhalford.github.io/prince/mfa/"
     ),
     citations=[
         citations["escofier1994multiple"],

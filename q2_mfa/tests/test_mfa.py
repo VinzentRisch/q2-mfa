@@ -11,10 +11,17 @@ import numpy.testing as npt
 import pandas as pd
 import pandas.testing as pdt
 import prince
+from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.mfa import _build_prince_input, mfa
+from q2_mfa.mfa import (
+    _build_prince_input,
+    _metadata_to_grouped_tables,
+    _parse_metadata_groups,
+    _validate_group_name,
+    mfa,
+)
 from q2_mfa.types import ComponentAnalysisDirFmt
 from q2_mfa.types._transformer import _dataframe_to_numeric_tsv
 
@@ -31,6 +38,9 @@ class TestMFA(TestPluginBase):
         cls.disjoint = instance._load_table("mfa/mfa_disjoint.tsv")
         cls.duplicate_a = instance._load_table("mfa/mfa_duplicate_a.tsv")
         cls.duplicate_b = instance._load_table("mfa/mfa_duplicate_b.tsv")
+        cls.sample_metadata = Metadata.load(
+            instance.get_data_path("mfa/mfa_metadata.tsv")
+        )
 
     def _load_table(self, filename):
         return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
@@ -41,16 +51,156 @@ class TestMFA(TestPluginBase):
         expected = pd.read_csv(str(expected_format), sep="\t")
         pdt.assert_frame_equal(observed, expected, check_dtype=False)
 
-    def test_build_prince_input_success(self):
+    def test_validate_group_name(self):
+        self.assertIsNone(_validate_group_name("clinical"))
+
+    def test_validate_group_name_error(self):
+        with self.assertRaisesRegex(ValueError, "cannot contain ':'"):
+            _validate_group_name("clinical:metadata")
+
+    def test_parse_metadata_groups_default(self):
+        observed = _parse_metadata_groups(None, ["age", "bmi"])
+
+        self.assertEqual(observed, {"metadata": ["age", "bmi"]})
+
+    def test_parse_metadata_groups_string_group_name(self):
+        observed = _parse_metadata_groups("clinical", ["age", "bmi"])
+
+        self.assertEqual(observed, {"clinical": ["age", "bmi"]})
+
+    def test_parse_metadata_groups_error_empty_string(self):
+        with self.assertRaisesRegex(ValueError, "cannot be empty"):
+            _parse_metadata_groups(" ", ["age", "bmi"])
+
+    def test_parse_metadata_groups_mapping_string_columns(self):
+        observed = _parse_metadata_groups(
+            {"clinical": "age, bmi", "body": "score"},
+            ["age", "bmi", "score"],
+        )
+
+        self.assertEqual(observed, {"clinical": ["age", "bmi"], "body": ["score"]})
+
+    def test_parse_metadata_groups_error_empty_group_name(self):
+        with self.assertRaisesRegex(ValueError, "names cannot be empty"):
+            _parse_metadata_groups({"": "age"}, ["age", "bmi"])
+
+    def test_parse_metadata_groups_error_empty_columns(self):
+        with self.assertRaisesRegex(ValueError, "must contain at least one column"):
+            _parse_metadata_groups({"clinical": " , "}, ["age", "bmi"])
+
+    def test_metadata_to_grouped_tables_none(self):
+        self.assertEqual(_metadata_to_grouped_tables(None, None), {})
+
+    def test_metadata_to_grouped_tables_error_groups_without_metadata(self):
+        with self.assertRaisesRegex(ValueError, "requires sample_metadata"):
+            _metadata_to_grouped_tables(None, {"clinical": "age"})
+
+    def test_metadata_to_grouped_tables_selects_groups(self):
+        observed = _metadata_to_grouped_tables(
+            self.sample_metadata,
+            {"clinical": "age,score", "body": "bmi"},
+        )
+
+        self.assertEqual(list(observed), ["clinical", "body"])
+        pdt.assert_frame_equal(
+            observed["clinical"],
+            self.sample_metadata.to_dataframe().loc[:, ["age", "score"]],
+        )
+        pdt.assert_frame_equal(
+            observed["body"],
+            self.sample_metadata.to_dataframe().loc[:, ["bmi"]],
+        )
+
+    def test_metadata_to_grouped_tables_error_unknown_column(self):
+        with self.assertRaisesRegex(ValueError, "not present in the metadata: nope"):
+            _metadata_to_grouped_tables(self.sample_metadata, {"clinical": "nope"})
+
+    def test_metadata_to_grouped_tables_error_duplicate_column(self):
+        with self.assertRaisesRegex(
+            ValueError, "cannot be assigned to multiple groups: age"
+        ):
+            _metadata_to_grouped_tables(
+                self.sample_metadata,
+                {"clinical": "age", "body": "age"},
+            )
+
+    def test_build_prince_input_tables(self):
         tables = {"metabolome": self.table_a, "microbiome": self.table_b}
         table, groups = _build_prince_input(tables)
 
-        self.assertEqual(len(table.index), 3)
-        self.assertEqual(len(table.columns), 4)
-        self.assertIn("metabolome:feature-a1", table.columns)
-        self.assertIn("microbiome:feature-b1", table.columns)
+        self.assertEqual(list(table.index), ["sample-1", "sample-2", "sample-3"])
         self.assertEqual(
-            groups["metabolome"], ["metabolome:feature-a1", "metabolome:feature-a2"]
+            list(table.columns),
+            [
+                "metabolome:feature-a1",
+                "metabolome:feature-a2",
+                "microbiome:feature-b1",
+                "microbiome:feature-b2",
+            ],
+        )
+        self.assertEqual(
+            groups,
+            {
+                "metabolome": [
+                    "metabolome:feature-a1",
+                    "metabolome:feature-a2",
+                ],
+                "microbiome": [
+                    "microbiome:feature-b1",
+                    "microbiome:feature-b2",
+                ],
+            },
+        )
+
+    def test_build_prince_input_tables_metadata(self):
+        tables = {"metabolome": self.table_a}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            table, groups = _build_prince_input(
+                tables,
+                self.sample_metadata,
+                {"clinical": "age", "body": "bmi"},
+            )
+
+        self.assertEqual(list(table.index), ["sample-1", "sample-2", "sample-3"])
+        self.assertEqual(
+            list(table.columns),
+            [
+                "metabolome:feature-a1",
+                "metabolome:feature-a2",
+                "clinical:age",
+                "body:bmi",
+            ],
+        )
+        self.assertEqual(
+            groups,
+            {
+                "metabolome": [
+                    "metabolome:feature-a1",
+                    "metabolome:feature-a2",
+                ],
+                "clinical": ["clinical:age"],
+                "body": ["body:bmi"],
+            },
+        )
+
+    def test_build_prince_input_metadata(self):
+        table, groups = _build_prince_input(
+            sample_metadata=self.sample_metadata,
+            metadata_groups={"clinical": "age", "body": "bmi"},
+        )
+
+        self.assertEqual(
+            list(table.index),
+            ["sample-1", "sample-2", "sample-3", "sample-4"],
+        )
+        self.assertEqual(list(table.columns), ["clinical:age", "body:bmi"])
+        self.assertEqual(
+            groups,
+            {
+                "clinical": ["clinical:age"],
+                "body": ["body:bmi"],
+            },
         )
 
     def test_build_prince_input_drops_samples_with_warning(self):
@@ -67,8 +217,12 @@ class TestMFA(TestPluginBase):
         self.assertIn("Dropping samples from group 'other'", str(observed[1].message))
         self.assertEqual(list(table.index), ["sample-1", "sample-3"])
 
-    def test_build_prince_input_error_fewer_than_two_tables(self):
-        with self.assertRaisesRegex(ValueError, "at least two feature tables"):
+    def test_build_prince_input_error_no_groups(self):
+        with self.assertRaisesRegex(ValueError, "at least two groups"):
+            _build_prince_input()
+
+    def test_build_prince_input_error_one_table_group(self):
+        with self.assertRaisesRegex(ValueError, "at least two groups"):
             _build_prince_input({"metabolome": self.table_a})
 
     def test_build_prince_input_error_illegal_group_name(self):
@@ -79,11 +233,89 @@ class TestMFA(TestPluginBase):
         with self.assertRaisesRegex(ValueError, "do not share any sample IDs"):
             _build_prince_input({"metabolome": self.table_a, "other": self.disjoint})
 
+    def test_build_prince_input_uses_two_metadata_groups(self):
+        table, groups = _build_prince_input(
+            sample_metadata=self.sample_metadata,
+            metadata_groups={"clinical": "age,score", "body": "bmi"},
+        )
+
+        self.assertIn("clinical:age", table.columns)
+        self.assertIn("clinical:score", table.columns)
+        self.assertIn("body:bmi", table.columns)
+        self.assertEqual(groups["clinical"], ["clinical:age", "clinical:score"])
+        self.assertEqual(groups["body"], ["body:bmi"])
+        self.assertEqual(
+            list(table.index), ["sample-1", "sample-2", "sample-3", "sample-4"]
+        )
+
+    def test_build_prince_input_error_string_metadata_group_is_one_group(self):
+        with self.assertRaisesRegex(ValueError, "at least two groups"):
+            _build_prince_input(
+                sample_metadata=self.sample_metadata,
+                metadata_groups="clinical",
+            )
+
+    def test_build_prince_input_does_not_parse_string_metadata_mapping(self):
+        with self.assertRaisesRegex(ValueError, "cannot contain ':'"):
+            _build_prince_input(
+                sample_metadata=self.sample_metadata,
+                metadata_groups="clinical:age,bmi",
+            )
+
+    def test_build_prince_input_error_unknown_metadata_column(self):
+        with self.assertRaisesRegex(ValueError, "not present in the metadata: nope"):
+            _build_prince_input(
+                {"metabolome": self.table_a},
+                self.sample_metadata,
+                {"clinical": "nope"},
+            )
+
+    def test_build_prince_input_error_duplicate_metadata_column(self):
+        with self.assertRaisesRegex(
+            ValueError, "cannot be assigned to multiple groups: age"
+        ):
+            _build_prince_input(
+                {"metabolome": self.table_a},
+                self.sample_metadata,
+                {"clinical": "age", "body": "age"},
+            )
+
+    def test_build_prince_input_error_metadata_groups_without_metadata(self):
+        with self.assertRaisesRegex(
+            ValueError, "metadata_groups requires sample_metadata"
+        ):
+            _build_prince_input(
+                {"metabolome": self.table_a},
+                metadata_groups={"clinical": "age"},
+            )
+
+    def test_build_prince_input_error_group_duplicates(self):
+        with self.assertRaisesRegex(
+            ValueError, "cannot duplicate feature table group names: metabolome"
+        ):
+            _build_prince_input(
+                {"metabolome": self.table_a},
+                self.sample_metadata,
+                {"metabolome": "age"},
+            )
+
     def test_mfa_parses_prince_values_and_names(self):
         tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        results = mfa(tables=tables, engine="scipy")
+        metadata_groups = {"clinical": "age,bmi"}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            results = mfa(
+                tables=tables,
+                sample_metadata=self.sample_metadata,
+                metadata_groups=metadata_groups,
+                engine="scipy",
+            )
 
-        table, groups = _build_prince_input(tables)
+            table, groups = _build_prince_input(
+                tables,
+                self.sample_metadata,
+                metadata_groups,
+            )
         prince_result = prince.MFA(engine="scipy").fit(table, groups=groups)
 
         results.validate()

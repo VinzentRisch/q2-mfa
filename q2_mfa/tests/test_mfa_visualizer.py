@@ -360,6 +360,30 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn(
                 "margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },", app_js
             )
+            self.assertIn("dragmode: 'pan',", app_js)
+            self.assertNotIn("dragmode: 'zoom',", app_js)
+            self.assertIn("name: 'Download PNG',", app_js)
+            self.assertIn("name: 'Download SVG',", app_js)
+            self.assertIn(
+                "downloadPlotImage('sample-plot', "
+                "buildDownloadFilename('png'), 'png');",
+                app_js,
+            )
+            self.assertIn("function getRenderedPlotDimensions(plotId)", app_js)
+            self.assertIn(
+                "const dimensions = getRenderedPlotDimensions(plotId);", app_js
+            )
+            self.assertIn("width: dimensions.width,", app_js)
+            self.assertIn("height: dimensions.height,", app_js)
+            self.assertIn("plot?._fullLayout?.width", app_js)
+            self.assertIn("plot?.getBoundingClientRect().width", app_js)
+            self.assertNotIn("width: 1400,", app_js)
+            self.assertNotIn("height: 900,", app_js)
+            self.assertIn(
+                "modeBarButtonsToRemove: ['zoom2d', 'toImage', 'toImage2d', "
+                "'resetScale2d', 'lasso2d', 'select2d'],",
+                app_js,
+            )
             self.assertIn("SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;", app_js)
             self.assertIn("const SAMPLE_NUMERIC_COLORBAR_Y = 1;", app_js)
             self.assertIn("const SAMPLE_NUMERIC_COLORBAR_LENGTH = 0.28;", app_js)

@@ -724,14 +724,14 @@ function renderPlot() {
     responsive: true,
     displaylogo: false,
     scrollZoom: true,
-    toImageButtonOptions: {
-      format: 'png',
-      filename: buildDownloadFilename('png').replace('.png', ''),
-      width: 1400,
-      height: 900,
-      scale: 2,
-    },
     modeBarButtonsToAdd: [
+      {
+        name: 'Download PNG',
+        icon: Plotly.Icons.camera,
+        click: () => {
+          downloadPlotImage('sample-plot', buildDownloadFilename('png'), 'png');
+        },
+      },
       {
         name: 'Download SVG',
         icon: Plotly.Icons.camera,
@@ -740,7 +740,7 @@ function renderPlot() {
         },
       },
     ],
-    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    modeBarButtonsToRemove: ['zoom2d', 'toImage', 'toImage2d', 'resetScale2d', 'lasso2d', 'select2d'],
   });
 
   renderGroupPlot();
@@ -756,13 +756,29 @@ function buildDownloadFilename(extension) {
 }
 
 function downloadPlotImage(plotId, filename, format) {
+  const dimensions = getRenderedPlotDimensions(plotId);
   Plotly.downloadImage(plotId, {
     format,
     filename: filename.replace(`.${format}`, ''),
-    width: 1400,
-    height: 900,
+    width: dimensions.width,
+    height: dimensions.height,
     scale: 2,
   });
+}
+
+function getRenderedPlotDimensions(plotId) {
+  const plot = document.getElementById(plotId);
+  const width = Math.round(
+    plot?._fullLayout?.width ?? plot?.getBoundingClientRect().width ?? 1400
+  );
+  const height = Math.round(
+    plot?._fullLayout?.height ?? plot?.getBoundingClientRect().height ?? 900
+  );
+
+  return {
+    width: Math.max(width, 1),
+    height: Math.max(height, 1),
+  };
 }
 
 function buildVarianceDownloadFilename(extension) {
@@ -1871,7 +1887,7 @@ function buildLayout(traces) {
   return {
     paper_bgcolor: 'rgba(0, 0, 0, 0)',
     plot_bgcolor: 'rgba(255, 255, 255, 0)',
-    dragmode: 'zoom',
+    dragmode: 'pan',
     hovermode: 'closest',
     margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },
     font: {

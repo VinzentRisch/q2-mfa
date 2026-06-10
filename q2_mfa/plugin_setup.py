@@ -83,6 +83,7 @@ plugin.methods.register_function(
         "n_iter": Int % Range(0, None),
         "random_state": Int,
         "engine": Str % Choices(["sklearn", "scipy"]),
+        "filter_zero_variance": Bool,
     },
     outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
@@ -108,6 +109,9 @@ plugin.methods.register_function(
             "Random seed used by the 'sklearn' SVD engine. Pass an int for "
             "reproducible results across multiple function calls. This "
             "parameter is ignored by the 'scipy' engine."
+        ),
+        "filter_zero_variance": (
+            "Whether to remove columns with zero variance before ordination."
         ),
     },
     output_descriptions={"pca_results": "The PCA results."},

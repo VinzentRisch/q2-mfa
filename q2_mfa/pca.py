@@ -17,6 +17,20 @@ from q2_mfa.types import ComponentAnalysisDirFmt
 
 
 def resolve_random_state(random_state: CaptureHolder[int], engine: str):
+    """
+    Resolve the random seed used by the selected PCA engine.
+
+    Uses the provided random state when one is supplied for the sklearn engine,
+    generates one when needed, and resolves to None for engines that do not use
+    a random state.
+
+    Args:
+        random_state (CaptureHolder[int]): The optional random seed holder.
+        engine (str): The SVD engine used by prince.
+
+    Returns:
+        int | None: The resolved random seed for sklearn, or None otherwise.
+    """
     if engine == "sklearn":
         return CaptureHolder.get_or_set(random_state, lambda: secrets.randbits(32))
     return CaptureHolder.get_or_set(random_state, lambda: None)
@@ -82,6 +96,26 @@ def pca(
 ) -> ComponentAnalysisDirFmt:
     """
     Perform principal component analysis with prince.
+
+    Filters columns with missing values, optionally filters columns with zero
+    variance, fits a prince PCA model, and writes ordination and supporting
+    numeric outputs to a component-analysis directory format.
+
+    Args:
+        table (pd.DataFrame): The input sample-by-feature table.
+        rescale_with_mean (bool): Whether to center each column before SVD.
+        rescale_with_std (bool): Whether to scale each column to unit variance
+            before SVD.
+        n_components (int): The number of principal components to compute.
+        n_iter (int): The number of iterations used by the sklearn randomized
+            SVD engine.
+        random_state (CaptureHolder[int]): The optional random seed holder.
+        engine (str): The SVD engine used by prince.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before ordination.
+
+    Returns:
+        ComponentAnalysisDirFmt: The PCA results directory format.
     """
     table = drop_columns_with_missing_values(table)
     if filter_zero_variance:

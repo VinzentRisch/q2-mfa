@@ -117,12 +117,14 @@ plugin.methods.register_function(
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
-        "Principal component analysis implementation with the 'prince' package. "
+        "Principal component analysis implementation with the prince package. "
         "The output is an ordination result: eigenvalues correspond to prince "
         "eigenvalues, sites correspond to sample coordinates, species correspond to "
         "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance. All other outputs come directly from the Prince "
-        "package. Please check the prince package docs for more information."
+        "percentage of variance. All other outputs come directly from the prince "
+        "package. Features with missing values are automatically removed before "
+        "ordination. Please check the prince package docs for more information:"
+        "https://maxhalford.github.io/prince/pca/"
     ),
     citations=[
         citations["Halford_Prince"],

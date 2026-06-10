@@ -96,6 +96,25 @@ class TestMFAVisualizer(TestPluginBase):
                 index_html,
             )
             self.assertIn(
+                '<label for="point-opacity">Point opacity</label>', index_html
+            )
+            self.assertIn(
+                '<input id="point-opacity" type="number" min="0.1" '
+                'max="1" step="0.05" value="0.9">',
+                index_html,
+            )
+            self.assertIn('<label for="size-by">Size by</label>', index_html)
+            self.assertIn('<select id="size-by"></select>', index_html)
+            self.assertIn(
+                '<label class="toggle-option" for="show-point-border">',
+                index_html,
+            )
+            self.assertIn(
+                '<input id="show-point-border" type="checkbox" checked>',
+                index_html,
+            )
+            self.assertIn("<span>Point border</span>", index_html)
+            self.assertIn(
                 '<label class="toggle-option" for="show-full-feature-labels">',
                 index_html,
             )
@@ -171,17 +190,49 @@ class TestMFAVisualizer(TestPluginBase):
             )
             self.assertIn(".filter-row {\n  display: grid;", style_css)
             self.assertNotIn(".control-group-feature-source", style_css)
-            self.assertIn(".control-group-font-family {\n  grid-column: 5;", style_css)
             self.assertIn(
-                ".control-group-point-size {\n  grid-column: 6;\n  grid-row: 2;",
+                "grid-template-columns: repeat(12, minmax(0, 1fr));", style_css
+            )
+            self.assertIn(".control-group-x-dimension {\n  grid-column: 1;", style_css)
+            self.assertIn(".control-group-y-dimension {\n  grid-column: 2;", style_css)
+            self.assertIn(
+                ".control-group-color-by {\n  grid-column: 3 / span 2;", style_css
+            )
+            self.assertIn(
+                ".control-group-color-palette {\n  grid-column: 5 / span 2;", style_css
+            )
+            self.assertIn(
+                ".control-group-size-by {\n  grid-column: 7 / span 2;", style_css
+            )
+            self.assertIn(".control-group-font-family {\n  grid-column: 9;", style_css)
+            self.assertIn(
+                ".control-group-point-size {\n  grid-column: 11;\n  grid-row: 1;",
                 style_css,
             )
-            self.assertIn(".control-group-barycenter {\n  grid-column: 5;", style_css)
-            self.assertIn(".control-group-font-size {\n  grid-column: 6;", style_css)
             self.assertIn(
-                ".control-group-full-feature-labels {\n  grid-column: 4;", style_css
+                ".control-group-barycenter {\n  grid-column: 9 / span 2;", style_css
             )
-            self.assertIn(".control-group-scale-circle {\n  grid-column: 3;", style_css)
+            self.assertIn(".control-group-font-size {\n  grid-column: 10;", style_css)
+            self.assertIn(
+                ".control-group-full-feature-labels {\n  grid-column: 7 / span 2;",
+                style_css,
+            )
+            self.assertIn(
+                ".control-group-scale-circle {\n  grid-column: 5 / span 2;", style_css
+            )
+            self.assertIn(
+                ".control-group-point-opacity {\n  grid-column: 12;", style_css
+            )
+            self.assertIn(
+                ".control-group-point-border {\n  grid-column: 11 / span 2;", style_css
+            )
+            self.assertIn(
+                ".control-group-filters {\n  grid-column: 1 / span 12;\n  grid-row: 3;",
+                style_css,
+            )
+            self.assertIn(
+                ".control-panel > .control-group {\n    grid-column: auto;", style_css
+            )
             self.assertIn(".toggle-option-with-select select {", style_css)
             self.assertIn("  border: 0;", style_css)
             self.assertIn("  background: transparent;", style_css)
@@ -349,8 +400,11 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("showFeatures: false,", app_js)
             self.assertIn("showFeatureScaleCircle: false,", app_js)
             self.assertIn("featureSource: 'coordinates',", app_js)
+            self.assertIn("sizeBy: '',", app_js)
             self.assertIn("featureScale: 1,", app_js)
             self.assertIn("pointSizeScale: 1,", app_js)
+            self.assertIn("pointOpacity: 0.9,", app_js)
+            self.assertIn("showPointBorder: true,", app_js)
             self.assertIn(
                 "document.getElementById('feature-scale').value = "
                 "state.featureScale;",
@@ -361,6 +415,20 @@ class TestMFAVisualizer(TestPluginBase):
                 "state.pointSizeScale;",
                 app_js,
             )
+            self.assertIn(
+                "document.getElementById('point-opacity').value = "
+                "state.pointOpacity;",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('show-point-border').checked = "
+                "state.showPointBorder;",
+                app_js,
+            )
+            self.assertIn("sizeBy.add(new Option('None', ''));", app_js)
+            self.assertIn(".filter((column) => column.type === 'numeric')", app_js)
+            self.assertIn("sizeBy.add(new Option(column.name, column.name));", app_js)
+            self.assertIn("sizeBy.value = state.sizeBy;", app_js)
             self.assertIn(
                 "document.getElementById('show-feature-scale-circle').checked = "
                 "state.showFeatureScaleCircle;",
@@ -391,15 +459,73 @@ class TestMFAVisualizer(TestPluginBase):
                 "document.getElementById('point-size-scale').addEventListener",
                 app_js,
             )
+            self.assertIn(
+                "document.getElementById('point-opacity').addEventListener",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('size-by').addEventListener",
+                app_js,
+            )
+            self.assertIn(
+                "document.getElementById('show-point-border').addEventListener",
+                app_js,
+            )
             self.assertIn("state.featureScale = Math.floor(nextValue);", app_js)
             self.assertIn("state.pointSizeScale = Math.min(nextValue, 1.5);", app_js)
+            self.assertIn("state.pointOpacity = Math.min(nextValue, 1);", app_js)
+            self.assertIn("state.sizeBy = event.target.value;", app_js)
+            self.assertIn("state.showPointBorder = event.target.checked;", app_js)
             self.assertIn("function buildFeatureScaleCircleTrace()", app_js)
             self.assertIn("if (!state.showFeatureScaleCircle) {", app_js)
             self.assertIn("const radius = state.featureScale;", app_js)
             self.assertIn("function scalePointSize(baseSize)", app_js)
             self.assertIn("return baseSize * state.pointSizeScale;", app_js)
-            for base_size in (8, 9):
-                self.assertIn(f"size: scalePointSize({base_size}),", app_js)
+            self.assertIn("function getSamplePointSizes(samples, baseSize)", app_js)
+            self.assertIn(
+                "function getPartialPointSizes(groupEntries, baseSize)", app_js
+            )
+            self.assertIn(
+                "function scaleMetadataPointSize(sample, sizeColumn, baseSize)", app_js
+            )
+            self.assertIn(
+                "function scaleMetadataFractionPointSize(fraction, baseSize)", app_js
+            )
+            self.assertIn(
+                "return scalePointSize(baseSize * (0.75 + 1.5 * fraction));", app_js
+            )
+            self.assertIn("function buildSizeLegendTraces()", app_js)
+            self.assertIn("const sizeLegendTraces = buildSizeLegendTraces();", app_js)
+            self.assertIn("...sizeLegendTraces,", app_js)
+            self.assertIn("function buildSizeLegendHeaderTrace(name)", app_js)
+            self.assertIn("mode: 'lines',", app_js)
+            self.assertIn("`Size by: ${sizeColumn.name}`", app_js)
+            self.assertIn("`min: ${formatValue(sizeColumn.min)}`", app_js)
+            self.assertIn("`max: ${formatValue(sizeColumn.max)}`", app_js)
+            self.assertIn("legendgroup: 'size-legend',", app_js)
+            self.assertIn("x: [null],", app_js)
+            self.assertIn("y: [null],", app_js)
+            self.assertIn("scaleMetadataFractionPointSize(0, 8)", app_js)
+            self.assertIn("scaleMetadataFractionPointSize(1, 8)", app_js)
+            self.assertIn("function buildSamplePointMarkerLine(color, width)", app_js)
+            self.assertIn(
+                "return state.showPointBorder ? { color, width } : "
+                "{ color, width: 0 };",
+                app_js,
+            )
+            self.assertIn(
+                "line: buildSamplePointMarkerLine(getThemeColors().markerLine, 1),",
+                app_js,
+            )
+            self.assertIn(
+                "line: buildSamplePointMarkerLine(themeColors.markerLine, 1),", app_js
+            )
+            self.assertIn("line: { color, width: 2 },", app_js)
+            self.assertIn("opacity: state.pointOpacity,", app_js)
+            self.assertIn("size: getPartialPointSizes(groupEntries, 6),", app_js)
+            self.assertIn("size: getSamplePointSizes(samples, 8),", app_js)
+            self.assertIn("size: getSamplePointSizes(numericSamples, 8),", app_js)
+            self.assertIn("size: scalePointSize(9),", app_js)
             self.assertIn("column: 'rankingScore',", app_js)
             self.assertIn("direction: 'desc',", app_js)
             self.assertIn("showFullFeatureLabels: false,", app_js)

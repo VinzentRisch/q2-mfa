@@ -81,7 +81,7 @@ h1 {
 
 .control-panel {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   padding: 14px;
   margin-bottom: 16px;
@@ -102,48 +102,83 @@ h1 {
   grid-column: span 3;
 }
 
-.control-group-top-features {
+.control-group-x-dimension {
   grid-column: 1;
+  grid-row: 1;
+}
+
+.control-group-y-dimension {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.control-group-color-by {
+  grid-column: 3 / span 2;
+  grid-row: 1;
+}
+
+.control-group-color-palette {
+  grid-column: 5 / span 2;
+  grid-row: 1;
+}
+
+.control-group-size-by {
+  grid-column: 7 / span 2;
+  grid-row: 1;
+}
+
+.control-group-top-features {
+  grid-column: 1 / span 2;
   grid-row: 2;
 }
 
 .control-group-feature-scale {
-  grid-column: 2;
+  grid-column: 3 / span 2;
   grid-row: 2;
 }
 
 .control-group-font-family {
-  grid-column: 5;
+  grid-column: 9;
   grid-row: 1;
 }
 
 .control-group-barycenter {
-  grid-column: 5;
+  grid-column: 9 / span 2;
   grid-row: 2;
 }
 
 .control-group-font-size {
-  grid-column: 6;
+  grid-column: 10;
   grid-row: 1;
 }
 
 .control-group-full-feature-labels {
-  grid-column: 4;
+  grid-column: 7 / span 2;
   grid-row: 2;
 }
 
 .control-group-scale-circle {
-  grid-column: 3;
+  grid-column: 5 / span 2;
   grid-row: 2;
 }
 
 .control-group-point-size {
-  grid-column: 6;
+  grid-column: 11;
+  grid-row: 1;
+}
+
+.control-group-point-opacity {
+  grid-column: 12;
+  grid-row: 1;
+}
+
+.control-group-point-border {
+  grid-column: 11 / span 2;
   grid-row: 2;
 }
 
 .control-group-filters {
-  grid-column: 1 / span 6;
+  grid-column: 1 / span 12;
   grid-row: 3;
 }
 
@@ -613,6 +648,11 @@ input[type="number"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .control-panel > .control-group {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .control-group-wide {
     grid-column: span 2;
   }
@@ -634,6 +674,11 @@ input[type="number"] {
 
   .control-panel {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .control-panel > .control-group {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .control-group-wide {

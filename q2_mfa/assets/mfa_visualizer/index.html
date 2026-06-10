@@ -16,24 +16,29 @@
     </header>
 
     <section class="control-panel" aria-label="Graph controls">
-      <div class="control-group">
+      <div class="control-group control-group-x-dimension">
         <label for="x-dimension">X-axis</label>
         <select id="x-dimension"></select>
       </div>
 
-      <div class="control-group">
+      <div class="control-group control-group-y-dimension">
         <label for="y-dimension">Y-axis</label>
         <select id="y-dimension"></select>
       </div>
 
-      <div class="control-group">
+      <div class="control-group control-group-color-by">
         <label for="color-by">Color by</label>
         <select id="color-by"></select>
       </div>
 
-      <div class="control-group">
+      <div class="control-group control-group-color-palette">
         <label for="color-palette">Color palette</label>
         <select id="color-palette"></select>
+      </div>
+
+      <div class="control-group control-group-size-by">
+        <label for="size-by">Size by</label>
+        <select id="size-by"></select>
       </div>
 
       <div class="control-group control-group-toggle control-group-barycenter">
@@ -81,6 +86,19 @@
       <div class="control-group control-group-point-size">
         <label for="point-size-scale">Point size</label>
         <input id="point-size-scale" type="number" min="0.5" max="1.5" step="0.1" value="1">
+      </div>
+
+      <div class="control-group control-group-point-opacity">
+        <label for="point-opacity">Point opacity</label>
+        <input id="point-opacity" type="number" min="0.1" max="1" step="0.05" value="0.9">
+      </div>
+
+      <div class="control-group control-group-toggle control-group-point-border">
+        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
+        <label class="toggle-option" for="show-point-border">
+          <input id="show-point-border" type="checkbox" checked>
+          <span>Point border</span>
+        </label>
       </div>
 
       <div class="control-group control-group-font-size">

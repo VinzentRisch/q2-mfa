@@ -100,10 +100,14 @@ const metadataByName = Object.fromEntries(
 const dimensionsByKey = Object.fromEntries(
   payload.dimensions.map((dimension) => [dimension.key, dimension])
 );
+const samplesById = Object.fromEntries(
+  payload.samples.map((sample) => [sample.sample_id, sample])
+);
 const state = {
   xDimension: payload.default_x,
   yDimension: payload.default_y,
   colorBy: '',
+  sizeBy: '',
   colorPalette: 'Plotly',
   showSampleScores: true,
   showBarycenter: false,
@@ -115,6 +119,8 @@ const state = {
   topFeatureCount: 10,
   featureScale: 1,
   pointSizeScale: 1,
+  pointOpacity: 0.9,
+  showPointBorder: true,
   featureTableSort: {
     column: 'rankingScore',
     direction: 'desc',
@@ -186,18 +192,29 @@ function populateColorControls() {
     colorBy.add(new Option(column.name, column.name));
   });
 
+  const sizeBy = document.getElementById('size-by');
+  sizeBy.add(new Option('None', ''));
+  payload.metadata_columns
+    .filter((column) => column.type === 'numeric')
+    .forEach((column) => {
+      sizeBy.add(new Option(column.name, column.name));
+    });
+
   const fontFamily = document.getElementById('font-family');
   SCIENTIFIC_FONTS.forEach((font) => {
     fontFamily.add(new Option(font.label, font.family));
   });
 
   repopulateColorPaletteOptions();
+  sizeBy.value = state.sizeBy;
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('show-feature-scale-circle').checked = state.showFeatureScaleCircle;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
   document.getElementById('feature-scale').value = state.featureScale;
   document.getElementById('point-size-scale').value = state.pointSizeScale;
+  document.getElementById('point-opacity').value = state.pointOpacity;
+  document.getElementById('show-point-border').checked = state.showPointBorder;
   fontFamily.value = state.fontFamily;
   document.getElementById('font-size').value = state.fontSize;
 }
@@ -216,6 +233,11 @@ function bindEvents() {
   document.getElementById('color-by').addEventListener('change', (event) => {
     state.colorBy = event.target.value;
     repopulateColorPaletteOptions();
+    renderPlot();
+  });
+
+  document.getElementById('size-by').addEventListener('change', (event) => {
+    state.sizeBy = event.target.value;
     renderPlot();
   });
 
@@ -266,6 +288,21 @@ function bindEvents() {
     }
     state.pointSizeScale = Math.min(nextValue, 1.5);
     event.target.value = state.pointSizeScale;
+    renderPlot();
+  });
+
+  document.getElementById('point-opacity').addEventListener('input', (event) => {
+    const nextValue = Number(event.target.value);
+    if (!Number.isFinite(nextValue) || nextValue < 0.1) {
+      return;
+    }
+    state.pointOpacity = Math.min(nextValue, 1);
+    event.target.value = state.pointOpacity;
+    renderPlot();
+  });
+
+  document.getElementById('show-point-border').addEventListener('change', (event) => {
+    state.showPointBorder = event.target.checked;
     renderPlot();
   });
 
@@ -798,8 +835,15 @@ function buildTraces(samples) {
   const partialOverlayTraces = buildPartialOverlayTraces(samples, colorColumn);
   const featureTraces = buildFeatureTraces();
   const sampleScoreTraces = buildSampleScoreTraces(samples, colorColumn);
+  const sizeLegendTraces = buildSizeLegendTraces();
   return appendBarycenterTraces(
-    [...featureScaleCircleTraces, ...sampleScoreTraces, ...partialOverlayTraces, ...featureTraces],
+    [
+      ...featureScaleCircleTraces,
+      ...sampleScoreTraces,
+      ...sizeLegendTraces,
+      ...partialOverlayTraces,
+      ...featureTraces,
+    ],
     samples,
     colorColumn
   );
@@ -1418,8 +1462,8 @@ function buildPartialPointTrace(groupEntries, color, group, legendgroup, showleg
     hovertemplate: '%{text}<extra></extra>',
     marker: {
       color,
-      size: scalePointSize(8),
-      opacity: 0.9,
+      size: getPartialPointSizes(groupEntries, 6),
+      opacity: state.pointOpacity,
       symbol: 'diamond-open',
       line: { color, width: 2 },
     },
@@ -1439,10 +1483,10 @@ function buildSingleTrace(samples, color, name, options = {}) {
     hovertemplate: '%{customdata}<extra></extra>',
     marker: {
       color,
-      size: scalePointSize(8),
-      opacity: 0.9,
+      size: getSamplePointSizes(samples, 8),
+      opacity: state.pointOpacity,
       symbol: options.symbol ?? 'circle',
-      line: { color: getThemeColors().markerLine, width: 1 },
+      line: buildSamplePointMarkerLine(getThemeColors().markerLine, 1),
     },
   };
 }
@@ -1453,6 +1497,105 @@ function formatSampleLegendName(name, samples) {
 
 function scalePointSize(baseSize) {
   return baseSize * state.pointSizeScale;
+}
+
+function getSamplePointSizes(samples, baseSize) {
+  const sizeColumn = metadataByName[state.sizeBy];
+  if (!sizeColumn || sizeColumn.type !== 'numeric') {
+    return scalePointSize(baseSize);
+  }
+
+  return samples.map((sample) => scaleMetadataPointSize(sample, sizeColumn, baseSize));
+}
+
+function getPartialPointSizes(groupEntries, baseSize) {
+  const sizeColumn = metadataByName[state.sizeBy];
+  if (!sizeColumn || sizeColumn.type !== 'numeric') {
+    return scalePointSize(baseSize);
+  }
+
+  return groupEntries.map((entry) => {
+    const sample = samplesById[entry.sample_id];
+    return scaleMetadataPointSize(sample, sizeColumn, baseSize);
+  });
+}
+
+function scaleMetadataPointSize(sample, sizeColumn, baseSize) {
+  const value = sample?.metadata[sizeColumn.name];
+  if (value === null || !Number.isFinite(value) || sizeColumn.max <= sizeColumn.min) {
+    return scalePointSize(baseSize);
+  }
+
+  const fraction = (value - sizeColumn.min) / (sizeColumn.max - sizeColumn.min);
+  const boundedFraction = Math.max(0, Math.min(1, fraction));
+  return scaleMetadataFractionPointSize(boundedFraction, baseSize);
+}
+
+function scaleMetadataFractionPointSize(fraction, baseSize) {
+  return scalePointSize(baseSize * (0.75 + 1.5 * fraction));
+}
+
+function buildSizeLegendTraces() {
+  const sizeColumn = metadataByName[state.sizeBy];
+  if (!sizeColumn || sizeColumn.type !== 'numeric' || sizeColumn.max <= sizeColumn.min) {
+    return [];
+  }
+
+  const markerLine = buildSamplePointMarkerLine(getThemeColors().markerLine, 1);
+  return [
+    buildSizeLegendHeaderTrace(`Size by: ${sizeColumn.name}`),
+    buildSizeLegendTrace(
+      `min: ${formatValue(sizeColumn.min)}`,
+      scaleMetadataFractionPointSize(0, 8),
+      markerLine
+    ),
+    buildSizeLegendTrace(
+      `max: ${formatValue(sizeColumn.max)}`,
+      scaleMetadataFractionPointSize(1, 8),
+      markerLine
+    ),
+  ];
+}
+
+function buildSizeLegendHeaderTrace(name) {
+  return {
+    type: 'scatter',
+    mode: 'lines',
+    name,
+    legendgroup: 'size-legend',
+    showlegend: true,
+    x: [null],
+    y: [null],
+    hoverinfo: 'skip',
+    line: {
+      color: 'rgba(0, 0, 0, 0)',
+      width: 0,
+    },
+  };
+}
+
+function buildSizeLegendTrace(name, size, markerLine) {
+  return {
+    type: 'scatter',
+    mode: 'markers',
+    name,
+    legendgroup: 'size-legend',
+    showlegend: true,
+    x: [null],
+    y: [null],
+    hoverinfo: 'skip',
+    marker: {
+      color: DEFAULT_MARKER_COLOR,
+      size,
+      opacity: state.pointOpacity,
+      symbol: 'circle',
+      line: markerLine,
+    },
+  };
+}
+
+function buildSamplePointMarkerLine(color, width) {
+  return state.showPointBorder ? { color, width } : { color, width: 0 };
 }
 
 function buildNumericTraces(samples, colorColumn) {
@@ -1491,9 +1634,9 @@ function buildNumericTraces(samples, colorColumn) {
           thickness: 18,
           tickfont: buildPlotFont(themeColors),
         },
-        size: scalePointSize(8),
-        opacity: 0.9,
-        line: { color: themeColors.markerLine, width: 1 },
+        size: getSamplePointSizes(numericSamples, 8),
+        opacity: state.pointOpacity,
+        line: buildSamplePointMarkerLine(themeColors.markerLine, 1),
         cmin: colorColumn.min,
         cmax: colorColumn.max,
       },

@@ -92,6 +92,7 @@ ordination_parameters = {
     "n_iter": Int % Range(0, None),
     "random_state": Int,
     "engine": Str % Choices(["sklearn", "scipy"]),
+    "filter_zero_variance": Bool,
 }
 
 ordination_parameter_descriptions = {
@@ -115,6 +116,9 @@ ordination_parameter_descriptions = {
         "Random seedused by the 'sklearn' SVD engine. Pass an int for "
         "reproducible results across multiple function calls.This "
         "parameter is ignored by the 'scipy' engine."
+    ),
+    "filter_zero_variance": (
+        "Whether to remove columns with zero variance before ordination."
     ),
 }
 
@@ -150,12 +154,14 @@ plugin.methods.register_function(
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
-        "Principal component analysis implementation with the 'prince' package. "
+        "Principal component analysis implementation with the prince package. "
         "The output is an ordination result: eigenvalues correspond to prince "
         "eigenvalues, sites correspond to sample coordinates, species correspond to "
         "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance. All other outputs come directly from the Prince "
-        "package. Please check the prince package docs for more information."
+        "percentage of variance. All other outputs come directly from the prince "
+        "package. Features with missing values are automatically removed before "
+        "ordination. Please check the prince package docs for more information:"
+        "https://maxhalford.github.io/prince/pca/"
     ),
     citations=[
         citations["Halford_Prince"],

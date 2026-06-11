@@ -5,6 +5,8 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import warnings
+
 import numpy.testing as npt
 import pandas as pd
 import pandas.testing as pdt
@@ -12,7 +14,12 @@ import prince
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.pca import pca, resolve_random_state
+from q2_mfa.pca import (
+    drop_columns_with_missing_values,
+    drop_zero_variance_columns,
+    pca,
+    resolve_random_state,
+)
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
@@ -23,6 +30,14 @@ class TestPCA(TestPluginBase):
         super().setUp()
         self.table = pd.read_csv(
             self.get_data_path("pca/random_data.txt"), sep="\t", index_col=0
+        )
+        self.missing_columns_table = pd.read_csv(
+            self.get_data_path("pca/missing_columns.tsv"), sep="\t", index_col=0
+        )
+        self.zero_variance_columns_table = pd.read_csv(
+            self.get_data_path("pca/zero_variance_columns.tsv"),
+            sep="\t",
+            index_col=0,
         )
 
     def _assert_prince_table_written(self, results, output, expected):
@@ -75,6 +90,54 @@ class TestPCA(TestPluginBase):
             results.feature_cosine_similarities,
             prince_result.column_cosine_similarities_,
         )
+
+    def test_drop_columns_with_missing_values_filters_and_warns(self):
+        with self.assertWarnsRegex(
+            UserWarning, "Dropped columns with missing values: F1, F3"
+        ):
+            observed = drop_columns_with_missing_values(self.missing_columns_table)
+        self.assertEqual(list(observed.columns), ["F0", "F2"])
+
+    def test_drop_columns_with_missing_values_keeps_complete_table(self):
+        with warnings.catch_warnings(record=True) as observed_warnings:
+            observed = drop_columns_with_missing_values(self.table)
+
+        self.assertEqual(observed_warnings, [])
+        pdt.assert_frame_equal(observed, self.table)
+
+    def test_drop_zero_variance_columns_filters_and_warns(self):
+        with self.assertWarnsRegex(
+            UserWarning, "Dropped columns with zero variance: F0, F3"
+        ):
+            observed = drop_zero_variance_columns(self.zero_variance_columns_table)
+        self.assertEqual(list(observed.columns), ["F1", "F2"])
+
+    def test_drop_zero_variance_columns_keeps_varying_table(self):
+        with warnings.catch_warnings(record=True) as observed_warnings:
+            observed = drop_zero_variance_columns(self.table)
+
+        self.assertEqual(observed_warnings, [])
+        pdt.assert_frame_equal(observed, self.table)
+
+    def test_pca_filters_columns_with_missing_values(self):
+        with self.assertWarnsRegex(
+            UserWarning, "Dropped columns with missing values: F1, F3"
+        ):
+            results = pca(self.missing_columns_table, engine="scipy")
+
+        results.validate()
+        ordn = results.ordination.view(OrdinationResults)
+        self.assertEqual(list(ordn.features.index), ["F0", "F2"])
+
+    def test_pca_filters_zero_variance_columns(self):
+        with self.assertWarnsRegex(
+            UserWarning, "Dropped columns with zero variance: F0, F3"
+        ):
+            results = pca(self.zero_variance_columns_table, engine="scipy")
+
+        results.validate()
+        ordn = results.ordination.view(OrdinationResults)
+        self.assertEqual(list(ordn.features.index), ["F1", "F2"])
 
     def test_resolve_random_state_generates_seed_for_sklearn(self):
         random_state = resolve_random_state(None, "sklearn")

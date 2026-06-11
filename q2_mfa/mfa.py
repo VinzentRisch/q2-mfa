@@ -72,6 +72,34 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
     return group_mapping
 
 
+def _validate_metadata_group_column_types(sample_metadata, group_mapping):
+    """
+    Validates that each metadata group contains only one metadata column type.
+
+    Args:
+        sample_metadata (Metadata): The sample metadata containing the grouped
+            columns.
+        group_mapping (dict): Metadata group names mapped to metadata column
+            names.
+
+    Raises:
+        ValueError: If any metadata group contains multiple metadata column
+            types.
+    """
+    metadata_columns = sample_metadata.columns
+    for group_name, columns in group_mapping.items():
+        column_types = {
+            metadata_columns[column].type
+            for column in columns
+            if column in metadata_columns
+        }
+        if len(column_types) > 1:
+            raise ValueError(
+                f"Metadata group '{group_name}' contains multiple column "
+                "types. Groups must contain only numeric or only categorical columns."
+            )
+
+
 def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
     """
     Converts sample metadata into per-group DataFrames for MFA.
@@ -98,6 +126,7 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
 
     metadata = sample_metadata.to_dataframe().copy()
     group_mapping = _parse_metadata_groups(metadata_groups, metadata.columns)
+    _validate_metadata_group_column_types(sample_metadata, group_mapping)
     missing_columns = sorted(
         {
             column

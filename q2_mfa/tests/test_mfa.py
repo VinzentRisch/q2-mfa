@@ -20,6 +20,7 @@ from q2_mfa.mfa import (
     _metadata_to_grouped_tables,
     _parse_metadata_groups,
     _validate_group_name,
+    _validate_metadata_group_column_types,
     mfa,
 )
 from q2_mfa.types import ComponentAnalysisDirFmt
@@ -43,6 +44,9 @@ class TestMFA(TestPluginBase):
         cls.filter_drop_group = instance._load_table("mfa/mfa_filter_drop_group.tsv")
         cls.sample_metadata = Metadata.load(
             instance.get_data_path("mfa/mfa_metadata.tsv")
+        )
+        cls.mixed_type_metadata = Metadata.load(
+            instance.get_data_path("mfa/mfa_mixed_type_metadata.tsv")
         )
 
     def _load_table(self, filename):
@@ -113,6 +117,24 @@ class TestMFA(TestPluginBase):
             observed["body"],
             self.sample_metadata.to_dataframe().loc[:, ["bmi"]],
         )
+
+    def test_validate_metadata_group_column_types_allows_single_type_groups(self):
+        observed = _validate_metadata_group_column_types(
+            self.mixed_type_metadata,
+            {"clinical": ["age", "score"], "treatment": ["group"]},
+        )
+
+        self.assertIsNone(observed)
+
+    def test_validate_metadata_group_column_types_error_mixed_types(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Metadata group 'clinical' contains multiple column types",
+        ):
+            _validate_metadata_group_column_types(
+                self.mixed_type_metadata,
+                {"clinical": ["age", "group"]},
+            )
 
     def test_metadata_to_grouped_tables_error_unknown_column(self):
         with self.assertRaisesRegex(ValueError, "not present in the metadata: nope"):

@@ -140,7 +140,7 @@ mfa_parameter_descriptions = {
         "string is provided, all metadata columns are included in a group with "
         "that string as the group name. If sample metadata is provided without "
         "this parameter, all metadata columns are included in a group named "
-        "'metadata'."
+        "'metadata'. Groups must contain only numeric or only categorical columns."
     ),
 }
 

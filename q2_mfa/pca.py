@@ -52,7 +52,10 @@ def drop_columns_with_missing_values(table: pd.DataFrame) -> pd.DataFrame:
     missing_value_columns = table.columns[table.isna().any()]
     if len(missing_value_columns) > 0:
         warnings.warn(
-            f"Dropped columns with missing values: {', '.join(missing_value_columns)}",
+            (
+                "\033[33mDropped columns with missing values: "
+                f"{', '.join(missing_value_columns)}\033[0m"
+            ),
             UserWarning,
             stacklevel=2,
         )
@@ -76,7 +79,10 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
     zero_variance_columns = table.columns[table.nunique(dropna=False) <= 1]
     if len(zero_variance_columns) > 0:
         warnings.warn(
-            f"Dropped columns with zero variance: {', '.join(zero_variance_columns)}",
+            (
+                "\033[33mDropped columns with zero variance: "
+                f"{', '.join(zero_variance_columns)}\033[0m"
+            ),
             UserWarning,
             stacklevel=2,
         )

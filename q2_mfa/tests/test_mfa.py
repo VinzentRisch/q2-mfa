@@ -38,6 +38,9 @@ class TestMFA(TestPluginBase):
         cls.disjoint = instance._load_table("mfa/mfa_disjoint.tsv")
         cls.duplicate_a = instance._load_table("mfa/mfa_duplicate_a.tsv")
         cls.duplicate_b = instance._load_table("mfa/mfa_duplicate_b.tsv")
+        cls.filter_table_a = instance._load_table("mfa/mfa_filter_table_a.tsv")
+        cls.filter_table_b = instance._load_table("mfa/mfa_filter_table_b.tsv")
+        cls.filter_drop_group = instance._load_table("mfa/mfa_filter_drop_group.tsv")
         cls.sample_metadata = Metadata.load(
             instance.get_data_path("mfa/mfa_metadata.tsv")
         )
@@ -217,6 +220,66 @@ class TestMFA(TestPluginBase):
         self.assertIn("Dropping samples from group 'other'", str(observed[1].message))
         self.assertEqual(list(table.index), ["sample-1", "sample-3"])
 
+    def test_build_prince_input_filters_features_and_drops_empty_group(self):
+        tables = {
+            "metabolome": self.filter_table_a,
+            "microbiome": self.filter_table_b,
+            "empty": self.filter_drop_group,
+        }
+
+        with warnings.catch_warnings(record=True) as observed:
+            warnings.simplefilter("always")
+            table, groups = _build_prince_input(tables)
+
+        observed_messages = [str(warning.message) for warning in observed]
+        self.assertIn(
+            "\033[33mDropped columns with missing values: "
+            "metabolome:feature-missing\033[0m",
+            observed_messages,
+        )
+        self.assertIn(
+            "\033[33mDropped columns with zero variance: "
+            "metabolome:feature-constant\033[0m",
+            observed_messages,
+        )
+        self.assertIn(
+            "\033[33mDropped columns with missing values: "
+            "empty:feature-drop-missing\033[0m",
+            observed_messages,
+        )
+        self.assertIn(
+            "\033[33mDropped columns with zero variance: "
+            "empty:feature-drop-constant\033[0m",
+            observed_messages,
+        )
+        self.assertIn(
+            "\033[33mDropped MFA group 'empty' because all features were removed "
+            "during missing value filtering or zero-variance filtering.\033[0m",
+            observed_messages,
+        )
+        self.assertEqual(
+            list(table.columns),
+            [
+                "metabolome:feature-a1",
+                "metabolome:feature-a2",
+                "microbiome:feature-b1",
+                "microbiome:feature-b2",
+            ],
+        )
+        self.assertEqual(
+            groups,
+            {
+                "metabolome": [
+                    "metabolome:feature-a1",
+                    "metabolome:feature-a2",
+                ],
+                "microbiome": [
+                    "microbiome:feature-b1",
+                    "microbiome:feature-b2",
+                ],
+            },
+        )
+
     def test_build_prince_input_error_no_groups(self):
         with self.assertRaisesRegex(ValueError, "at least two groups"):
             _build_prince_input()
@@ -386,4 +449,37 @@ class TestMFA(TestPluginBase):
             results,
             results.feature_cosine_similarities,
             prince_result.column_cosine_similarities_,
+        )
+
+    def test_mfa_filters_missing_and_zero_variance_features(self):
+        tables = {
+            "metabolome": self.filter_table_a,
+            "microbiome": self.filter_table_b,
+        }
+
+        with warnings.catch_warnings(record=True) as observed:
+            warnings.simplefilter("always")
+            results = mfa(tables=tables, engine="scipy")
+
+        observed_messages = [str(warning.message) for warning in observed]
+        self.assertIn(
+            "\033[33mDropped columns with missing values: "
+            "metabolome:feature-missing\033[0m",
+            observed_messages,
+        )
+        self.assertIn(
+            "\033[33mDropped columns with zero variance: "
+            "metabolome:feature-constant\033[0m",
+            observed_messages,
+        )
+
+        ordination = results.ordination.view(OrdinationResults)
+        self.assertEqual(
+            list(ordination.features.index),
+            [
+                "metabolome:feature-a1",
+                "metabolome:feature-a2",
+                "microbiome:feature-b1",
+                "microbiome:feature-b2",
+            ],
         )

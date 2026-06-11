@@ -14,7 +14,11 @@ from rachis import Metadata
 from rachis.plugin import CaptureHolder
 from skbio import OrdinationResults
 
-from q2_mfa.pca import resolve_random_state
+from q2_mfa.pca import (
+    drop_columns_with_missing_values,
+    drop_zero_variance_columns,
+    resolve_random_state,
+)
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
@@ -134,6 +138,7 @@ def _build_prince_input(
     tables: dict = None,
     sample_metadata=None,
     metadata_groups=None,
+    filter_zero_variance: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Builds the wide input table and group mapping expected by ``prince.MFA``.
@@ -141,7 +146,9 @@ def _build_prince_input(
     Merges feature-table groups and metadata groups, keeps only sample IDs that
     are shared across every group, and prefixes each column as
     ``group:feature``. The returned group mapping tells Prince which columns belong
-    to each MFA group.
+    to each MFA group. All features with missing values and 0 variance (if
+    filter_zero_variance = True) are dropped. If a group is empty after filtering it
+    is also dropped and the user is warned.
 
     Args:
         tables (dict | None): Feature table groups where keys are MFA group
@@ -149,6 +156,8 @@ def _build_prince_input(
         sample_metadata (Metadata | None): Optional sample metadata to include
             as MFA groups.
         metadata_groups (str | dict | None): Optional metadata group specification.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before ordination.
 
     Returns:
         tuple[pd.DataFrame, dict]: A tuple containing:
@@ -167,20 +176,21 @@ def _build_prince_input(
         )
     tables.update(metadata_tables)
 
-    if len(tables) < 2:
-        raise ValueError("MFA requires at least two groups.")
-
     for group_name in tables:
         _validate_group_name(group_name)
 
     table_values = list(tables.values())
-    consensus_samples = reduce(
-        lambda shared, table: shared.intersection(table.index),
-        table_values[1:],
-        table_values[0].index,
+    consensus_samples = (
+        reduce(
+            lambda shared, table: shared.intersection(table.index),
+            table_values[1:],
+            table_values[0].index,
+        )
+        if table_values
+        else pd.Index([])
     )
 
-    if consensus_samples.empty:
+    if table_values and consensus_samples.empty:
         raise ValueError("MFA inputs do not share any sample IDs.")
 
     prefixed_tables = []
@@ -196,8 +206,29 @@ def _build_prince_input(
 
         table = table.loc[consensus_samples].copy()
         table.columns = [f"{group_name}:{feature}" for feature in table.columns]
+        table = drop_columns_with_missing_values(table)
+        if filter_zero_variance:
+            table = drop_zero_variance_columns(table)
+        if table.empty:
+            warnings.warn(
+                (
+                    f"\033[33mDropped MFA group '{group_name}' because all "
+                    "features were removed during missing value filtering or "
+                    "zero-variance filtering.\033[0m"
+                ),
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
         prefixed_tables.append(table)
         groups[group_name] = list(table.columns)
+
+    if len(groups) < 2:
+        raise ValueError(
+            "MFA requires at least two groups after filtering. Groups may have "
+            "been removed because all features were removed during missing "
+            "value filtering or zero-variance filtering."
+        )
 
     return pd.concat(prefixed_tables, axis=1), groups
 
@@ -212,6 +243,7 @@ def mfa(
     n_iter: int = 3,
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
+    filter_zero_variance: bool = True,
 ) -> ComponentAnalysisDirFmt:
     """
     Runs Multiple Factor Analysis and writes all Prince-derived outputs.
@@ -238,6 +270,8 @@ def mfa(
         random_state (CaptureHolder[int] | None): Random seed capture used for
             reproducible randomized SVD.
         engine (str): Prince SVD engine to use.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before ordination.
 
     Returns:
         ComponentAnalysisDirFmt: Component-analysis directory format containing
@@ -249,8 +283,14 @@ def mfa(
     mfa_params.pop("tables")
     mfa_params.pop("sample_metadata")
     mfa_params.pop("metadata_groups")
+    mfa_params.pop("filter_zero_variance")
 
-    table, groups = _build_prince_input(tables, sample_metadata, metadata_groups)
+    table, groups = _build_prince_input(
+        tables,
+        sample_metadata,
+        metadata_groups,
+        filter_zero_variance=filter_zero_variance,
+    )
 
     mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
 

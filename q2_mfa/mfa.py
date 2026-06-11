@@ -59,7 +59,7 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
             raise ValueError("Metadata group mapping cannot be empty.")
         return {metadata_groups: list(metadata_columns)}
 
-    parsed = {}
+    group_mapping = {}
     for group_name, columns in metadata_groups.items():
         if not group_name:
             raise ValueError("Metadata group names cannot be empty.")
@@ -68,8 +68,8 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
             raise ValueError(
                 f"Metadata group '{group_name}' must contain at least one column."
             )
-        parsed[group_name] = columns
-    return parsed
+        group_mapping[group_name] = columns
+    return group_mapping
 
 
 def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
@@ -97,11 +97,11 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
         return {}
 
     metadata = sample_metadata.to_dataframe().copy()
-    group_columns = _parse_metadata_groups(metadata_groups, metadata.columns)
+    group_mapping = _parse_metadata_groups(metadata_groups, metadata.columns)
     missing_columns = sorted(
         {
             column
-            for columns in group_columns.values()
+            for columns in group_mapping.values()
             for column in columns
             if column not in metadata.columns
         }
@@ -115,9 +115,9 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
     duplicated_columns = sorted(
         {
             column
-            for columns in group_columns.values()
+            for columns in group_mapping.values()
             for column in columns
-            if sum(column in group for group in group_columns.values()) > 1
+            if sum(column in group for group in group_mapping.values()) > 1
         }
     )
     if duplicated_columns:
@@ -127,7 +127,7 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
         )
 
     grouped_tables = {}
-    for group_name, columns in group_columns.items():
+    for group_name, columns in group_mapping.items():
         _validate_group_name(group_name)
         grouped_tables[group_name] = metadata.loc[:, columns]
 

@@ -1,0 +1,9 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"variable","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"","extra":{}}
+{"variable":"chem_a","component":0,"value":0.7352468557}
+{"variable":"chem_b","component":0,"value":0.7812477454}
+{"variable":"phys_a","component":0,"value":0.0588645852}
+{"variable":"phys_b","component":0,"value":0.8717369175}
+{"variable":"chem_a","component":1,"value":0.1180668893}
+{"variable":"chem_b","component":1,"value":0.1472509543}
+{"variable":"phys_a","component":1,"value":0.9329704384}
+{"variable":"phys_b","component":1,"value":0.108139388}

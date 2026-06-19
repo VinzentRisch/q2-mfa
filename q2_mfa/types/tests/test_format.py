@@ -5,122 +5,296 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from pathlib import Path
+
 import pandas as pd
-from rachis.core.exceptions import ValidationError
+from pandas.testing import assert_frame_equal, assert_series_equal
+from q2_types.tabular import TableJSONLFileFormat
+from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
 from rachis.plugin.testing import TestPluginBase
+from skbio import OrdinationResults
 
 import q2_mfa.plugin_setup  # noqa: F401
-from q2_mfa.types import ComponentAnalysisDirFmt, NumericTSVFormat
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.types._transformer import _TABLE_SPECS
+
+FLOAT_KWARGS = {"check_exact": False, "rtol": 1e-9, "atol": 1e-9}
 
 
-class TestMFAFormats(TestPluginBase):
+class TestComponentAnalysisFormatRegression(TestPluginBase):
     package = "q2_mfa.types.tests"
 
-    def test_numeric_tsv_format_ok(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide.tsv"),
-            mode="r",
+    @classmethod
+    def setUpClass(cls):
+        """Loads shared immutable Prince and JSONL fixture paths."""
+        helper = cls()
+        cls.pca_tables = Path(
+            helper.get_data_path("component-analysis/prince-tables/pca")
         )
+        cls.mfa_tables = Path(
+            helper.get_data_path("component-analysis/prince-tables/mfa")
+        )
+        cls.pca_jsonl = Path(helper.get_data_path("component-analysis/jsonl/pca"))
+        cls.mfa_jsonl = Path(helper.get_data_path("component-analysis/jsonl/mfa"))
+        cls.pca_result = _load_component_analysis(cls.pca_tables)
+        cls.mfa_result = _load_component_analysis(cls.mfa_tables)
+
+    def test_pca_component_analysis_to_dirfmt_transformer(self):
+        """Tests PCA ComponentAnalysis serialization against JSONL fixtures."""
+        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+
+        observed = to_fmt(self.pca_result)
+        observed.validate()
+
+        self._assert_jsonl_dirs_equal(observed.path, self.pca_jsonl)
+
+    def test_mfa_component_analysis_to_dirfmt_transformer(self):
+        """Tests MFA ComponentAnalysis serialization against JSONL fixtures."""
+        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+
+        observed = to_fmt(self.mfa_result)
+        observed.validate()
+
+        self._assert_jsonl_dirs_equal(observed.path, self.mfa_jsonl)
+
+    def test_pca_jsonl_dirfmt_to_component_analysis_transformer(self):
+        """Tests PCA JSONL directory-format deserialization."""
+        to_result = self.get_transformer(ComponentAnalysisDirFmt, ComponentAnalysis)
+        fmt = ComponentAnalysisDirFmt(self.pca_jsonl, mode="r")
+
+        observed = to_result(fmt)
+
+        self._assert_component_analysis_equal(observed, self.pca_result)
+        self.assertFalse(observed.is_mfa)
+
+    def test_mfa_jsonl_dirfmt_to_component_analysis_transformer(self):
+        """Tests MFA JSONL directory-format deserialization."""
+        to_result = self.get_transformer(ComponentAnalysisDirFmt, ComponentAnalysis)
+        fmt = ComponentAnalysisDirFmt(self.mfa_jsonl, mode="r")
+
+        observed = to_result(fmt)
+
+        self._assert_component_analysis_equal(observed, self.mfa_result)
+        self.assertTrue(observed.is_mfa)
+
+    def test_pca_jsonl_dirfmt_validates(self):
+        """Tests that the PCA JSONL fixture validates as a directory format."""
+        fmt = ComponentAnalysisDirFmt(self.pca_jsonl, mode="r")
+
         fmt.validate()
 
-    def test_numeric_tsv_format_ok_non_finite_values(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-non-finite-values.tsv"),
-            mode="r",
-        )
+    def test_mfa_jsonl_dirfmt_validates(self):
+        """Tests that the MFA JSONL fixture validates as a directory format."""
+        fmt = ComponentAnalysisDirFmt(self.mfa_jsonl, mode="r")
+
         fmt.validate()
 
-    def test_numeric_tsv_format_ok_empty_values(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-empty-values.tsv"),
-            mode="r",
-        )
-        fmt.validate()
+    def test_component_analysis_to_skbio_ordination(self):
+        """Tests ordination conversion from an MFA directory-format fixture."""
+        to_ordination = self.get_transformer(ComponentAnalysisDirFmt, OrdinationResults)
+        fmt = ComponentAnalysisDirFmt(self.mfa_jsonl, mode="r")
 
-    def test_numeric_tsv_format_error_header(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-broken-header.tsv"),
-            mode="r",
-        )
-        with self.assertRaisesRegex(ValidationError, "Invalid header"):
-            fmt.validate()
+        observed = to_ordination(fmt)
 
-    def test_numeric_tsv_format_error_values(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-broken-values.tsv"),
-            mode="r",
+        self.assertEqual(observed.short_method_name, "MFA")
+        self.assertEqual(observed.long_method_name, "Multiple Factor Analysis")
+        assert_series_equal(
+            observed.eigvals,
+            self.mfa_result.eigenvalues,
+            **FLOAT_KWARGS,
         )
-        with self.assertRaisesRegex(ValidationError, "Line 3 has 2 columns"):
-            fmt.validate()
+        assert_series_equal(
+            observed.proportion_explained,
+            self.mfa_result.percentage_of_variance / 100,
+            **FLOAT_KWARGS,
+        )
+        assert_frame_equal(
+            observed.samples,
+            self.mfa_result.sample_coordinates,
+            **FLOAT_KWARGS,
+        )
+        assert_frame_equal(
+            observed.features,
+            self.mfa_result.feature_coordinates,
+            **FLOAT_KWARGS,
+        )
 
-    def test_numeric_tsv_format_error_no_value_columns(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-no-values.tsv"),
-            mode="r",
-        )
-        with self.assertRaisesRegex(ValidationError, "at least 1"):
-            fmt.validate()
+    def test_pca_component_analysis_to_skbio_ordination_names(self):
+        """Tests PCA method names in ordination conversion."""
+        to_ordination = self.get_transformer(ComponentAnalysisDirFmt, OrdinationResults)
+        fmt = ComponentAnalysisDirFmt(self.pca_jsonl, mode="r")
 
-    def test_numeric_tsv_format_error_non_numeric_value(self):
-        fmt = NumericTSVFormat(
-            self.get_data_path("prince-wide-non-numeric-value.tsv"),
-            mode="r",
-        )
+        observed = to_ordination(fmt)
+
+        self.assertEqual(observed.short_method_name, "PCA")
+        self.assertEqual(observed.long_method_name, "Principal Component Analysis")
+
+    def test_component_analysis_to_dirfmt_missing_required_table(self):
+        """Tests that missing required tables fail with a clear error."""
+        result = _load_component_analysis(self.pca_tables)
+        result.sample_cosine_similarities = None
+        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+
         with self.assertRaisesRegex(
-            ValidationError,
-            "Numeric TSV value columns must be numeric.",
+            ValueError, "Missing required table: sample_cosine_similarities."
         ):
-            fmt.validate()
+            to_fmt(result)
 
-    def test_mfa_results_directory_format_ok(self):
-        fmt = ComponentAnalysisDirFmt(self.get_data_path("mfa-results"), mode="r")
-        fmt.validate()
+    def _assert_component_analysis_equal(
+        self,
+        observed: ComponentAnalysis,
+        expected: ComponentAnalysis,
+    ) -> None:
+        """
+        Asserts equality for every ComponentAnalysis output table.
 
-    def test_pca_results_directory_format_ok(self):
-        fmt = ComponentAnalysisDirFmt(self.get_data_path("pca-results"), mode="r")
-        fmt.validate()
+        Args:
+            observed (ComponentAnalysis): The observed result.
+            expected (ComponentAnalysis): The expected result.
 
-    def test_dataframe_to_numeric_tsv_flattens_multiindex_rows(self):
-        df = pd.DataFrame(
-            {"val": [1, 2]},
-            index=pd.MultiIndex.from_tuples(
-                [("A", "x"), ("B", "y")], names=["L1", "L2"]
-            ),
-        )
-        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
-        fmt = transformer(df)
+        Returns:
+            None
+        """
+        for spec in _TABLE_SPECS:
+            observed_table = getattr(observed, spec.attr)
+            expected_table = getattr(expected, spec.attr)
+            if expected_table is None:
+                self.assertIsNone(observed_table)
+            elif isinstance(expected_table, pd.Series):
+                assert_series_equal(observed_table, expected_table, **FLOAT_KWARGS)
+            else:
+                assert_frame_equal(
+                    observed_table,
+                    expected_table,
+                    **FLOAT_KWARGS,
+                )
 
-        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
+    def _assert_jsonl_dirs_equal(self, observed_dir: Path, expected_dir: Path) -> None:
+        """
+        Asserts that two ComponentAnalysis JSONL directories are equivalent.
 
-        self.assertEqual(list(result.index), ["A:x", "B:y"])
+        Args:
+            observed_dir (Path): The observed JSONL directory.
+            expected_dir (Path): The expected JSONL directory.
 
-    def test_dataframe_to_numeric_tsv_flattens_multiindex_columns(self):
-        df = pd.DataFrame(
-            [[1, 2]],
-            index=["s1"],
-            columns=pd.MultiIndex.from_tuples(
-                [("A", "x"), ("B", "y")], names=["L1", "L2"]
-            ),
-        )
-        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
-        fmt = transformer(df)
+        Returns:
+            None
+        """
+        expected_names = {path.name for path in expected_dir.glob("*.jsonl")}
+        observed_names = {path.name for path in observed_dir.glob("*.jsonl")}
+        self.assertEqual(observed_names, expected_names)
+        for expected_file in sorted(expected_dir.glob("*.jsonl")):
+            observed_file = observed_dir / expected_file.name
+            self.assertTrue(observed_file.exists())
+            observed = table_jsonl_to_df(
+                TableJSONLFileFormat(str(observed_file), mode="r")
+            )
+            expected = table_jsonl_to_df(
+                TableJSONLFileFormat(str(expected_file), mode="r")
+            )
+            assert_frame_equal(
+                observed.reset_index(drop=True),
+                expected.reset_index(drop=True),
+                **FLOAT_KWARGS,
+            )
 
-        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
 
-        self.assertEqual(list(result.columns), ["A:x", "B:y"])
-        self.assertEqual(list(result.index), ["s1"])
+def _load_component_analysis(directory: Path) -> ComponentAnalysis:
+    """
+    Loads a ComponentAnalysis object from Prince-table fixture TSVs.
 
-    def test_dataframe_to_numeric_tsv_writes_flat_table(self):
-        df = pd.DataFrame(
-            {"0": [1, 2], "1": [3, 4]},
-            index=["s1", "s2"],
-        )
+    Args:
+        directory (Path): The Prince-table fixture directory.
 
-        transformer = self.get_transformer(pd.DataFrame, NumericTSVFormat)
-        fmt = transformer(df)
-        result = pd.read_csv(str(fmt), sep="\t", index_col="id")
+    Returns:
+        ComponentAnalysis: The loaded component-analysis result.
+    """
+    kwargs = {}
+    for spec in _TABLE_SPECS:
+        path = directory / f"{spec.attr}.tsv"
+        if not path.exists():
+            if spec.required:
+                raise FileNotFoundError(path)
+            kwargs[spec.attr] = None
+        elif spec.kind == "series":
+            kwargs[spec.attr] = _read_series_table(path)
+        elif spec.kind == "wide":
+            kwargs[spec.attr] = _read_wide_table(path, spec.index)
+        elif spec.kind == "multi_columns":
+            kwargs[spec.attr] = _read_multi_columns_table(path)
+        elif spec.kind == "multi_rows":
+            kwargs[spec.attr] = _read_multi_rows_table(path)
+        else:
+            raise ValueError(f"Unknown table kind: {spec.kind}.")
+    return ComponentAnalysis(**kwargs)
 
-        self.assertEqual(list(result.columns), ["0", "1"])
-        self.assertEqual(list(result.index), ["s1", "s2"])
-        self.assertEqual(list(result["0"]), [1, 2])
-        self.assertEqual(list(result["1"]), [3, 4])
+
+def _read_series_table(path: Path) -> pd.Series:
+    """
+    Reads a component-indexed series fixture.
+
+    Args:
+        path (Path): The series TSV fixture path.
+
+    Returns:
+        pd.Series: The loaded series.
+    """
+    series = pd.read_csv(path, sep="\t", index_col=0)["value"]
+    series.index = pd.Index(series.index.astype(int), name="component")
+    series.name = None
+    return series
+
+
+def _read_wide_table(path: Path, index: str) -> pd.DataFrame:
+    """
+    Reads a simple wide Prince-table fixture.
+
+    Args:
+        path (Path): The wide TSV fixture path.
+        index (str): The storage index name from the table spec.
+
+    Returns:
+        pd.DataFrame: The loaded wide table.
+    """
+    table = pd.read_csv(path, sep="\t", index_col=0)
+    table.columns = pd.Index(table.columns.astype(int), name="component")
+    table.index.name = None if index == "sample_id" else index
+    return table
+
+
+def _read_multi_columns_table(path: Path) -> pd.DataFrame:
+    """
+    Reads a Prince partial-row coordinate fixture.
+
+    Args:
+        path (Path): The partial-row coordinate TSV path.
+
+    Returns:
+        pd.DataFrame: The loaded partial-row coordinate table.
+    """
+    table = pd.read_csv(path, sep="\t", header=[0, 1], index_col=0)
+    table.index.name = None
+    table.columns = pd.MultiIndex.from_tuples(
+        [(group, int(component)) for group, component in table.columns],
+        names=[None, None],
+    )
+    return table
+
+
+def _read_multi_rows_table(path: Path) -> pd.DataFrame:
+    """
+    Reads a Prince partial-axis table fixture.
+
+    Args:
+        path (Path): The partial-axis TSV path.
+
+    Returns:
+        pd.DataFrame: The loaded partial-axis table.
+    """
+    table = pd.read_csv(path, sep="\t", index_col=[0, 1])
+    table.index = pd.MultiIndex.from_tuples(
+        [(group, int(component)) for group, component in table.index],
+        names=["group", "component"],
+    )
+    table.columns = pd.Index(table.columns.astype(int), name="component")
+    return table

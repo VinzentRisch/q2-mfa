@@ -1,0 +1,11 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"sample_id","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"","extra":{}}
+{"sample_id":"s1","component":0,"value":0.1327499644}
+{"sample_id":"s2","component":0,"value":2.7361808852}
+{"sample_id":"s3","component":0,"value":0.1497748973}
+{"sample_id":"s4","component":0,"value":-2.032958267}
+{"sample_id":"s5","component":0,"value":-0.9857474798}
+{"sample_id":"s1","component":1,"value":1.0808224211}
+{"sample_id":"s2","component":1,"value":-0.3485771107}
+{"sample_id":"s3","component":1,"value":-0.1224662923}
+{"sample_id":"s4","component":1,"value":-0.217286852}
+{"sample_id":"s5","component":1,"value":-0.3924921661}

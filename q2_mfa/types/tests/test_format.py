@@ -15,6 +15,7 @@ from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
+import q2_mfa.plugin_setup  # noqa: F401
 from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.types._transformer import _TABLE_SPECS
 
@@ -165,6 +166,7 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
             if expected_table is None:
                 self.assertIsNone(observed_table)
             elif isinstance(expected_table, np.ndarray):
+                self.assertIsInstance(observed_table, np.ndarray)
                 np.testing.assert_allclose(
                     observed_table,
                     expected_table,
@@ -172,13 +174,9 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
                     atol=1e-9,
                 )
             else:
-                # sample_cosine_similarities in mfa does not have a named column row
-                # this is a bug from prince
-                check_names = spec.attr != "sample_cosine_similarities"
                 assert_frame_equal(
                     observed_table,
                     expected_table,
-                    check_names=check_names,
                     **FLOAT_KWARGS,
                 )
 
@@ -214,7 +212,7 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
 
 def _load_component_analysis(directory: Path) -> ComponentAnalysis:
     """
-    Loads a ComponentAnalysis object from Prince-table fixtures.
+    Loads a ComponentAnalysis object from Prince-table fixture TSVs.
 
     Args:
         directory (Path): The Prince-table fixture directory.
@@ -224,14 +222,75 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
     """
     kwargs = {}
     for spec in _TABLE_SPECS:
-        suffix = ".npy" if spec.kind == "vector" else ".pkl"
+        suffix = ".npy" if spec.kind == "vector" else ".tsv"
         path = directory / f"{spec.attr}{suffix}"
         if not path.exists():
+            if spec.required:
+                raise FileNotFoundError(path)
             kwargs[spec.attr] = None
         elif spec.kind == "vector":
             kwargs[spec.attr] = np.load(path)
-        elif spec.kind in {"wide", "multi_columns", "multi_rows"}:
-            kwargs[spec.attr] = pd.read_pickle(path)
+        elif spec.kind == "wide":
+            kwargs[spec.attr] = _read_wide_table(path, spec.index)
+        elif spec.kind == "multi_columns":
+            kwargs[spec.attr] = _read_multi_columns_table(path)
+        elif spec.kind == "multi_rows":
+            kwargs[spec.attr] = _read_multi_rows_table(path)
         else:
             raise ValueError(f"Unknown table kind: {spec.kind}.")
     return ComponentAnalysis(**kwargs)
+
+
+def _read_wide_table(path: Path, index: str) -> pd.DataFrame:
+    """
+    Reads a simple wide Prince-table fixture.
+
+    Args:
+        path (Path): The wide TSV fixture path.
+        index (str): The storage index name from the table spec.
+
+    Returns:
+        pd.DataFrame: The loaded wide table.
+    """
+    table = pd.read_csv(path, sep="\t", index_col=0)
+    table.columns = pd.Index(table.columns.astype(int), name="component")
+    table.index.name = None if index == "sample_id" else index
+    return table
+
+
+def _read_multi_columns_table(path: Path) -> pd.DataFrame:
+    """
+    Reads a Prince partial-row coordinate fixture.
+
+    Args:
+        path (Path): The partial-row coordinate TSV path.
+
+    Returns:
+        pd.DataFrame: The loaded partial-row coordinate table.
+    """
+    table = pd.read_csv(path, sep="\t", header=[0, 1], index_col=0)
+    table.index.name = None
+    table.columns = pd.MultiIndex.from_tuples(
+        [(group, int(component)) for group, component in table.columns],
+        names=[None, None],
+    )
+    return table
+
+
+def _read_multi_rows_table(path: Path) -> pd.DataFrame:
+    """
+    Reads a Prince partial-axis table fixture.
+
+    Args:
+        path (Path): The partial-axis TSV path.
+
+    Returns:
+        pd.DataFrame: The loaded partial-axis table.
+    """
+    table = pd.read_csv(path, sep="\t", index_col=[0, 1])
+    table.index = pd.MultiIndex.from_tuples(
+        [(group, int(component)) for group, component in table.index],
+        names=["group", "component"],
+    )
+    table.columns = pd.Index(table.columns.astype(int), name="component")
+    return table

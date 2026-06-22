@@ -15,7 +15,6 @@ from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-import q2_mfa.plugin_setup  # noqa: F401
 from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.types._transformer import _TABLE_SPECS
 

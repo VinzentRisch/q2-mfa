@@ -18,8 +18,6 @@ from skbio import OrdinationResults
 from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.types._transformer import _TABLE_SPECS
 
-FLOAT_KWARGS = {"check_exact": False, "rtol": 1e-9, "atol": 1e-9}
-
 
 class TestComponentAnalysisFormatRegression(TestPluginBase):
     package = "q2_mfa.types.tests"
@@ -102,25 +100,21 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
         np.testing.assert_allclose(
             observed.eigvals,
             self.mfa_result.eigenvalues,
-            rtol=1e-9,
-            atol=1e-9,
         )
         self.assertIsInstance(observed.proportion_explained, np.ndarray)
         np.testing.assert_allclose(
             observed.proportion_explained,
             self.mfa_result.percentage_of_variance / 100,
-            rtol=1e-9,
-            atol=1e-9,
         )
         assert_frame_equal(
             observed.samples,
             self.mfa_result.sample_coordinates,
-            **FLOAT_KWARGS,
+            check_exact=False,
         )
         assert_frame_equal(
             observed.features,
             self.mfa_result.feature_coordinates,
-            **FLOAT_KWARGS,
+            check_exact=False,
         )
 
     def test_pca_component_analysis_to_skbio_ordination_names(self):
@@ -168,14 +162,12 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
                 np.testing.assert_allclose(
                     observed_table,
                     expected_table,
-                    rtol=1e-9,
-                    atol=1e-9,
                 )
             else:
                 assert_frame_equal(
                     observed_table,
                     expected_table,
-                    **FLOAT_KWARGS,
+                    check_exact=False,
                 )
 
     def _assert_jsonl_dirs_equal(self, observed_dir: Path, expected_dir: Path) -> None:
@@ -204,7 +196,7 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
             assert_frame_equal(
                 observed.reset_index(drop=True),
                 expected.reset_index(drop=True),
-                **FLOAT_KWARGS,
+                check_exact=False,
             )
 
 

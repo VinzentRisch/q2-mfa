@@ -7,22 +7,25 @@
 # ----------------------------------------------------------------------------
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 
 class ComponentAnalysis:
     """
+    This is a lookalike object for the prince PCA and MFA objects.
+
     Stores precomputed PCA or MFA output tables. Each public attribute is a pandas
-    DataFrame in the same wide shape used by prince, including MultiIndex axes for
+    DataFrame/vector in the same format as prince, including MultiIndex axes for
     MFA partial outputs where applicable.
 
     Args:
         sample_coordinates (pd.DataFrame): Sample coordinates by component.
         feature_coordinates (pd.DataFrame): Feature coordinates by component.
-        eigenvalues (pd.Series): Numeric eigenvalues by component.
-        percentage_of_variance (pd.Series): Percentage of variance by
+        eigenvalues (np.ndarray): Numeric eigenvalues by component.
+        percentage_of_variance (np.ndarray): Percentage of variance by
             component, on Prince's 0-100 scale.
-        cumulative_percentage_of_variance (pd.Series): Cumulative percentage of
+        cumulative_percentage_of_variance (np.ndarray): Cumulative percentage of
             variance by component, on Prince's 0-100 scale.
         sample_cosine_similarities (pd.DataFrame): Sample cosine similarities.
         sample_contributions (pd.DataFrame): Sample contributions.
@@ -51,9 +54,9 @@ class ComponentAnalysis:
         *,
         sample_coordinates: pd.DataFrame,
         feature_coordinates: pd.DataFrame,
-        eigenvalues: pd.Series,
-        percentage_of_variance: pd.Series,
-        cumulative_percentage_of_variance: pd.Series,
+        eigenvalues: np.ndarray,
+        percentage_of_variance: np.ndarray,
+        cumulative_percentage_of_variance: np.ndarray,
         sample_cosine_similarities: pd.DataFrame,
         sample_contributions: pd.DataFrame,
         feature_correlations: pd.DataFrame,
@@ -68,11 +71,13 @@ class ComponentAnalysis:
     ):
         self.sample_coordinates = sample_coordinates.copy()
         self.feature_coordinates = feature_coordinates.copy()
-        self.eigenvalues = eigenvalues.copy()
-        self.percentage_of_variance = percentage_of_variance.copy()
-        self.cumulative_percentage_of_variance = (
-            cumulative_percentage_of_variance.copy()
-        )
+        self.eigenvalues = np.asarray(eigenvalues, dtype=float).copy()
+        self.percentage_of_variance = np.asarray(
+            percentage_of_variance, dtype=float
+        ).copy()
+        self.cumulative_percentage_of_variance = np.asarray(
+            cumulative_percentage_of_variance, dtype=float
+        ).copy()
         self.sample_cosine_similarities = sample_cosine_similarities.copy()
         self.sample_contributions = sample_contributions.copy()
         self.feature_correlations = feature_correlations.copy()
@@ -86,16 +91,61 @@ class ComponentAnalysis:
         self.partial_contributions = _copy_optional(partial_contributions)
 
     @property
-    def is_mfa(self) -> bool:
+    def is_pca(self) -> bool:
         """
-        Returns whether this result contains MFA-only output tables.
+        Returns whether this result contains complete PCA output tables.
 
         Returns:
-            bool: True when any MFA optional table is present.
+            bool: True when all required PCA tables are present and MFA-only
+            tables are absent.
         """
-        return any(
+        return all(
             table is not None
             for table in (
+                self.eigenvalues,
+                self.percentage_of_variance,
+                self.cumulative_percentage_of_variance,
+                self.sample_coordinates,
+                self.sample_cosine_similarities,
+                self.sample_contributions,
+                self.feature_coordinates,
+                self.feature_correlations,
+                self.feature_contributions,
+                self.feature_cosine_similarities,
+            )
+        ) and not any(
+            table is not None
+            for table in (
+                self.partial_sample_coordinates,
+                self.group_coordinates,
+                self.group_contributions,
+                self.group_cosine_similarities,
+                self.partial_correlations,
+                self.partial_contributions,
+            )
+        )
+
+    @property
+    def is_mfa(self) -> bool:
+        """
+        Returns whether this result contains complete MFA output tables.
+
+        Returns:
+            bool: True when all required PCA and MFA-only tables are present.
+        """
+        return all(
+            table is not None
+            for table in (
+                self.eigenvalues,
+                self.percentage_of_variance,
+                self.cumulative_percentage_of_variance,
+                self.sample_coordinates,
+                self.sample_cosine_similarities,
+                self.sample_contributions,
+                self.feature_coordinates,
+                self.feature_correlations,
+                self.feature_contributions,
+                self.feature_cosine_similarities,
                 self.partial_sample_coordinates,
                 self.group_coordinates,
                 self.group_contributions,
@@ -109,12 +159,6 @@ class ComponentAnalysis:
 def _copy_optional(table: pd.DataFrame | None) -> pd.DataFrame | None:
     """
     Copies an optional pandas object while preserving None values.
-
-    Args:
-        table (pd.DataFrame | None): The optional object to copy.
-
-    Returns:
-        pd.DataFrame | None: A copy of the input object, or None.
     """
     if table is None:
         return None

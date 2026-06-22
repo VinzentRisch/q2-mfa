@@ -7,8 +7,9 @@
 # ----------------------------------------------------------------------------
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from pandas.testing import assert_frame_equal, assert_series_equal
+from pandas.testing import assert_frame_equal
 from q2_types.tabular import TableJSONLFileFormat
 from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
 from rachis.plugin.testing import TestPluginBase
@@ -65,7 +66,7 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
         observed = to_result(fmt)
 
         self._assert_component_analysis_equal(observed, self.pca_result)
-        self.assertFalse(observed.is_mfa)
+        self.assertTrue(observed.is_pca)
 
     def test_mfa_jsonl_dirfmt_to_component_analysis_transformer(self):
         """Tests MFA JSONL directory-format deserialization."""
@@ -98,15 +99,19 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
 
         self.assertEqual(observed.short_method_name, "MFA")
         self.assertEqual(observed.long_method_name, "Multiple Factor Analysis")
-        assert_series_equal(
+        self.assertIsInstance(observed.eigvals, np.ndarray)
+        np.testing.assert_allclose(
             observed.eigvals,
             self.mfa_result.eigenvalues,
-            **FLOAT_KWARGS,
+            rtol=1e-9,
+            atol=1e-9,
         )
-        assert_series_equal(
+        self.assertIsInstance(observed.proportion_explained, np.ndarray)
+        np.testing.assert_allclose(
             observed.proportion_explained,
             self.mfa_result.percentage_of_variance / 100,
-            **FLOAT_KWARGS,
+            rtol=1e-9,
+            atol=1e-9,
         )
         assert_frame_equal(
             observed.samples,
@@ -160,8 +165,14 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
             expected_table = getattr(expected, spec.attr)
             if expected_table is None:
                 self.assertIsNone(observed_table)
-            elif isinstance(expected_table, pd.Series):
-                assert_series_equal(observed_table, expected_table, **FLOAT_KWARGS)
+            elif isinstance(expected_table, np.ndarray):
+                self.assertIsInstance(observed_table, np.ndarray)
+                np.testing.assert_allclose(
+                    observed_table,
+                    expected_table,
+                    rtol=1e-9,
+                    atol=1e-9,
+                )
             else:
                 assert_frame_equal(
                     observed_table,
@@ -211,13 +222,14 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
     """
     kwargs = {}
     for spec in _TABLE_SPECS:
-        path = directory / f"{spec.attr}.tsv"
+        suffix = ".npy" if spec.kind == "vector" else ".tsv"
+        path = directory / f"{spec.attr}{suffix}"
         if not path.exists():
             if spec.required:
                 raise FileNotFoundError(path)
             kwargs[spec.attr] = None
-        elif spec.kind == "series":
-            kwargs[spec.attr] = _read_series_table(path)
+        elif spec.kind == "vector":
+            kwargs[spec.attr] = np.load(path)
         elif spec.kind == "wide":
             kwargs[spec.attr] = _read_wide_table(path, spec.index)
         elif spec.kind == "multi_columns":
@@ -227,22 +239,6 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
         else:
             raise ValueError(f"Unknown table kind: {spec.kind}.")
     return ComponentAnalysis(**kwargs)
-
-
-def _read_series_table(path: Path) -> pd.Series:
-    """
-    Reads a component-indexed series fixture.
-
-    Args:
-        path (Path): The series TSV fixture path.
-
-    Returns:
-        pd.Series: The loaded series.
-    """
-    series = pd.read_csv(path, sep="\t", index_col=0)["value"]
-    series.index = pd.Index(series.index.astype(int), name="component")
-    series.name = None
-    return series
 
 
 def _read_wide_table(path: Path, index: str) -> pd.DataFrame:

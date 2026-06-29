@@ -9,6 +9,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from q2_types.tabular import TableJSONLFileFormat
 from q2_types.tabular._deferred_setup._transformers import (
@@ -32,9 +33,9 @@ class _TableSpec:
 
 
 _TABLE_SPECS = (
-    _TableSpec("eigenvalues", "series"),
-    _TableSpec("percentage_of_variance", "series"),
-    _TableSpec("cumulative_percentage_of_variance", "series"),
+    _TableSpec("eigenvalues", "vector"),
+    _TableSpec("percentage_of_variance", "vector"),
+    _TableSpec("cumulative_percentage_of_variance", "vector"),
     _TableSpec("sample_coordinates", "wide", index="sample_id"),
     _TableSpec("sample_cosine_similarities", "wide", index="sample_id"),
     _TableSpec("sample_contributions", "wide", index="sample_id"),
@@ -127,21 +128,21 @@ def _dirfmt_to_ordination_results(
 
 
 def _write_result_table(
-    path: Path, table: pd.DataFrame | pd.Series, spec: _TableSpec
+    path: Path, table: pd.DataFrame | np.ndarray, spec: _TableSpec
 ) -> None:
     """
     Writes a result table in long TableJSONL form.
 
     Args:
         path (Path): The JSONL output path.
-        table (pd.DataFrame | pd.Series): The table or series to write.
+        table (pd.DataFrame | np.ndarray): The table or vector to write.
         spec (_TableSpec): The table serialization specification.
 
     Returns:
         None
     """
-    if spec.kind == "series":
-        records = _series_to_long(table)
+    if spec.kind == "vector":
+        records = _vector_to_long(table)
     elif spec.kind == "wide":
         records = _wide_to_long(table, spec.index)
     elif spec.kind == "multi_columns":
@@ -154,7 +155,7 @@ def _write_result_table(
     shutil.copyfile(str(jsonl), path)
 
 
-def _read_result_table(path: Path, spec: _TableSpec) -> pd.DataFrame | pd.Series:
+def _read_result_table(path: Path, spec: _TableSpec) -> pd.DataFrame | np.ndarray:
     """
     Reads a long TableJSONL result table into Prince-shaped wide form.
 
@@ -163,11 +164,11 @@ def _read_result_table(path: Path, spec: _TableSpec) -> pd.DataFrame | pd.Series
         spec (_TableSpec): The table serialization specification.
 
     Returns:
-        pd.DataFrame | pd.Series: The reconstructed wide table or series.
+        pd.DataFrame | np.ndarray: The reconstructed wide table or vector.
     """
     table = table_jsonl_to_df(TableJSONLFileFormat(str(path), mode="r"))
-    if spec.kind == "series":
-        return _read_series(table)
+    if spec.kind == "vector":
+        return _read_vector(table)
     elif spec.kind == "wide":
         return _long_to_wide(table, spec)
     elif spec.kind == "multi_columns":
@@ -314,34 +315,35 @@ def _restore_identifier_index(index: pd.Index) -> pd.Index:
     return index
 
 
-def _series_to_long(series: pd.Series) -> pd.DataFrame:
+def _vector_to_long(vector: np.ndarray) -> pd.DataFrame:
     """
-    Converts a component-indexed Series to long records.
+    Converts a component vector to long records.
 
     Args:
-        series (pd.Series): The component-indexed values to write.
+        vector (np.ndarray): The component values to write.
 
     Returns:
         pd.DataFrame: Long records for JSONL storage.
     """
-    working = series.copy()
-    records = working.rename("value").reset_index()
-    records.columns = ["component", "value"]
-    return records
+    values = np.asarray(vector, dtype=float)
+    return pd.DataFrame(
+        {
+            "component": np.arange(len(values), dtype=int),
+            "value": values,
+        }
+    )
 
 
-def _read_series(table: pd.DataFrame) -> pd.Series:
+def _read_vector(table: pd.DataFrame) -> np.ndarray:
     """
-    Reconstructs a component-indexed Series from long table records.
+    Reconstructs a component vector from long table records.
 
     Args:
         table (pd.DataFrame): The long table records read from TableJSONL,
             with ``component`` and ``value`` columns.
 
     Returns:
-        pd.Series: The reconstructed component-indexed values.
+        np.ndarray: The reconstructed component values.
     """
-    series = table.set_index("component")["value"].astype(float)
-    series.index.name = "component"
-    series.name = None
-    return series
+    ordered = table.sort_values("component")
+    return ordered["value"].to_numpy(dtype=float)

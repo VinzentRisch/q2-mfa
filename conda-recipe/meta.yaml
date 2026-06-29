@@ -12,12 +12,14 @@ requirements:
   host:
     - pip
     - python {{ python }}
+    - pip
     - setuptools
     - versioningit
     - wheel
 
   build:
     - python {{ python }}
+    - pip
     - setuptools
     - versioningit
 

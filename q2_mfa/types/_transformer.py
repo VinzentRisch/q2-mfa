@@ -39,10 +39,10 @@ _TABLE_SPECS = (
     _TableSpec("sample_coordinates", "wide", index="sample_id"),
     _TableSpec("sample_cosine_similarities", "wide", index="sample_id"),
     _TableSpec("sample_contributions", "wide", index="sample_id"),
-    _TableSpec("feature_coordinates", "wide", index="variable"),
-    _TableSpec("feature_correlations", "wide", index="variable"),
-    _TableSpec("feature_contributions", "wide", index="variable"),
-    _TableSpec("feature_cosine_similarities", "wide", index="variable"),
+    _TableSpec("feature_coordinates", "feature_wide", index="variable"),
+    _TableSpec("feature_correlations", "feature_wide", index="variable"),
+    _TableSpec("feature_contributions", "feature_wide", index="variable"),
+    _TableSpec("feature_cosine_similarities", "feature_wide", index="variable"),
     _TableSpec("group_coordinates", "wide", index="group", required=False),
     _TableSpec("group_contributions", "wide", index="group", required=False),
     _TableSpec("group_cosine_similarities", "wide", index="group", required=False),
@@ -145,6 +145,8 @@ def _write_result_table(
         records = _vector_to_long(table)
     elif spec.kind == "wide":
         records = _wide_to_long(table, spec.index)
+    elif spec.kind == "feature_wide":
+        records = _feature_wide_to_long(table)
     elif spec.kind == "multi_columns":
         records = _multi_columns_to_long(table)
     elif spec.kind == "multi_rows":
@@ -171,6 +173,8 @@ def _read_result_table(path: Path, spec: _TableSpec) -> pd.DataFrame | np.ndarra
         return _read_vector(table)
     elif spec.kind == "wide":
         return _long_to_wide(table, spec)
+    elif spec.kind == "feature_wide":
+        return _long_to_feature_wide(table, spec)
     elif spec.kind == "multi_columns":
         return _long_to_multi_columns(table)
     elif spec.kind == "multi_rows":
@@ -215,6 +219,59 @@ def _long_to_wide(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
     wide_table.index = _restore_identifier_index(wide_table.index)
     wide_table.columns = _restore_identifier_index(wide_table.columns)
     return wide_table
+
+
+def _feature_wide_to_long(table: pd.DataFrame) -> pd.DataFrame:
+    """
+    Converts a feature table to long component records.
+
+    Tuple-valued feature indexes from Prince MFA are split into explicit group
+    and variable columns. Flat PCA-style feature indexes keep the legacy
+    variable-only schema.
+
+    Args:
+        table (pd.DataFrame): The wide feature table.
+
+    Returns:
+        pd.DataFrame: Long records for JSONL storage.
+    """
+    if isinstance(table.index[0], tuple):
+        working = table.copy()
+        working.index = pd.MultiIndex.from_tuples(
+            working.index, names=["group", "variable"]
+        )
+        return working.reset_index().melt(
+            id_vars=["group", "variable"],
+            var_name="component",
+            value_name="value",
+        )
+    return _wide_to_long(table, "variable")
+
+
+def _long_to_feature_wide(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
+    """
+    Reconstructs a feature table from long component records.
+
+    Args:
+        table (pd.DataFrame): The long table records.
+        spec (_TableSpec): The table serialization specification.
+
+    Returns:
+        pd.DataFrame: The reconstructed feature table.
+    """
+    if {"group", "variable"}.issubset(table.columns):
+        wide_table = table.pivot(
+            index=["group", "variable"], columns="component", values="value"
+        )
+        labels = list(wide_table.index)
+        values = np.empty(len(labels), dtype=object)
+        values[:] = [tuple(label) for label in labels]
+        wide_table.index = pd.Index(values, name="variable")
+        wide_table.columns.name = "component"
+        wide_table.index = _restore_identifier_index(wide_table.index)
+        wide_table.columns = _restore_identifier_index(wide_table.columns)
+        return wide_table
+    return _long_to_wide(table, spec)
 
 
 def _multi_columns_to_long(table: pd.DataFrame) -> pd.DataFrame:

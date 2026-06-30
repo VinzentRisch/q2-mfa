@@ -10,10 +10,10 @@ import warnings
 
 import pandas as pd
 import prince
+from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
-from skbio import OrdinationResults
 
-from q2_mfa.types import ComponentAnalysisDirFmt
+from q2_mfa.types import ComponentAnalysis
 
 
 def resolve_random_state(random_state: CaptureHolder[int], engine: str):
@@ -53,10 +53,10 @@ def drop_columns_with_missing_values(table: pd.DataFrame) -> pd.DataFrame:
     if len(missing_value_columns) > 0:
         warnings.warn(
             (
-                "\033[33mDropped columns with missing values: "
-                f"{', '.join(missing_value_columns)}\033[0m"
+                "Dropped columns with missing values: "
+                f"{', '.join(missing_value_columns)}"
             ),
-            UserWarning,
+            RachisWarning,
             stacklevel=2,
         )
         table = table.drop(columns=missing_value_columns)
@@ -80,14 +80,43 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
     if len(zero_variance_columns) > 0:
         warnings.warn(
             (
-                "\033[33mDropped columns with zero variance: "
-                f"{', '.join(zero_variance_columns)}\033[0m"
+                "Dropped columns with zero variance: "
+                f"{', '.join(zero_variance_columns)}"
             ),
-            UserWarning,
+            RachisWarning,
             stacklevel=2,
         )
         table = table.drop(columns=zero_variance_columns)
     return table
+
+
+def create_component_analysis_object(
+    pca_result: prince.PCA, table: pd.DataFrame
+) -> ComponentAnalysis:
+    """
+    Convert a fitted Prince PCA result into a ComponentAnalysis object.
+
+    Args:
+        pca_result (prince.PCA): The fitted Prince PCA model.
+        table (pd.DataFrame): The input table used to fit the PCA model.
+
+    Returns:
+        ComponentAnalysis: The PCA result in component-analysis form.
+    """
+    return ComponentAnalysis(
+        eigenvalues=pca_result.eigenvalues_,
+        percentage_of_variance=pca_result.percentage_of_variance_,
+        cumulative_percentage_of_variance=(
+            pca_result.cumulative_percentage_of_variance_
+        ),
+        sample_coordinates=pca_result.row_coordinates(table),
+        feature_coordinates=pca_result.column_coordinates_,
+        sample_cosine_similarities=pca_result.row_cosine_similarities(table),
+        sample_contributions=pca_result.row_contributions_,
+        feature_correlations=pca_result.column_correlations,
+        feature_contributions=pca_result.column_contributions_,
+        feature_cosine_similarities=pca_result.column_cosine_similarities_,
+    )
 
 
 def pca(
@@ -99,13 +128,13 @@ def pca(
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
     filter_zero_variance: bool = True,
-) -> ComponentAnalysisDirFmt:
+) -> ComponentAnalysis:
     """
     Perform principal component analysis with prince.
 
     Filters columns with missing values, optionally filters columns with zero
-    variance, fits a prince PCA model, and writes ordination and supporting
-    numeric outputs to a component-analysis directory format.
+    variance, fits a Prince PCA model, and returns component-analysis output
+    tables.
 
     Args:
         table (pd.DataFrame): The input sample-by-feature table.
@@ -118,10 +147,10 @@ def pca(
         random_state (CaptureHolder[int]): The optional random seed holder.
         engine (str): The SVD engine used by prince.
         filter_zero_variance (bool): Whether to remove zero-variance columns
-            before ordination.
+            before analysis.
 
     Returns:
-        ComponentAnalysisDirFmt: The PCA results directory format.
+        ComponentAnalysis: The PCA result in component-analysis form.
     """
     table = drop_columns_with_missing_values(table)
     if filter_zero_variance:
@@ -133,27 +162,5 @@ def pca(
     pca_params.pop("table")
     pca_params.pop("filter_zero_variance")
 
-    pca = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
-
-    ordination = OrdinationResults(
-        short_method_name="PCA",
-        long_method_name="Principal Component Analysis",
-        eigvals=pd.Series(pca.eigenvalues_),
-        samples=pca.row_coordinates(table),
-        features=pca.column_coordinates_,
-        proportion_explained=pd.Series(pca.percentage_of_variance_),
-    )
-
-    results = ComponentAnalysisDirFmt()
-    results.ordination.write_data(ordination, OrdinationResults)
-    numeric_outputs = {
-        results.sample_cosine_similarities: pca.row_cosine_similarities(table),
-        results.sample_contributions: pca.row_contributions_,
-        results.feature_correlations: pca.column_correlations,
-        results.feature_contributions: pca.column_contributions_,
-        results.feature_cosine_similarities: pca.column_cosine_similarities_,
-    }
-    for output, data in numeric_outputs.items():
-        output.write_data(data, pd.DataFrame)
-
-    return results
+    pca_result = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
+    return create_component_analysis_object(pca_result, table)

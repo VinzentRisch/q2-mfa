@@ -111,19 +111,19 @@ plugin.methods.register_function(
             "parameter is ignored by the 'scipy' engine."
         ),
         "filter_zero_variance": (
-            "Whether to remove columns with zero variance before ordination."
+            "Whether to remove columns with zero variance before analysis."
         ),
     },
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
         "Principal component analysis implementation with the prince package. "
-        "The output is an ordination result: eigenvalues correspond to prince "
-        "eigenvalues, sites correspond to sample coordinates, species correspond to "
-        "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance. All other outputs come directly from the prince "
-        "package. Features with missing values are automatically removed before "
-        "ordination. Please check the prince package docs for more information:"
+        "The output is a component-analysis result containing eigenvalues, "
+        "sample coordinates, feature coordinates, variance percentages, and "
+        "supporting PCA tables from prince. The result can also be viewed as an "
+        "ordination result through the registered transformer. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package docs for more information:"
         "https://maxhalford.github.io/prince/pca/"
     ),
     citations=[

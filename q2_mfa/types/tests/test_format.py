@@ -220,6 +220,8 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
             kwargs[spec.attr] = np.load(path)
         elif spec.kind == "wide":
             kwargs[spec.attr] = _read_wide_table(path, spec.index)
+        elif spec.kind == "feature_wide":
+            kwargs[spec.attr] = _read_feature_wide_table(path)
         elif spec.kind == "multi_columns":
             kwargs[spec.attr] = _read_multi_columns_table(path)
         elif spec.kind == "multi_rows":
@@ -243,6 +245,29 @@ def _read_wide_table(path: Path, index: str) -> pd.DataFrame:
     table = pd.read_csv(path, sep="\t", index_col=0)
     table.columns = pd.Index(table.columns.astype(int), name="component")
     table.index.name = None if index == "sample_id" else index
+    return table
+
+
+def _read_feature_wide_table(path: Path) -> pd.DataFrame:
+    """
+    Reads a feature table fixture.
+
+    Args:
+        path (Path): The wide TSV fixture path.
+
+    Returns:
+        pd.DataFrame: The loaded feature table.
+    """
+    table = pd.read_csv(path, sep="\t")
+    if {"group", "variable"}.issubset(table.columns):
+        labels = list(zip(table.pop("group"), table.pop("variable")))
+        values = np.empty(len(labels), dtype=object)
+        values[:] = [tuple(label) for label in labels]
+        table.index = pd.Index(values, name="variable")
+    else:
+        table = table.set_index("variable")
+        table.index.name = "variable"
+    table.columns = pd.Index(table.columns.astype(int), name="component")
     return table
 
 

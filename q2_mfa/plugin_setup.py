@@ -8,24 +8,13 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from q2_types.ordination import PCoAResults
-from rachis.core.type import (
-    Bool,
-    Choices,
-    Collection,
-    Float,
-    Int,
-    Metadata,
-    Properties,
-    Range,
-    Str,
-)
+from rachis.core.type import Bool, Choices, Collection, Float, Int, Metadata, Range, Str
 from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
-from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt, NumericTSVFormat
+from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisType
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -148,19 +137,19 @@ plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
     parameters=ordination_parameters,
-    outputs=[("pca_results", PCoAResults % Properties("pca"))],
+    outputs=[("pca_results", ComponentAnalysisType)],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
         "Principal component analysis implementation with the prince package. "
-        "The output is an ordination result: eigenvalues correspond to prince "
-        "eigenvalues, sites correspond to sample coordinates, species correspond to "
-        "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance. All other outputs come directly from the prince "
-        "package. Features with missing values are automatically removed before "
-        "ordination. Please check the prince package docs for more information:"
+        "The output is a component-analysis result containing eigenvalues, "
+        "sample coordinates, feature coordinates, variance percentages, and "
+        "supporting PCA tables from prince. The result can also be viewed as an "
+        "ordination result through the registered transformer. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package docs for more information:"
         "https://maxhalford.github.io/prince/pca/"
     ),
     citations=[
@@ -172,7 +161,7 @@ plugin.methods.register_function(
     function=mfa,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=mfa_parameters,
-    outputs=[("mfa_results", ComponentAnalysis)],
+    outputs=[("mfa_results", ComponentAnalysisType)],
     input_descriptions={
         "tables": (
             "Optional feature tables to include as MFA groups. At least two "
@@ -202,11 +191,10 @@ plugin.methods.register_function(
 
 plugin.register_formats(
     ComponentAnalysisDirFmt,
-    NumericTSVFormat,
 )
-plugin.register_semantic_types(ComponentAnalysis)
+plugin.register_semantic_types(ComponentAnalysisType)
 plugin.register_artifact_class(
-    ComponentAnalysis,
+    ComponentAnalysisType,
     directory_format=ComponentAnalysisDirFmt,
     description=(
         "Represents the output for PCA and MFA actions implemented with the Prince "

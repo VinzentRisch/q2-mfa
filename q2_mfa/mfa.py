@@ -12,14 +12,14 @@ import pandas as pd
 import prince
 from rachis import Metadata
 from rachis.plugin import CaptureHolder
-from skbio import OrdinationResults
 
 from q2_mfa.pca import (
+    create_component_analysis_object,
     drop_columns_with_missing_values,
     drop_zero_variance_columns,
     resolve_random_state,
 )
-from q2_mfa.types import ComponentAnalysisDirFmt
+from q2_mfa.types import ComponentAnalysis
 
 
 def _validate_group_name(group_name):
@@ -273,14 +273,14 @@ def mfa(
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
     filter_zero_variance: bool = True,
-) -> ComponentAnalysisDirFmt:
+) -> ComponentAnalysis:
     """
-    Runs Multiple Factor Analysis and writes all Prince-derived outputs.
+    Runs Multiple Factor Analysis and returns all Prince-derived outputs.
 
     Combines feature tables and optional sample metadata into Prince's MFA input
-    representation, fits ``prince.MFA``, and serializes the ordination plus
-    MFA-specific coordinate, contribution, correlation, and cosine-similarity
-    tables into a component-analysis directory format.
+    representation, fits ``prince.MFA``, and returns a component-analysis object
+    with MFA-specific coordinate, contribution, correlation, and
+    cosine-similarity tables.
 
     Args:
         tables (pd.DataFrame | None): Feature table collection where each
@@ -303,8 +303,7 @@ def mfa(
             before ordination.
 
     Returns:
-        ComponentAnalysisDirFmt: Component-analysis directory format containing
-            the MFA ordination and numeric Prince output tables.
+        ComponentAnalysis: The MFA result in component-analysis form.
     """
     random_state = resolve_random_state(random_state, engine)
 
@@ -322,31 +321,4 @@ def mfa(
     )
 
     mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
-
-    ordination = OrdinationResults(
-        short_method_name="MFA",
-        long_method_name="Multiple Factor Analysis",
-        eigvals=pd.Series(mfa_result.eigenvalues_),
-        samples=mfa_result.row_coordinates(table),
-        features=mfa_result.column_coordinates_,
-        proportion_explained=pd.Series(mfa_result.percentage_of_variance_),
-    )
-    results = ComponentAnalysisDirFmt()
-    results.ordination.write_data(ordination, OrdinationResults)
-    numeric_outputs = {
-        results.partial_sample_coordinates: mfa_result.partial_row_coordinates(table),
-        results.sample_cosine_similarities: mfa_result.row_cosine_similarities(table),
-        results.sample_contributions: mfa_result.row_contributions_,
-        results.group_coordinates: mfa_result.group_coordinates_,
-        results.group_contributions: mfa_result.group_contributions_,
-        results.group_cosine_similarities: mfa_result.group_cosine_similarities_,
-        results.partial_correlations: mfa_result.partial_correlations_,
-        results.partial_contributions: mfa_result.partial_contributions_,
-        results.feature_correlations: mfa_result.column_correlations,
-        results.feature_contributions: mfa_result.column_contributions_,
-        results.feature_cosine_similarities: mfa_result.column_cosine_similarities_,
-    }
-    for output, data in numeric_outputs.items():
-        output.write_data(data, pd.DataFrame)
-
-    return results
+    return create_component_analysis_object(mfa_result, table)

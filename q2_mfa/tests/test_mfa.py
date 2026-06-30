@@ -5,15 +5,16 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import os
 import warnings
 
+import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pandas.testing as pdt
 import prince
 from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
-from skbio import OrdinationResults
 
 from q2_mfa.mfa import (
     _build_prince_input,
@@ -23,8 +24,8 @@ from q2_mfa.mfa import (
     _validate_metadata_group_column_types,
     mfa,
 )
-from q2_mfa.types import ComponentAnalysisDirFmt
-from q2_mfa.types._transformer import _dataframe_to_numeric_tsv
+from q2_mfa.pca import create_component_analysis_object
+from q2_mfa.types import ComponentAnalysis
 
 
 class TestMFA(TestPluginBase):
@@ -51,12 +52,6 @@ class TestMFA(TestPluginBase):
 
     def _load_table(self, filename):
         return pd.read_csv(self.get_data_path(filename), sep="\t", index_col=0)
-
-    def _assert_prince_table_written(self, results, output, expected):
-        observed = pd.read_csv(output.path_maker(), sep="\t")
-        expected_format = _dataframe_to_numeric_tsv(expected)
-        expected = pd.read_csv(str(expected_format), sep="\t")
-        pdt.assert_frame_equal(observed, expected, check_dtype=False)
 
     def test_validate_group_name(self):
         self.assertIsNone(_validate_group_name("clinical"))
@@ -255,23 +250,19 @@ class TestMFA(TestPluginBase):
 
         observed_messages = [str(warning.message) for warning in observed]
         self.assertIn(
-            "\033[33mDropped columns with missing values: "
-            "metabolome:feature-missing\033[0m",
+            "Dropped columns with missing values: metabolome:feature-missing",
             observed_messages,
         )
         self.assertIn(
-            "\033[33mDropped columns with zero variance: "
-            "metabolome:feature-constant\033[0m",
+            "Dropped columns with zero variance: metabolome:feature-constant",
             observed_messages,
         )
         self.assertIn(
-            "\033[33mDropped columns with missing values: "
-            "empty:feature-drop-missing\033[0m",
+            "Dropped columns with missing values: empty:feature-drop-missing",
             observed_messages,
         )
         self.assertIn(
-            "\033[33mDropped columns with zero variance: "
-            "empty:feature-drop-constant\033[0m",
+            "Dropped columns with zero variance: empty:feature-drop-constant",
             observed_messages,
         )
         self.assertIn(
@@ -384,94 +375,62 @@ class TestMFA(TestPluginBase):
                 {"metabolome": "age"},
             )
 
-    def test_mfa_parses_prince_values_and_names(self):
+    def test_mfa_outputs_match_prince_regression_fixtures(self):
         tables = {"metabolome": self.table_a, "microbiome": self.table_b}
-        metadata_groups = {"clinical": "age,bmi"}
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            results = mfa(
-                tables=tables,
-                sample_metadata=self.sample_metadata,
-                metadata_groups=metadata_groups,
-                engine="scipy",
-            )
+        expected_dir = self.get_data_path("mfa/prince-regression")
+        results = mfa(tables=tables, engine="scipy")
 
-            table, groups = _build_prince_input(
-                tables,
-                self.sample_metadata,
-                metadata_groups,
-            )
+        observed_vectors = {
+            "eigenvalues": results.eigenvalues,
+            "percentage_of_variance": results.percentage_of_variance,
+            "cumulative_percentage_of_variance": (
+                results.cumulative_percentage_of_variance
+            ),
+        }
+        observed_tables = {
+            "sample_coordinates": results.sample_coordinates.to_numpy(),
+            "feature_coordinates": results.feature_coordinates.to_numpy(),
+            "sample_cosine_similarities": (
+                results.sample_cosine_similarities.to_numpy()
+            ),
+            "sample_contributions": results.sample_contributions.to_numpy(),
+            "feature_correlations": results.feature_correlations.to_numpy(),
+            "feature_contributions": results.feature_contributions.to_numpy(),
+            "feature_cosine_similarities": (
+                results.feature_cosine_similarities.to_numpy()
+            ),
+            "partial_sample_coordinates": (
+                results.partial_sample_coordinates.to_numpy()
+            ),
+            "group_coordinates": results.group_coordinates.to_numpy(),
+            "group_contributions": results.group_contributions.to_numpy(),
+            "group_cosine_similarities": (results.group_cosine_similarities.to_numpy()),
+            "partial_correlations": results.partial_correlations.to_numpy(),
+            "partial_contributions": results.partial_contributions.to_numpy(),
+        }
+
+        self.assertIsInstance(results, ComponentAnalysis)
+        self.assertTrue(results.is_mfa)
+        for output_name, observed in observed_vectors.items():
+            expected = np.loadtxt(os.path.join(expected_dir, f"{output_name}.tsv"))
+            npt.assert_allclose(observed, expected)
+        for output_name, observed in observed_tables.items():
+            expected = pd.read_csv(
+                os.path.join(expected_dir, f"{output_name}.tsv"),
+                sep="\t",
+                header=None,
+            ).to_numpy()
+            npt.assert_allclose(observed, expected)
+
+    def test_create_component_analysis_object_from_mfa(self):
+        tables = {"metabolome": self.table_a, "microbiome": self.table_b}
+        table, groups = _build_prince_input(tables)
         prince_result = prince.MFA(engine="scipy").fit(table, groups=groups)
 
-        results.validate()
-        ordn = results.ordination.view(OrdinationResults)
-        prince_samples = prince_result.row_coordinates(table)
-        prince_features = prince_result.column_coordinates_
-        self.assertIsInstance(results, ComponentAnalysisDirFmt)
-        self.assertIsInstance(ordn, OrdinationResults)
+        observed = create_component_analysis_object(prince_result, table)
 
-        npt.assert_allclose(ordn.samples.to_numpy(), prince_samples.to_numpy())
-        npt.assert_allclose(ordn.features.to_numpy(), prince_features.to_numpy())
-        npt.assert_allclose(ordn.eigvals.to_numpy(), prince_result.eigenvalues_)
-        npt.assert_allclose(
-            ordn.proportion_explained.to_numpy(),
-            prince_result.percentage_of_variance_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.partial_sample_coordinates,
-            prince_result.partial_row_coordinates(table),
-        )
-        self._assert_prince_table_written(
-            results,
-            results.sample_cosine_similarities,
-            prince_result.row_cosine_similarities(table),
-        )
-        self._assert_prince_table_written(
-            results,
-            results.sample_contributions,
-            prince_result.row_contributions_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.group_coordinates,
-            prince_result.group_coordinates_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.group_contributions,
-            prince_result.group_contributions_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.group_cosine_similarities,
-            prince_result.group_cosine_similarities_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.partial_correlations,
-            prince_result.partial_correlations_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.partial_contributions,
-            prince_result.partial_contributions_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.feature_correlations,
-            prince_result.column_correlations,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.feature_contributions,
-            prince_result.column_contributions_,
-        )
-        self._assert_prince_table_written(
-            results,
-            results.feature_cosine_similarities,
-            prince_result.column_cosine_similarities_,
-        )
+        self.assertIsInstance(observed, ComponentAnalysis)
+        self.assertTrue(observed.is_mfa)
 
     def test_mfa_filters_missing_and_zero_variance_features(self):
         tables = {
@@ -485,19 +444,16 @@ class TestMFA(TestPluginBase):
 
         observed_messages = [str(warning.message) for warning in observed]
         self.assertIn(
-            "\033[33mDropped columns with missing values: "
-            "metabolome:feature-missing\033[0m",
+            "Dropped columns with missing values: metabolome:feature-missing",
             observed_messages,
         )
         self.assertIn(
-            "\033[33mDropped columns with zero variance: "
-            "metabolome:feature-constant\033[0m",
+            "Dropped columns with zero variance: metabolome:feature-constant",
             observed_messages,
         )
 
-        ordination = results.ordination.view(OrdinationResults)
         self.assertEqual(
-            list(ordination.features.index),
+            list(results.feature_coordinates.index),
             [
                 "metabolome:feature-a1",
                 "metabolome:feature-a2",

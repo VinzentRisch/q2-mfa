@@ -91,31 +91,45 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_component_analysis_object(
-    pca_result: prince.PCA, table: pd.DataFrame
+    prince_result: prince.PCA | prince.MFA, table: pd.DataFrame
 ) -> ComponentAnalysis:
     """
-    Convert a fitted Prince PCA result into a ComponentAnalysis object.
+    Convert a fitted Prince PCA or MFA result into a ComponentAnalysis object.
 
     Args:
-        pca_result (prince.PCA): The fitted Prince PCA model.
-        table (pd.DataFrame): The input table used to fit the PCA model.
+        prince_result (prince.PCA | prince.MFA): The fitted Prince model.
+        table (pd.DataFrame): The input table used to fit the Prince model.
 
     Returns:
-        ComponentAnalysis: The PCA result in component-analysis form.
+        ComponentAnalysis: The Prince result in component-analysis form.
     """
+    mfa_kwargs = {}
+    if isinstance(prince_result, prince.MFA):
+        mfa_kwargs = {
+            "partial_sample_coordinates": (
+                prince_result.partial_row_coordinates(table)
+            ),
+            "group_coordinates": prince_result.group_coordinates_,
+            "group_contributions": prince_result.group_contributions_,
+            "group_cosine_similarities": (prince_result.group_cosine_similarities_),
+            "partial_correlations": prince_result.partial_correlations_,
+            "partial_contributions": prince_result.partial_contributions_,
+        }
+
     return ComponentAnalysis(
-        eigenvalues=pca_result.eigenvalues_,
-        percentage_of_variance=pca_result.percentage_of_variance_,
+        eigenvalues=prince_result.eigenvalues_,
+        percentage_of_variance=prince_result.percentage_of_variance_,
         cumulative_percentage_of_variance=(
-            pca_result.cumulative_percentage_of_variance_
+            prince_result.cumulative_percentage_of_variance_
         ),
-        sample_coordinates=pca_result.row_coordinates(table),
-        feature_coordinates=pca_result.column_coordinates_,
-        sample_cosine_similarities=pca_result.row_cosine_similarities(table),
-        sample_contributions=pca_result.row_contributions_,
-        feature_correlations=pca_result.column_correlations,
-        feature_contributions=pca_result.column_contributions_,
-        feature_cosine_similarities=pca_result.column_cosine_similarities_,
+        sample_coordinates=prince_result.row_coordinates(table),
+        feature_coordinates=prince_result.column_coordinates_,
+        sample_cosine_similarities=prince_result.row_cosine_similarities(table),
+        sample_contributions=prince_result.row_contributions_,
+        feature_correlations=prince_result.column_correlations,
+        feature_contributions=prince_result.column_contributions_,
+        feature_cosine_similarities=prince_result.column_cosine_similarities_,
+        **mfa_kwargs,
     )
 
 

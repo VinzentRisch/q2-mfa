@@ -111,7 +111,7 @@ def create_component_analysis_object(
             ),
             "group_coordinates": prince_result.group_coordinates_,
             "group_contributions": prince_result.group_contributions_,
-            "group_cosine_similarities": (prince_result.group_cosine_similarities_),
+            "group_cosine_similarities": prince_result.group_cosine_similarities_,
             "partial_correlations": prince_result.partial_correlations_,
             "partial_contributions": prince_result.partial_contributions_,
         }

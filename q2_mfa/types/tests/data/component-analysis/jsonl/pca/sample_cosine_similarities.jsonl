@@ -1,0 +1,11 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"sample_id","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"Quality of each sample's representation on each component. Prince source: `row_cosine_similarities(table)`.","extra":{}}
+{"sample_id":"s1","component":0,"value":0.0147739472}
+{"sample_id":"s2","component":0,"value":0.9805144043}
+{"sample_id":"s3","component":0,"value":0.5419318953}
+{"sample_id":"s4","component":0,"value":0.9183742782}
+{"sample_id":"s5","component":0,"value":0.5961081356}
+{"sample_id":"s1","component":1,"value":0.9793465675}
+{"sample_id":"s2","component":1,"value":0.0159133678}
+{"sample_id":"s3","component":1,"value":0.3623262427}
+{"sample_id":"s4","component":1,"value":0.010491309}
+{"sample_id":"s5","component":1,"value":0.0945051953}

@@ -1,0 +1,9 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"group","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"partial_component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"Correlation between each group's partial PCA component and each global MFA component. Prince source: `partial_correlations_`.","extra":{}}
+{"group":"chemical","partial_component":0,"component":0,"value":0.9196109002}
+{"group":"chemical","partial_component":1,"component":0,"value":-0.0410369096}
+{"group":"physical","partial_component":0,"component":0,"value":0.6721401582}
+{"group":"physical","partial_component":1,"component":0,"value":-0.713797829}
+{"group":"chemical","partial_component":0,"component":1,"value":0.3841112645}
+{"group":"chemical","partial_component":1,"component":1,"value":-0.0623305944}
+{"group":"physical","partial_component":0,"component":1,"value":-0.7398294902}
+{"group":"physical","partial_component":1,"component":1,"value":-0.6580305966}

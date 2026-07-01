@@ -200,6 +200,10 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
             expected = table_jsonl_to_df(
                 TableJSONLFileFormat(str(expected_file), mode="r")
             )
+            self.assertEqual(
+                observed.attrs["description"],
+                expected.attrs["description"],
+            )
             assert_frame_equal(
                 observed.reset_index(drop=True),
                 expected.reset_index(drop=True),

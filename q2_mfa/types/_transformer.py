@@ -28,6 +28,7 @@ from ._result import ComponentAnalysis
 class _TableSpec:
     attr: str
     kind: str
+    description: str
     index: str | None = None
     required: bool = True
     row_index: tuple[str, ...] | None = None
@@ -35,43 +36,112 @@ class _TableSpec:
 
 
 _TABLE_SPECS = (
-    _TableSpec("eigenvalues", "vector"),
-    _TableSpec("percentage_of_variance", "vector"),
-    _TableSpec("cumulative_percentage_of_variance", "vector"),
-    _TableSpec("sample_coordinates", "wide", index="sample_id"),
-    _TableSpec("sample_cosine_similarities", "wide", index="sample_id"),
-    _TableSpec("sample_contributions", "wide", index="sample_id"),
+    _TableSpec(
+        "eigenvalues",
+        "vector",
+        "Variance captured by each component. Prince source: `eigenvalues_`.",
+    ),
+    _TableSpec(
+        "percentage_of_variance",
+        "vector",
+        "Percent of total variance explained by each component. "
+        "Prince source: `percentage_of_variance_`.",
+    ),
+    _TableSpec(
+        "cumulative_percentage_of_variance",
+        "vector",
+        "Cumulative percent variance explained across components. "
+        "Prince source: `cumulative_percentage_of_variance_`.",
+    ),
+    _TableSpec(
+        "sample_coordinates",
+        "wide",
+        "Sample positions on the component axes. "
+        "Prince source: `row_coordinates(table)`.",
+        index="sample_id",
+    ),
+    _TableSpec(
+        "sample_cosine_similarities",
+        "wide",
+        "Quality of each sample's representation on each component. "
+        "Prince source: `row_cosine_similarities(table)`.",
+        index="sample_id",
+    ),
+    _TableSpec(
+        "sample_contributions",
+        "wide",
+        "Contribution of each sample to each component. "
+        "Prince source: `row_contributions_`.",
+        index="sample_id",
+    ),
     _TableSpec(
         "feature_coordinates",
         "indexed_rows",
+        "Feature coordinates, also called feature loadings, on the component "
+        "axes. Prince source: `column_coordinates_`.",
         index="variable",
         row_index=("group", "variable"),
     ),
     _TableSpec(
         "feature_correlations",
         "indexed_rows",
+        "Correlation of each feature with each component. "
+        "Prince source: `column_correlations`.",
         index="variable",
         row_index=("group", "variable"),
     ),
     _TableSpec(
         "feature_contributions",
         "indexed_rows",
+        "Contribution of each feature to each component. "
+        "Prince source: `column_contributions_`.",
         index="variable",
         row_index=("group", "variable"),
     ),
     _TableSpec(
         "feature_cosine_similarities",
         "indexed_rows",
+        "Quality of each feature's representation on each component. "
+        "Prince source: `column_cosine_similarities_`.",
         index="variable",
         row_index=("group", "variable"),
     ),
-    _TableSpec("group_coordinates", "wide", index="group", required=False),
-    _TableSpec("group_contributions", "wide", index="group", required=False),
-    _TableSpec("group_cosine_similarities", "wide", index="group", required=False),
-    _TableSpec("partial_sample_coordinates", "multi_columns", required=False),
+    _TableSpec(
+        "group_coordinates",
+        "wide",
+        "Group positions on the component axes. "
+        "Prince source: `group_coordinates_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "group_contributions",
+        "wide",
+        "Contribution of each group to each component. "
+        "Prince source: `group_contributions_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "group_cosine_similarities",
+        "wide",
+        "Quality of each group's representation on each component. "
+        "Prince source: `group_cosine_similarities_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "partial_sample_coordinates",
+        "multi_columns",
+        "Sample positions by group and partial PCA component. "
+        "Prince source: `partial_row_coordinates(table)`.",
+        required=False,
+    ),
     _TableSpec(
         "partial_correlations",
         "indexed_rows",
+        "Correlation between each group's partial PCA component and each "
+        "global MFA component. Prince source: `partial_correlations_`.",
         required=False,
         row_index=("group", "partial_component"),
         restored_index=("group", "component"),
@@ -79,6 +149,8 @@ _TABLE_SPECS = (
     _TableSpec(
         "partial_contributions",
         "indexed_rows",
+        "Contribution of each group's partial PCA component to each global "
+        "MFA component. Prince source: `partial_contributions_`.",
         required=False,
         row_index=("group", "partial_component"),
         restored_index=("group", "component"),
@@ -185,7 +257,11 @@ def _write_result_table(
         records = _multi_columns_to_long(table)
     else:  # pragma: no cover
         raise ValueError(f"Unknown table kind: {spec.kind}.")
-    jsonl = df_to_table_jsonl(records.reset_index(drop=True).convert_dtypes())
+    records = records.reset_index(drop=True).convert_dtypes()
+    records.attrs["description"] = spec.description
+    for column in records.columns:
+        records[column].attrs["description"] = ""
+    jsonl = df_to_table_jsonl(records)
     shutil.copyfile(str(jsonl), path)
 
 

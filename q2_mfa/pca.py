@@ -54,7 +54,8 @@ def drop_columns_with_missing_values(table: pd.DataFrame) -> pd.DataFrame:
         warnings.warn(
             (
                 "Dropped columns with missing values: "
-                f"{', '.join(missing_value_columns)}"
+                f"{', '.join(str(column) for column in
+                             missing_value_columns.to_flat_index())}"
             ),
             RachisWarning,
             stacklevel=2,
@@ -81,7 +82,8 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
         warnings.warn(
             (
                 "Dropped columns with zero variance: "
-                f"{', '.join(zero_variance_columns)}"
+                f"{', '.join(str(column) for column in
+                             zero_variance_columns.to_flat_index())}"
             ),
             RachisWarning,
             stacklevel=2,

@@ -11,6 +11,7 @@ from functools import reduce
 import pandas as pd
 import prince
 from rachis import Metadata
+from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
 
 from q2_mfa.pca import (
@@ -20,16 +21,6 @@ from q2_mfa.pca import (
     resolve_random_state,
 )
 from q2_mfa.types import ComponentAnalysis
-
-
-def _validate_group_name(group_name):
-    """
-    Checks that the group name does not contain the colon character, which is
-    reserved for constructing prefixed MFA feature names in the form
-    ``group:feature``.
-    """
-    if ":" in group_name:
-        raise ValueError("MFA group names cannot contain ':'.")
 
 
 def _parse_metadata_groups(metadata_groups, metadata_columns):
@@ -61,8 +52,6 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
 
     group_mapping = {}
     for group_name, columns in metadata_groups.items():
-        if not group_name:
-            raise ValueError("Metadata group names cannot be empty.")
         columns = [column.strip() for column in columns.split(",") if column.strip()]
         if not columns:
             raise ValueError(
@@ -106,9 +95,8 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
 
     Converts a metadata object to a DataFrame and splits it into one
     DataFrame per requested metadata group. The function validates that all
-    requested metadata columns exist, that no metadata column is assigned to
-    more than one metadata group, and that metadata group names can be used as
-    MFA group names.
+    requested metadata columns exist, and that no metadata column is assigned to
+    more than one metadata group.
 
     Args:
         sample_metadata (Metadata | None): The sample metadata to include in
@@ -157,7 +145,6 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
 
     grouped_tables = {}
     for group_name, columns in group_mapping.items():
-        _validate_group_name(group_name)
         grouped_tables[group_name] = metadata.loc[:, columns]
 
     return grouped_tables
@@ -168,16 +155,15 @@ def _build_prince_input(
     sample_metadata=None,
     metadata_groups=None,
     filter_zero_variance: bool = True,
-) -> tuple[pd.DataFrame, dict]:
+) -> pd.DataFrame:
     """
-    Builds the wide input table and group mapping expected by ``prince.MFA``.
+    Builds the grouped wide input table expected by ``prince.MFA``.
 
     Merges feature-table groups and metadata groups, keeps only sample IDs that
-    are shared across every group, and prefixes each column as
-    ``group:feature``. The returned group mapping tells Prince which columns belong
-    to each MFA group. All features with missing values and 0 variance (if
-    filter_zero_variance = True) are dropped. If a group is empty after filtering it
-    is also dropped and the user is warned.
+    are shared across every group, and stores the group labels in the first
+    level of a two-level column MultiIndex. All features with missing values
+    and 0 variance (if filter_zero_variance = True) are dropped. If a group is
+    empty after filtering it is also dropped and the user is warned.
 
     Args:
         tables (dict | None): Feature table groups where keys are MFA group
@@ -189,9 +175,7 @@ def _build_prince_input(
             before ordination.
 
     Returns:
-        tuple[pd.DataFrame, dict]: A tuple containing:
-            - pd.DataFrame: MFA input table with prefixed feature columns.
-            - dict: MFA group names mapped to column names.
+        pd.DataFrame: MFA input table with grouped MultiIndex columns.
     """
     tables = {} if tables is None else dict(getattr(tables, "collection", tables))
 
@@ -206,7 +190,8 @@ def _build_prince_input(
     tables.update(metadata_tables)
 
     for group_name in tables:
-        _validate_group_name(group_name)
+        if not group_name.strip():
+            raise ValueError("MFA group names cannot be empty strings.")
 
     table_values = list(tables.values())
     consensus_samples = (
@@ -222,44 +207,42 @@ def _build_prince_input(
     if table_values and consensus_samples.empty:
         raise ValueError("MFA inputs do not share any sample IDs.")
 
-    prefixed_tables = []
-    groups = {}
+    grouped_tables = []
     for group_name, table in tables.items():
         dropped_samples = table.index.difference(consensus_samples)
         if not dropped_samples.empty:
             warnings.warn(
-                f"\n\033[93mDropping samples from group '{group_name}' that are not "
-                f"shared across all tables:\n{', '.join(dropped_samples)}\033[0m",
-                UserWarning,
+                f"Dropping samples from group '{group_name}' that are not "
+                f"shared across all tables:\n{', '.join(dropped_samples)}",
+                RachisWarning,
             )
 
         table = table.loc[consensus_samples].copy()
-        table.columns = [f"{group_name}:{feature}" for feature in table.columns]
+        table = pd.concat({group_name: table}, axis=1)
         table = drop_columns_with_missing_values(table)
         if filter_zero_variance:
             table = drop_zero_variance_columns(table)
         if table.empty:
             warnings.warn(
                 (
-                    f"\033[33mDropped MFA group '{group_name}' because all "
+                    f"Dropped MFA group '{group_name}' because all "
                     "features were removed during missing value filtering or "
-                    "zero-variance filtering.\033[0m"
+                    "zero-variance filtering."
                 ),
-                UserWarning,
+                RachisWarning,
                 stacklevel=2,
             )
             continue
-        prefixed_tables.append(table)
-        groups[group_name] = list(table.columns)
+        grouped_tables.append(table)
 
-    if len(groups) < 2:
+    if len(grouped_tables) < 2:
         raise ValueError(
             "MFA requires at least two groups after filtering. Groups may have "
             "been removed because all features were removed during missing "
             "value filtering or zero-variance filtering."
         )
 
-    return pd.concat(prefixed_tables, axis=1), groups
+    return pd.concat(grouped_tables, axis=1)
 
 
 def mfa(
@@ -313,12 +296,12 @@ def mfa(
     mfa_params.pop("metadata_groups")
     mfa_params.pop("filter_zero_variance")
 
-    table, groups = _build_prince_input(
+    table = _build_prince_input(
         tables,
         sample_metadata,
         metadata_groups,
         filter_zero_variance=filter_zero_variance,
     )
 
-    mfa_result = prince.MFA(**mfa_params).fit(table, groups=groups)
+    mfa_result = prince.MFA(**mfa_params).fit(table)
     return create_component_analysis_object(mfa_result, table)

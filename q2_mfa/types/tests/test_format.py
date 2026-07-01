@@ -16,7 +16,14 @@ from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
 from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
-from q2_mfa.types._transformer import _TABLE_SPECS
+from q2_mfa.types._transformer import _TABLE_SPECS, _TableSpec
+
+_FEATURE_TABLE_ATTRS = (
+    "feature_coordinates",
+    "feature_correlations",
+    "feature_contributions",
+    "feature_cosine_similarities",
+)
 
 
 class TestComponentAnalysisFormatRegression(TestPluginBase):
@@ -220,12 +227,10 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
             kwargs[spec.attr] = np.load(path)
         elif spec.kind == "wide":
             kwargs[spec.attr] = _read_wide_table(path, spec.index)
-        elif spec.kind == "feature_wide":
-            kwargs[spec.attr] = _read_feature_wide_table(path)
+        elif spec.kind == "indexed_rows":
+            kwargs[spec.attr] = _read_indexed_rows_table(path, spec)
         elif spec.kind == "multi_columns":
             kwargs[spec.attr] = _read_multi_columns_table(path)
-        elif spec.kind == "multi_rows":
-            kwargs[spec.attr] = _read_multi_rows_table(path)
         else:
             raise ValueError(f"Unknown table kind: {spec.kind}.")
     return ComponentAnalysis(**kwargs)
@@ -248,25 +253,35 @@ def _read_wide_table(path: Path, index: str) -> pd.DataFrame:
     return table
 
 
-def _read_feature_wide_table(path: Path) -> pd.DataFrame:
+def _read_indexed_rows_table(path: Path, spec: _TableSpec) -> pd.DataFrame:
     """
-    Reads a feature table fixture.
+    Reads an indexed-row table fixture.
 
     Args:
-        path (Path): The wide TSV fixture path.
+        path (Path): The indexed-row table TSV fixture path.
+        spec (_TableSpec): The table serialization specification.
 
     Returns:
-        pd.DataFrame: The loaded feature table.
+        pd.DataFrame: The loaded indexed-row table.
     """
-    table = pd.read_csv(path, sep="\t")
-    if {"group", "variable"}.issubset(table.columns):
-        labels = list(zip(table.pop("group"), table.pop("variable")))
-        values = np.empty(len(labels), dtype=object)
-        values[:] = [tuple(label) for label in labels]
-        table.index = pd.Index(values, name="variable")
+    columns = pd.read_csv(path, sep="\t", nrows=0).columns
+    row_index = list(spec.row_index)
+    restored_index = list(spec.restored_index or spec.row_index)
+    if set(restored_index).issubset(columns):
+        table = pd.read_csv(path, sep="\t", index_col=restored_index)
+        table.index = pd.MultiIndex.from_tuples(
+            table.index,
+            names=restored_index,
+        )
+    elif set(row_index).issubset(columns):
+        table = pd.read_csv(path, sep="\t", index_col=row_index)
+        table.index = pd.MultiIndex.from_tuples(
+            table.index,
+            names=restored_index,
+        )
     else:
-        table = table.set_index("variable")
-        table.index.name = "variable"
+        table = _read_wide_table(path, spec.index)
+        return table
     table.columns = pd.Index(table.columns.astype(int), name="component")
     return table
 
@@ -287,23 +302,4 @@ def _read_multi_columns_table(path: Path) -> pd.DataFrame:
         [(group, int(component)) for group, component in table.columns],
         names=[None, None],
     )
-    return table
-
-
-def _read_multi_rows_table(path: Path) -> pd.DataFrame:
-    """
-    Reads a Prince partial-axis table fixture.
-
-    Args:
-        path (Path): The partial-axis TSV path.
-
-    Returns:
-        pd.DataFrame: The loaded partial-axis table.
-    """
-    table = pd.read_csv(path, sep="\t", index_col=[0, 1])
-    table.index = pd.MultiIndex.from_tuples(
-        [(group, int(component)) for group, component in table.index],
-        names=["group", "component"],
-    )
-    table.columns = pd.Index(table.columns.astype(int), name="component")
     return table

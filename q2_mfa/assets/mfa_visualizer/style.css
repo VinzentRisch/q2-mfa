@@ -38,6 +38,10 @@ body {
   font-family: Arial, sans-serif;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 /* Form controls don't inherit font-family by default; do it once here so the
    individual control rules stay uniform without repeating the family. */
 button,
@@ -112,17 +116,17 @@ textarea {
 }
 
 .control-group-color-by {
-  grid-column: 3 / span 2;
+  grid-column: 7 / span 2;
   grid-row: 1;
 }
 
 .control-group-color-palette {
-  grid-column: 5 / span 2;
+  grid-column: 9 / span 2;
   grid-row: 1;
 }
 
 .control-group-size-by {
-  grid-column: 7 / span 2;
+  grid-column: 11 / span 2;
   grid-row: 1;
 }
 
@@ -137,7 +141,7 @@ textarea {
 }
 
 .control-group-font-family {
-  grid-column: 9;
+  grid-column: 3;
   grid-row: 1;
 }
 
@@ -147,7 +151,7 @@ textarea {
 }
 
 .control-group-font-size {
-  grid-column: 10;
+  grid-column: 4;
   grid-row: 1;
 }
 
@@ -162,12 +166,12 @@ textarea {
 }
 
 .control-group-point-size {
-  grid-column: 11;
+  grid-column: 5;
   grid-row: 1;
 }
 
 .control-group-point-opacity {
-  grid-column: 12;
+  grid-column: 6;
   grid-row: 1;
 }
 
@@ -692,6 +696,10 @@ input[type="number"] {
   color: var(--text-main);
   font-size: var(--text-xs);
   line-height: 1.35;
+}
+
+.sample-plot-layout-no-metadata {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sample-details-title {

@@ -116,8 +116,10 @@ const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
 // ============================================================================
 
 const payload = window.MFA_VISUALIZER_DATA;
+const metadataColumns = payload.metadata_columns ?? [];
+const hasMetadata = metadataColumns.length > 0;
 const metadataByName = Object.fromEntries(
-  payload.metadata_columns.map((column) => [column.name, column])
+  metadataColumns.map((column) => [column.name, column])
 );
 const dimensionsByKey = Object.fromEntries(
   payload.dimensions.map((dimension) => [Number(dimension.component), dimension])
@@ -238,12 +240,31 @@ function createDefaultSampleFilter() {
 // ============================================================================
 
 function initialize() {
+  applyMetadataAvailability();
   populateDimensionSelectors();
   populateColorControls();
   bindEvents();
   bindSamplePlotResizeObserver();
   renderFilterControls();
   renderAll();
+}
+
+function applyMetadataAvailability() {
+  document
+    .querySelector('.sample-plot-layout')
+    ?.classList.toggle('sample-plot-layout-no-metadata', !hasMetadata);
+
+  [
+    '.sample-details-panel',
+    '.control-group-color-by',
+    '.control-group-color-palette',
+    '.control-group-size-by',
+  ].forEach((selector) => {
+    const element = document.querySelector(selector);
+    if (element) {
+      element.hidden = !hasMetadata;
+    }
+  });
 }
 
 function bindSamplePlotResizeObserver() {
@@ -284,13 +305,13 @@ function populateDimensionSelectors() {
 function populateColorControls() {
   const colorBy = document.getElementById('color-by');
   colorBy.add(new Option('None', ''));
-  payload.metadata_columns.forEach((column) => {
+  metadataColumns.forEach((column) => {
     colorBy.add(new Option(column.name, column.name));
   });
 
   const sizeBy = document.getElementById('size-by');
   sizeBy.add(new Option('None', ''));
-  payload.metadata_columns
+  metadataColumns
     .filter((column) => column.type === 'numeric')
     .forEach((column) => {
       sizeBy.add(new Option(column.name, column.name));
@@ -433,6 +454,11 @@ function renderFilterControls() {
 
   container.appendChild(buildFeaturesRow());
   container.appendChild(buildPartialCoordinatesRow());
+  container.appendChild(buildSampleCoordinatesRow());
+
+  if (!hasMetadata) {
+    return;
+  }
 
   state.filters.forEach((filter, index) => {
     container.appendChild(buildSampleFilterRow(filter, index));
@@ -445,7 +471,7 @@ function renderFilterControls() {
   addButton.className = 'filter-add';
   addButton.type = 'button';
   addButton.textContent = 'Add filter...';
-  addButton.style.gridColumn = '2';
+  addButton.style.gridColumn = '1';
   addButton.addEventListener('click', () => {
     state.filters.push(createDefaultSampleFilter());
     renderFilterControls();
@@ -585,45 +611,48 @@ function buildPartialCoordinatesRow() {
   return row;
 }
 
+function buildSampleCoordinatesRow() {
+  const row = document.createElement('div');
+  row.className = 'filter-row filter-row-coordinate-control';
+
+  const toggle = buildOverlayToggle(
+    'Sample coordinates',
+    state.showSampleScores,
+    (checked) => {
+      state.showSampleScores = checked;
+      renderSamplePlot();
+    },
+    'Shows the global MFA sample coordinates (also called sample scores) from the MFA sample coordinate result table on the selected X and Y axes.'
+  );
+  row.appendChild(toggle);
+
+  return row;
+}
+
 function buildSampleFilterRow(filter, index) {
   const row = document.createElement('div');
   row.className = 'filter-row';
   const isFirstRow = index === 0;
   const isNumeric = filter.field && metadataByName[filter.field]?.type === 'numeric';
 
-  // Col 1: the sample-scores toggle only appears on the first row.
-  if (isFirstRow) {
-    row.classList.add('filter-row-coordinate-control');
-    const toggle = buildOverlayToggle(
-      'Sample coordinates',
-      state.showSampleScores,
-      (checked) => {
-        state.showSampleScores = checked;
-        renderSamplePlot();
-      },
-      'Shows the global MFA sample coordinates (also called sample scores) from the MFA sample coordinate result table on the selected X and Y axes. Each point is one sample; coloring and sample filters use the sample metadata table provided to the visualizer.'
-    );
-    row.appendChild(toggle);
-  }
-
-  // Col 2: metadata field selector.
+  // Col 1: metadata field selector.
   const fieldSelect = buildSampleMetadataSelect(filter);
-  fieldSelect.style.gridColumn = '2';
+  fieldSelect.style.gridColumn = '1';
   row.appendChild(fieldSelect);
 
-  // Cols 3+: numeric min/max cells or categorical value checkboxes.
+  // Cols 2+: numeric min/max cells or categorical value checkboxes.
   if (isNumeric) {
     appendNumericFilterCells(row, filter);
   } else {
     const valueControls = buildFilterValueControls(filter);
-    valueControls.style.gridColumn = isFirstRow ? '3 / -1' : '3 / 6';
+    valueControls.style.gridColumn = isFirstRow ? '2 / -1' : '2 / 5';
     row.appendChild(valueControls);
   }
 
   // Trailing remove button on every row except the first.
   if (!isFirstRow) {
     const removeButton = buildFilterRemoveButton(index);
-    removeButton.style.gridColumn = isNumeric ? '5' : '6';
+    removeButton.style.gridColumn = isNumeric ? '4' : '5';
     row.appendChild(removeButton);
   }
 
@@ -641,21 +670,21 @@ function appendNumericFilterCells(row, filter) {
     filter.numericMin = v;
     renderSamplePlot();
   });
-  minCell.style.gridColumn = '3';
+  minCell.style.gridColumn = '2';
   row.appendChild(minCell);
 
   const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => {
     filter.numericMax = v;
     renderSamplePlot();
   });
-  maxCell.style.gridColumn = '4';
+  maxCell.style.gridColumn = '3';
   row.appendChild(maxCell);
 }
 
 function buildSampleMetadataSelect(filter) {
   const select = document.createElement('select');
   select.add(new Option('Select metadata…', ''));
-  payload.metadata_columns.forEach((column) => {
+  metadataColumns.forEach((column) => {
     select.add(new Option(column.name, column.name));
   });
   select.value = filter.field;
@@ -1633,7 +1662,7 @@ function buildSampleMetricsTable(sample) {
 function buildSampleMetadataTable(sample) {
   const table = buildSampleDetailsTable('sample-details-metadata');
   const body = document.createElement('tbody');
-  payload.metadata_columns.forEach((column) => {
+  metadataColumns.forEach((column) => {
     const row = document.createElement('tr');
     row.appendChild(buildSampleDetailsCell('th', column.name, 'sample-details-name'));
     row.appendChild(
@@ -2442,7 +2471,9 @@ function applySamplePlotSquareDataArea(layout) {
   const samplePlotShell = document.querySelector('.plot-shell-main');
   const samplePlot = document.getElementById('sample-plot');
   const samplePlotLayout = document.querySelector('.sample-plot-layout');
-  const sampleDetailsPanel = document.querySelector('.sample-details-panel');
+  const sampleDetailsPanel = hasMetadata
+    ? document.querySelector('.sample-details-panel')
+    : null;
   if (!samplePlotShell || !samplePlot || !samplePlotLayout) {
     return;
   }

@@ -48,7 +48,9 @@ _REQUIRED_TABLES = (
 
 
 def mfa_visualizer(
-    output_dir: str, mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata
+    output_dir: str,
+    mfa_results: ComponentAnalysisDirFmt,
+    sample_metadata: Metadata = None,
 ):
     """
     Writes an interactive MFA visualization from JSONL component-analysis tables.
@@ -57,8 +59,8 @@ def mfa_visualizer(
         output_dir (str): The directory where visualization assets are written.
         mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
             directory format.
-        sample_metadata (Metadata): Sample metadata used for browser-side
-            coloring, sizing, and filtering.
+        sample_metadata (Metadata | None): Optional sample metadata used for
+            browser-side coloring, sizing, and filtering.
 
     Returns:
         None
@@ -68,7 +70,7 @@ def mfa_visualizer(
 
 
 def _build_payload(
-    mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata
+    mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata = None
 ) -> dict[str, object]:
     """
     Builds the browser payload from long JSONL result tables.
@@ -76,7 +78,8 @@ def _build_payload(
     Args:
         mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
             directory format.
-        sample_metadata (Metadata): Sample metadata to attach by sample ID.
+        sample_metadata (Metadata | None): Optional sample metadata to attach
+            by sample ID.
 
     Returns:
         dict[str, object]: The JSON-serializable visualization payload.
@@ -94,9 +97,13 @@ def _build_payload(
             str(sample_id) for sample_id in tables["sample_coordinates"]["sample_id"]
         )
     )
-    metadata = sample_metadata.to_dataframe().copy()
-    metadata.index = metadata.index.astype(str)
-    metadata = metadata.reindex(sample_ids)
+    if sample_metadata is None:
+        metadata = pd.DataFrame(index=sample_ids)
+    else:
+        metadata = sample_metadata.to_dataframe().copy()
+        metadata.index = metadata.index.astype(str)
+        metadata = metadata.reindex(sample_ids)
+
     metadata_columns, metadata_types = _build_metadata_columns(metadata)
     samples = _build_samples(
         tables["sample_coordinates"],
@@ -199,7 +206,9 @@ def _build_samples(
         sample_coordinates (pd.DataFrame): Long sample coordinate records.
         sample_contributions (pd.DataFrame): Long sample contribution records.
         sample_cosine_similarities (pd.DataFrame): Long sample cos2 records.
-        metadata (pd.DataFrame): Metadata rows reindexed to sample coordinates.
+        metadata (pd.DataFrame): Metadata rows reindexed to sample coordinates,
+            or an empty-column frame indexed by sample ID when metadata is not
+            provided.
         metadata_columns (list[dict[str, object]]): Included metadata columns.
         metadata_types (dict[str, str]): Metadata column type lookup.
 
@@ -227,7 +236,11 @@ def _build_samples(
         },
     )
     samples = []
-    for sample_id, row in metadata.iterrows():
+    sample_ids = list(
+        dict.fromkeys(str(sample_id) for sample_id in sample_coordinates["sample_id"])
+    )
+    for sample_id in sample_ids:
+        row = metadata.loc[sample_id]
         metadata_row = {}
         for column_name in included_columns:
             metadata_row[column_name] = _to_json_value(

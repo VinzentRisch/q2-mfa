@@ -143,6 +143,15 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("buildSampleMetricRow('cos2'", app_js)
             self.assertIn("formatPercent(componentField(sample", app_js)
             self.assertIn("function buildSampleMetadataTable(sample)", app_js)
+            self.assertIn("container.appendChild(buildSampleCoordinatesRow());", app_js)
+            self.assertIn("function buildSampleCoordinatesRow()", app_js)
+            self.assertIn("const hasMetadata = metadataColumns.length > 0;", app_js)
+            self.assertIn("function applyMetadataAvailability()", app_js)
+            self.assertIn("element.hidden = !hasMetadata;", app_js)
+            self.assertIn("if (!hasMetadata) {", app_js)
+            self.assertIn("[hidden]", style_css)
+            self.assertIn("display: none !important;", style_css)
+            self.assertIn(".sample-plot-layout-no-metadata", style_css)
             self.assertIn("border-radius: 10px;", style_css)
             self.assertIn(".filter-row-coordinate-control", style_css)
             self.assertIn("grid-column: 1 / -1 !important;", style_css)
@@ -214,6 +223,36 @@ class TestMFAVisualizer(TestPluginBase):
                     "age": 23.0,
                     "bmi": 20.5,
                 },
+            },
+        )
+
+    def test_mfa_visualizer_accepts_missing_metadata(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            mfa_visualizer(output_dir, self.mfa_results)
+
+            output_path = Path(output_dir)
+            for filename in (
+                "index.html",
+                "style.css",
+                "app.js",
+                "plotly-basic-2.35.2.min.js",
+                "plotly-basic-2.35.2.min.js.LICENSE.txt",
+                "data.js",
+            ):
+                self.assertTrue((output_path / filename).exists())
+
+            payload = self._load_payload(output_dir)
+
+        self.assertEqual(payload["metadata_columns"], [])
+        self.assertGreater(len(payload["samples"]), 0)
+        self.assertTrue(all(sample["metadata"] == {} for sample in payload["samples"]))
+        self.assertEqual(payload["samples"][0]["sample_id"], "s1")
+        self._assert_component_arrays_almost_equal(
+            payload["samples"][0],
+            {
+                "coordinate": [-0.4561011643, 0.1336687224],
+                "contribution": [0.028623011, 0.0043165686],
+                "cos2": [0.390501218, 0.0335397349],
             },
         )
 

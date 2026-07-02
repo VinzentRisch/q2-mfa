@@ -1,3 +1,7 @@
+// ============================================================================
+// CONSTANTS & CONFIGURATION
+// ============================================================================
+
 const COLOR_PALETTES = {
   Plotly: {
     kind: 'categorical',
@@ -57,6 +61,9 @@ const SCIENTIFIC_FONTS = [
 ];
 
 const MISSING_VALUE_TOKEN = '__MISSING__';
+// Shared Plotly hover template: every point trace renders a pre-built HTML
+// string supplied via customdata, so all plots hover identically.
+const HOVER_TEMPLATE = '%{customdata}<extra></extra>';
 const DEFAULT_MARKER_COLOR = '#6B7280';
 const VARIANCE_MARKER_COLOR = '#126782';
 const SELECTED_DIMENSION_COLOR = '#083D5B';
@@ -66,6 +73,19 @@ const PARTIAL_AXES_Y_RANGE = [-1.19, 1.19];
 const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 const MAX_FEATURE_OVERLAY_COUNT = 100;
+// Tables selectable in the data-table dropdown. `field` is the per-component
+// value read from each record; `aggregate` is how the last column combines the
+// two displayed dimensions ('magnitude' = sqrt(x^2 + y^2), 'sum' = x + y);
+// `percent` renders values as percentages (contributions).
+const TABLE_SOURCES = {
+  'sample-coordinates': { label: 'Sample coordinates', entity: 'sample', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'sample-contributions': { label: 'Sample contributions', entity: 'sample', field: 'contribution', valueLabel: 'contribution', aggregate: 'sum', aggregateLabel: 'Sum', percent: true },
+  'sample-cos2': { label: 'Sample cos2', entity: 'sample', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
+  'feature-coordinates': { label: 'Feature coordinates', entity: 'feature', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'feature-contributions': { label: 'Feature contributions', entity: 'feature', field: 'contribution', valueLabel: 'contribution', aggregate: 'sum', aggregateLabel: 'Sum', percent: true },
+  'feature-cos2': { label: 'Feature cos2', entity: 'feature', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
+  'feature-correlations': { label: 'Feature correlations', entity: 'feature', field: 'correlation', valueLabel: 'correlation', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+};
 const SAMPLE_LEGEND_MIN_RIGHT_MARGIN = 150;
 const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
 const SAMPLE_LEGEND_SYMBOL_WIDTH = 46;
@@ -77,15 +97,13 @@ const SAMPLE_LEGEND_BELOW_COLORBAR_Y = 0.72;
 const FEATURE_SOURCE_OPTIONS = {
   coordinates: {
     label: 'coordinates',
-    payloadKey: 'feature_coordinates',
     tooltip:
-      'Uses feature coordinates from ordination.txt. The scale circle is only a visual reference for one coordinate unit after feature scaling.',
+      'Uses feature coordinates from the MFA feature coordinate result table. The scale circle is only a visual reference for one coordinate unit after feature scaling.',
   },
   correlations: {
     label: 'correlations',
-    payloadKey: 'feature_correlations',
     tooltip:
-      'Uses feature correlations from feature-correlations.tsv. The scale circle represents correlation magnitude 1 after feature scaling.',
+      'Uses feature correlations from the MFA feature correlation result table. The scale circle represents correlation magnitude 1 after feature scaling.',
   },
 };
 const FEATURE_SCALE_CIRCLE_COLOR = 'rgba(148, 163, 184, 0.72)';
@@ -93,15 +111,40 @@ const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };
 const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };
 const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
 
+// ============================================================================
+// DATA & APPLICATION STATE
+// ============================================================================
+
 const payload = window.MFA_VISUALIZER_DATA;
 const metadataByName = Object.fromEntries(
   payload.metadata_columns.map((column) => [column.name, column])
 );
 const dimensionsByKey = Object.fromEntries(
-  payload.dimensions.map((dimension) => [dimension.key, dimension])
+  payload.dimensions.map((dimension) => [Number(dimension.component), dimension])
 );
+const featureSources = {
+  coordinates: {
+    records: payload.features ?? [],
+    valueKey: 'coordinate',
+  },
+  correlations: {
+    records: payload.features ?? [],
+    valueKey: 'correlation',
+  },
+};
+const samples = payload.samples ?? [];
+const partialSamples = payload.partial_samples ?? [];
+const groupSummary = payload.groups ?? [];
+const groupNames = groupSummary.map((entry) => entry.group);
+// Highest number of partial axes any group exposes (partial_component is
+// 0-based), used to bound the "partial axes per group" control.
+const maxPartialAxisCount = (payload.partial_axes ?? []).reduce(
+  (max, entry) => Math.max(max, entry.partial_component + 1),
+  1
+);
+const DEFAULT_PARTIAL_AXIS_COUNT = Math.min(2, maxPartialAxisCount);
 const samplesById = Object.fromEntries(
-  payload.samples.map((sample) => [sample.sample_id, sample])
+  samples.map((sample) => [sample.sample_id, sample])
 );
 const state = {
   xDimension: payload.default_x,
@@ -117,20 +160,69 @@ const state = {
   featureSource: 'coordinates',
   showFullFeatureLabels: false,
   topFeatureCount: 10,
+  partialAxisCount: DEFAULT_PARTIAL_AXIS_COUNT,
   featureScale: 1,
   pointSizeScale: 1,
   pointOpacity: 0.9,
   showPointBorder: true,
+  selectedSampleId: null,
+  tableSource: 'feature-coordinates',
   featureTableSort: {
-    column: 'rankingScore',
+    column: 'aggregate',
     direction: 'desc',
   },
-  featureGroups: new Set(payload.partial_groups),
-  partialSampleGroups: new Set(payload.partial_groups),
+  featureGroups: new Set(groupNames),
+  partialSampleGroups: new Set(groupNames),
   fontFamily: SCIENTIFIC_FONTS[0].family,
   fontSize: 12,
   filters: [createDefaultSampleFilter()],
 };
+
+// ============================================================================
+// DATA ACCESSORS
+// ============================================================================
+
+// The payload is columnar: each entity stores per-field arrays indexed by
+// component id, so a value read is an O(1) array index rather than a scan.
+function componentField(entry, component, field) {
+  return entry[field]?.[Number(component)];
+}
+
+function sampleValue(sample, component) {
+  return componentField(sample, component, 'coordinate');
+}
+
+function partialSampleValue(entry, component) {
+  return componentField(entry, component, 'coordinate');
+}
+
+function featureValue(feature, source, component) {
+  return componentField(feature, component, source.valueKey);
+}
+
+function groupCoordinateValue(entry, component) {
+  return componentField(entry, component, 'coordinate');
+}
+
+function groupContributionValue(entry, component) {
+  return componentField(entry, component, 'contribution');
+}
+
+function groupCos2Value(entry, component) {
+  return componentField(entry, component, 'cos2');
+}
+
+function dimensionLabel(component) {
+  return dimensionsByKey[component]?.label ?? `Dim ${Number(component) + 1}`;
+}
+
+function dimensionAxisTitle(component) {
+  return dimensionsByKey[component]?.axis_title ?? dimensionLabel(component);
+}
+
+function dimensionFileLabel(component) {
+  return dimensionLabel(component).toLowerCase().replace(/\s+/g, '-');
+}
 
 function createDefaultSampleFilter() {
   return {
@@ -141,18 +233,22 @@ function createDefaultSampleFilter() {
   };
 }
 
+// ============================================================================
+// INITIALIZATION & CONTROL POPULATION
+// ============================================================================
+
 function initialize() {
   populateDimensionSelectors();
   populateColorControls();
   bindEvents();
   bindSamplePlotResizeObserver();
   renderFilterControls();
-  renderPlot();
+  renderAll();
 }
 
 function bindSamplePlotResizeObserver() {
-  const samplePlotShell = document.querySelector('.plot-shell-main');
-  if (!samplePlotShell || !window.ResizeObserver) {
+  const samplePlotLayout = document.querySelector('.sample-plot-layout');
+  if (!samplePlotLayout || !window.ResizeObserver) {
     return;
   }
 
@@ -163,11 +259,11 @@ function bindSamplePlotResizeObserver() {
     }
 
     resizeAnimationFrame = window.requestAnimationFrame(() => {
-      Plotly.Plots.resize('sample-plot');
+      renderSamplePlot();
       resizeAnimationFrame = null;
     });
   });
-  resizeObserver.observe(samplePlotShell);
+  resizeObserver.observe(samplePlotLayout);
 }
 
 function populateDimensionSelectors() {
@@ -175,14 +271,14 @@ function populateDimensionSelectors() {
   const yDimension = document.getElementById('y-dimension');
 
   payload.dimensions.forEach((dimension) => {
-    const xOption = new Option(dimension.label, dimension.key);
-    const yOption = new Option(dimension.label, dimension.key);
+    const xOption = new Option(dimension.label, dimension.component);
+    const yOption = new Option(dimension.label, dimension.component);
     xDimension.add(xOption);
     yDimension.add(yOption);
   });
 
-  xDimension.value = state.xDimension;
-  yDimension.value = state.yDimension;
+  xDimension.value = String(state.xDimension);
+  yDimension.value = String(state.yDimension);
 }
 
 function populateColorControls() {
@@ -205,12 +301,21 @@ function populateColorControls() {
     fontFamily.add(new Option(font.label, font.family));
   });
 
+  const tableSource = document.getElementById('table-source');
+  Object.entries(TABLE_SOURCES).forEach(([key, source]) => {
+    tableSource.add(new Option(source.label, key));
+  });
+  tableSource.value = state.tableSource;
+
   repopulateColorPaletteOptions();
   sizeBy.value = state.sizeBy;
   document.getElementById('show-barycenter').checked = state.showBarycenter;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('show-feature-scale-circle').checked = state.showFeatureScaleCircle;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
+  const partialAxesCount = document.getElementById('partial-axes-count');
+  partialAxesCount.max = maxPartialAxisCount;
+  partialAxesCount.value = state.partialAxisCount;
   document.getElementById('feature-scale').value = state.featureScale;
   document.getElementById('point-size-scale').value = state.pointSizeScale;
   document.getElementById('point-opacity').value = state.pointOpacity;
@@ -219,120 +324,108 @@ function populateColorControls() {
   document.getElementById('font-size').value = state.fontSize;
 }
 
+// ============================================================================
+// EVENT BINDINGS
+// ============================================================================
+
+// Each binding names the render scope it needs; anything unspecified only
+// affects the main sample plot (renderSamplePlot).
+const SELECT_BINDINGS = [
+  { id: 'x-dimension', key: 'xDimension', transform: Number, render: renderAll },
+  { id: 'y-dimension', key: 'yDimension', transform: Number, render: renderAll },
+  { id: 'size-by', key: 'sizeBy' },
+  { id: 'color-palette', key: 'colorPalette' },
+  { id: 'font-family', key: 'fontFamily', render: renderPlots },
+];
+
+const CHECKBOX_BINDINGS = [
+  { id: 'show-barycenter', key: 'showBarycenter' },
+  { id: 'show-full-feature-labels', key: 'showFullFeatureLabels' },
+  { id: 'show-feature-scale-circle', key: 'showFeatureScaleCircle' },
+  { id: 'show-point-border', key: 'showPointBorder' },
+];
+
+// Numeric inputs with an optional integer transform, a lower bound (below which
+// the edit is ignored), and an optional upper clamp.
+const NUMERIC_INPUT_BINDINGS = [
+  { id: 'top-feature-count', key: 'topFeatureCount', min: 1, max: MAX_FEATURE_OVERLAY_COUNT, transform: Math.floor },
+  { id: 'partial-axes-count', key: 'partialAxisCount', min: 1, max: maxPartialAxisCount, transform: Math.floor, render: renderPartialAxesPlot },
+  { id: 'feature-scale', key: 'featureScale', min: 1, transform: Math.floor },
+  { id: 'point-size-scale', key: 'pointSizeScale', min: 0.5, max: 1.5 },
+  { id: 'point-opacity', key: 'pointOpacity', min: 0.1, max: 1 },
+  { id: 'font-size', key: 'fontSize', min: 8, max: 24, transform: Math.round, render: renderPlots },
+];
+
+function bindSelect({ id, key, transform, render = renderSamplePlot }) {
+  document.getElementById(id).addEventListener('change', (event) => {
+    state[key] = transform ? transform(event.target.value) : event.target.value;
+    render();
+  });
+}
+
+function bindCheckbox({ id, key, render = renderSamplePlot }) {
+  document.getElementById(id).addEventListener('change', (event) => {
+    state[key] = event.target.checked;
+    render();
+  });
+}
+
+function bindNumericInput({ id, key, min, max, transform, render = renderSamplePlot }) {
+  document.getElementById(id).addEventListener('input', (event) => {
+    let nextValue = Number(event.target.value);
+    if (transform) {
+      nextValue = transform(nextValue);
+    }
+    if (!Number.isFinite(nextValue) || nextValue < min) {
+      return;
+    }
+    if (max !== undefined) {
+      nextValue = Math.min(nextValue, max);
+    }
+    state[key] = nextValue;
+    event.target.value = nextValue;
+    render();
+  });
+}
+
 function bindEvents() {
-  document.getElementById('x-dimension').addEventListener('change', (event) => {
-    state.xDimension = event.target.value;
-    renderPlot();
-  });
+  SELECT_BINDINGS.forEach(bindSelect);
+  CHECKBOX_BINDINGS.forEach(bindCheckbox);
+  NUMERIC_INPUT_BINDINGS.forEach(bindNumericInput);
 
-  document.getElementById('y-dimension').addEventListener('change', (event) => {
-    state.yDimension = event.target.value;
-    renderPlot();
-  });
-
+  // color-by is special: it also re-derives the available palette options.
   document.getElementById('color-by').addEventListener('change', (event) => {
     state.colorBy = event.target.value;
     repopulateColorPaletteOptions();
-    renderPlot();
+    renderSamplePlot();
   });
 
-  document.getElementById('size-by').addEventListener('change', (event) => {
-    state.sizeBy = event.target.value;
-    renderPlot();
+  document.getElementById('table-source').addEventListener('change', (event) => {
+    state.tableSource = event.target.value;
+    // Reset to the default (largest-first) sort so we never keep a column that
+    // the newly selected table doesn't have (e.g. Group on a sample table).
+    state.featureTableSort = { column: 'aggregate', direction: 'desc' };
+    renderDataTable();
   });
 
-  document.getElementById('color-palette').addEventListener('change', (event) => {
-    state.colorPalette = event.target.value;
-    renderPlot();
-  });
-
-  document.getElementById('show-barycenter').addEventListener('change', (event) => {
-    state.showBarycenter = event.target.checked;
-    renderPlot();
-  });
-
-  document.getElementById('show-full-feature-labels').addEventListener('change', (event) => {
-    state.showFullFeatureLabels = event.target.checked;
-    renderPlot();
-  });
-
-  document.getElementById('show-feature-scale-circle').addEventListener('change', (event) => {
-    state.showFeatureScaleCircle = event.target.checked;
-    renderPlot();
-  });
-
-  document.getElementById('top-feature-count').addEventListener('input', (event) => {
-    const nextValue = Number(event.target.value);
-    if (!Number.isFinite(nextValue) || nextValue < 1) {
+  // The header is rebuilt per render, so delegate sort clicks to the thead.
+  document.getElementById('feature-table-head').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-feature-sort]');
+    if (!button) {
       return;
     }
-    state.topFeatureCount = Math.min(Math.floor(nextValue), MAX_FEATURE_OVERLAY_COUNT);
-    event.target.value = state.topFeatureCount;
-    renderPlot();
-  });
-
-  document.getElementById('feature-scale').addEventListener('input', (event) => {
-    const nextValue = Number(event.target.value);
-    if (!Number.isFinite(nextValue) || nextValue < 1) {
-      return;
-    }
-    state.featureScale = Math.floor(nextValue);
-    event.target.value = state.featureScale;
-    renderPlot();
-  });
-
-  document.getElementById('point-size-scale').addEventListener('input', (event) => {
-    const nextValue = Number(event.target.value);
-    if (!Number.isFinite(nextValue) || nextValue < 0.5) {
-      return;
-    }
-    state.pointSizeScale = Math.min(nextValue, 1.5);
-    event.target.value = state.pointSizeScale;
-    renderPlot();
-  });
-
-  document.getElementById('point-opacity').addEventListener('input', (event) => {
-    const nextValue = Number(event.target.value);
-    if (!Number.isFinite(nextValue) || nextValue < 0.1) {
-      return;
-    }
-    state.pointOpacity = Math.min(nextValue, 1);
-    event.target.value = state.pointOpacity;
-    renderPlot();
-  });
-
-  document.getElementById('show-point-border').addEventListener('change', (event) => {
-    state.showPointBorder = event.target.checked;
-    renderPlot();
-  });
-
-  document.getElementById('font-family').addEventListener('change', (event) => {
-    state.fontFamily = event.target.value;
-    renderPlot();
-  });
-
-  document.getElementById('font-size').addEventListener('input', (event) => {
-    const nextValue = Math.round(Number(event.target.value));
-    if (!Number.isFinite(nextValue) || nextValue < 8) {
-      return;
-    }
-    state.fontSize = Math.min(nextValue, 24);
-    event.target.value = state.fontSize;
-    renderPlot();
-  });
-
-  document.querySelectorAll('[data-feature-sort]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      updateFeatureTableSort(event.currentTarget);
-      renderTopFeaturesTable();
-    });
+    updateFeatureTableSort(button);
+    renderDataTable();
   });
 
   document.getElementById('download-feature-table').addEventListener('click', () => {
     downloadFeatureTableTsv();
   });
-
 }
+
+// ============================================================================
+// FILTER CONTROLS (UI CONSTRUCTION)
+// ============================================================================
 
 function renderFilterControls() {
   const container = document.getElementById('filter-controls');
@@ -401,7 +494,7 @@ function buildFeatureSourceToggle() {
     state.showFeatures = event.target.checked;
     if (state.showFeatures) state.featureGroups = new Set(getFeatureGroups());
     renderFilterControls();
-    renderPlot();
+    renderSamplePlot();
   });
 
   const select = document.createElement('select');
@@ -417,7 +510,7 @@ function buildFeatureSourceToggle() {
     state.featureSource = event.target.value;
     state.featureGroups = new Set(getFeatureGroups());
     renderFilterControls();
-    renderPlot();
+    renderSamplePlot();
   });
 
   const help = document.createElement('span');
@@ -427,7 +520,7 @@ function buildFeatureSourceToggle() {
   help.setAttribute('aria-label', 'Features help');
   help.setAttribute(
     'data-tooltip',
-    'Overlays the strongest features from the selected source for the selected axes. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y values. Feature coordinates come from ordination.txt; feature correlations come from feature-correlations.tsv. The checkbox controls whether features are drawn.'
+    'Overlays the strongest features from the selected source for the selected axes. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y values. Feature coordinates and correlations come from the MFA JSONL result tables. The checkbox controls whether features are drawn.'
   );
   help.textContent = '?';
 
@@ -438,7 +531,7 @@ function buildFeatureSourceToggle() {
   return container;
 }
 
-function buildGroupTogglesContainer(selectedGroups, disabled, groups = payload.partial_groups || []) {
+function buildGroupTogglesContainer(selectedGroups, disabled, groups = groupNames) {
   const container = document.createElement('div');
   container.className = 'filter-options';
   groups.forEach((group) => {
@@ -451,7 +544,7 @@ function buildGroupTogglesContainer(selectedGroups, disabled, groups = payload.p
 
 function buildFeaturesRow() {
   const row = document.createElement('div');
-  row.className = 'filter-row';
+  row.className = 'filter-row filter-row-coordinate-control';
 
   const toggle = buildFeatureSourceToggle();
   toggle.style.gridColumn = '1';
@@ -470,18 +563,18 @@ function buildFeaturesRow() {
 
 function buildPartialCoordinatesRow() {
   const row = document.createElement('div');
-  row.className = 'filter-row';
+  row.className = 'filter-row filter-row-coordinate-control';
 
   const toggle = buildOverlayToggle(
     'Partial coordinates',
     state.showPartialOverlay,
     (checked) => {
       state.showPartialOverlay = checked;
-      if (checked) state.partialSampleGroups = new Set(payload.partial_groups);
+      if (checked) state.partialSampleGroups = new Set(groupNames);
       renderFilterControls();
-      renderPlot();
+      renderSamplePlot();
     },
-    "Shows each sample's group-specific partial coordinates from partial-sample-coordinates.tsv and connects them to the global sample scores from ordination.txt. Long connectors indicate that a group places that sample away from the consensus position."
+    "Shows each sample's group-specific partial coordinates from the MFA partial sample coordinate result table and connects them to the global sample scores. Long connectors indicate that a group places that sample away from the consensus position."
   );
   row.appendChild(toggle);
 
@@ -498,62 +591,65 @@ function buildSampleFilterRow(filter, index) {
   const isFirstRow = index === 0;
   const isNumeric = filter.field && metadataByName[filter.field]?.type === 'numeric';
 
+  // Col 1: the sample-scores toggle only appears on the first row.
   if (isFirstRow) {
+    row.classList.add('filter-row-coordinate-control');
     const toggle = buildOverlayToggle(
-      'Sample scores',
+      'Sample coordinates',
       state.showSampleScores,
       (checked) => {
         state.showSampleScores = checked;
-        renderPlot();
+        renderSamplePlot();
       },
-      'Shows the global MFA sample coordinates from ordination.txt on the selected X and Y axes. Each point is one sample score; coloring and sample filters use the sample metadata table provided to the visualizer. These scores are calculated from the input feature tables during the MFA action, then stored in the ordination results.'
+      'Shows the global MFA sample coordinates (also called sample scores) from the MFA sample coordinate result table on the selected X and Y axes. Each point is one sample; coloring and sample filters use the sample metadata table provided to the visualizer.'
     );
-    row.appendChild(toggle); // col 1
+    row.appendChild(toggle);
+  }
 
-    const fieldSelect = buildSampleMetadataSelect(filter);
-    fieldSelect.style.gridColumn = '2';
-    row.appendChild(fieldSelect);
+  // Col 2: metadata field selector.
+  const fieldSelect = buildSampleMetadataSelect(filter);
+  fieldSelect.style.gridColumn = '2';
+  row.appendChild(fieldSelect);
 
-    if (isNumeric) {
-      const column = metadataByName[filter.field];
-      if (filter.numericMin === null) { filter.numericMin = column.min; filter.numericMax = column.max; }
-      const minCell = buildNumericFilterCell('Min:', filter.numericMin, (v) => { filter.numericMin = v; renderPlot(); });
-      minCell.style.gridColumn = '3';
-      row.appendChild(minCell);
-      const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => { filter.numericMax = v; renderPlot(); });
-      maxCell.style.gridColumn = '4';
-      row.appendChild(maxCell);
-    } else {
-      const valueControls = buildFilterValueControls(filter);
-      valueControls.style.gridColumn = '3 / -1';
-      row.appendChild(valueControls);
-    }
+  // Cols 3+: numeric min/max cells or categorical value checkboxes.
+  if (isNumeric) {
+    appendNumericFilterCells(row, filter);
   } else {
-    const fieldSelect = buildSampleMetadataSelect(filter);
-    fieldSelect.style.gridColumn = '2';
-    row.appendChild(fieldSelect);
+    const valueControls = buildFilterValueControls(filter);
+    valueControls.style.gridColumn = isFirstRow ? '3 / -1' : '3 / 6';
+    row.appendChild(valueControls);
+  }
 
-    if (isNumeric) {
-      const column = metadataByName[filter.field];
-      if (filter.numericMin === null) { filter.numericMin = column.min; filter.numericMax = column.max; }
-      const minCell = buildNumericFilterCell('Min:', filter.numericMin, (v) => { filter.numericMin = v; renderPlot(); });
-      minCell.style.gridColumn = '3';
-      row.appendChild(minCell);
-      const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => { filter.numericMax = v; renderPlot(); });
-      maxCell.style.gridColumn = '4';
-      row.appendChild(maxCell);
-    } else {
-      const valueControls = buildFilterValueControls(filter);
-      valueControls.style.gridColumn = '3 / 6';
-      row.appendChild(valueControls);
-    }
-
+  // Trailing remove button on every row except the first.
+  if (!isFirstRow) {
     const removeButton = buildFilterRemoveButton(index);
     removeButton.style.gridColumn = isNumeric ? '5' : '6';
     row.appendChild(removeButton);
   }
 
   return row;
+}
+
+function appendNumericFilterCells(row, filter) {
+  const column = metadataByName[filter.field];
+  if (filter.numericMin === null) {
+    filter.numericMin = column.min;
+    filter.numericMax = column.max;
+  }
+
+  const minCell = buildNumericFilterCell('Min:', filter.numericMin, (v) => {
+    filter.numericMin = v;
+    renderSamplePlot();
+  });
+  minCell.style.gridColumn = '3';
+  row.appendChild(minCell);
+
+  const maxCell = buildNumericFilterCell('Max:', filter.numericMax, (v) => {
+    filter.numericMax = v;
+    renderSamplePlot();
+  });
+  maxCell.style.gridColumn = '4';
+  row.appendChild(maxCell);
 }
 
 function buildSampleMetadataSelect(filter) {
@@ -569,7 +665,7 @@ function buildSampleMetadataSelect(filter) {
     filter.numericMin = null;
     filter.numericMax = null;
     renderFilterControls();
-    renderPlot();
+    renderSamplePlot();
   });
   return select;
 }
@@ -617,7 +713,7 @@ function buildFilterRemoveButton(index) {
   button.addEventListener('click', () => {
     state.filters.splice(index, 1);
     renderFilterControls();
-    renderPlot();
+    renderSamplePlot();
   });
   return button;
 }
@@ -674,7 +770,7 @@ function buildCheckboxFilterOption(value, label, checked, selectedValues, disabl
       } else {
         selectedValues.delete(value);
       }
-      renderPlot();
+      renderSamplePlot();
     });
   }
 
@@ -687,8 +783,12 @@ function buildCheckboxFilterOption(value, label, checked, selectedValues, disabl
 }
 
 
+// ============================================================================
+// SAMPLE FILTERING
+// ============================================================================
+
 function getFilteredSamples() {
-  return payload.samples.filter((sample) =>
+  return samples.filter((sample) =>
     state.filters.every((filter) => samplePassesFilter(sample, filter))
   );
 }
@@ -714,44 +814,137 @@ function samplePassesFilter(sample, filter) {
   return value >= lowerBound && value <= upperBound;
 }
 
-function renderPlot() {
+// ============================================================================
+// RENDER ORCHESTRATION & IMAGE EXPORT
+// ============================================================================
+
+// Tracks whether the plotly_click listener is attached. It
+// live on the graph div and survive Plotly.react, so they only need binding once.
+let samplePlotClickBound = false;
+
+// Render scopes. Most controls only affect the main sample plot, so they call
+// renderSamplePlot() and leave the secondary plots and data table untouched.
+// Only the X/Y dimension (and fonts) affect everything.
+function renderSamplePlot() {
   const filteredSamples = getFilteredSamples();
   const traces = buildTraces(filteredSamples);
   const layout = buildLayout(traces);
-  updateSamplePlotResizeLimits(layout);
+  applySamplePlotSquareDataArea(layout);
 
   Plotly.react('sample-plot', traces, layout, {
     responsive: true,
     displaylogo: false,
     scrollZoom: true,
     modeBarButtonsToAdd: [
-      {
-        name: 'Download PNG',
-        icon: Plotly.Icons.camera,
-        click: () => {
-          downloadPlotImage('sample-plot', buildDownloadFilename('png'), 'png');
-        },
-      },
-      {
-        name: 'Download SVG',
-        icon: Plotly.Icons.camera,
-        click: () => {
-          downloadPlotImage('sample-plot', buildDownloadFilename('svg'), 'svg');
-        },
-      },
+      buildImageDownloadButton('Download PNG', 'sample-plot', buildDownloadFilename('png'), 'png'),
+      buildImageDownloadButton('Download SVG', 'sample-plot', buildDownloadFilename('svg'), 'svg'),
     ],
     modeBarButtonsToRemove: ['zoom2d', 'toImage', 'toImage2d', 'resetScale2d', 'lasso2d', 'select2d'],
   });
 
+  bindSamplePlotClickEvents();
+  renderSampleDetailsPanel();
+}
+
+// Toggle the fixed details panel when clicking sample points. Feature/partial
+// points keep their native tooltips; their customdata is not a sample id, so the
+// samplesById lookup misses and selection is unchanged for them.
+function bindSamplePlotClickEvents() {
+  if (samplePlotClickBound) {
+    return;
+  }
+
+  const graphDiv = document.getElementById('sample-plot');
+  if (!graphDiv || typeof graphDiv.on !== 'function') {
+    return;
+  }
+
+  graphDiv.on('plotly_click', (data) => {
+    const point = data.points?.[0];
+    const sample = point ? samplesById[point.customdata] : null;
+    if (!sample) {
+      return;
+    }
+    toggleSelectedSample(sample.sample_id);
+  });
+  samplePlotClickBound = true;
+}
+
+function toggleSelectedSample(sampleId, { scrollToPlot = false } = {}) {
+  state.selectedSampleId = state.selectedSampleId === sampleId ? null : sampleId;
+  renderSampleDetailsPanel();
+  updateSampleSelectionMarkerLines();
+  if (scrollToPlot) {
+    scrollToSamplePlot();
+  }
+}
+
+function scrollToSamplePlot() {
+  document.querySelector('.sample-plot-layout')?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  });
+}
+
+function updateSampleSelectionMarkerLines() {
+  const graphDiv = document.getElementById('sample-plot');
+  if (!graphDiv?.data) {
+    return;
+  }
+
+  graphDiv.data.forEach((trace, traceIndex) => {
+    const traceSampleIds = getTraceSampleIds(trace);
+    if (!traceSampleIds.length) {
+      return;
+    }
+    const traceSamples = traceSampleIds.map((sampleId) => samplesById[sampleId]);
+    Plotly.restyle(
+      graphDiv,
+      {
+        'marker.line': [
+          buildSamplePointMarkerLine(
+            traceSamples,
+            getThemeColors().markerLine,
+            1
+          ),
+        ],
+      },
+      [traceIndex]
+    );
+  });
+}
+
+function getTraceSampleIds(trace) {
+  if (!Array.isArray(trace?.customdata)) {
+    return [];
+  }
+
+  const sampleIds = trace.customdata.filter((value) => samplesById[value]);
+  return sampleIds.length === trace.customdata.length ? sampleIds : [];
+}
+
+function renderSecondaryPlots() {
   renderGroupPlot();
   renderPartialAxesPlot();
   renderVariancePlot();
-  renderTopFeaturesTable();
+}
+
+// Every plot but not the data table (used by font changes).
+function renderPlots() {
+  renderSamplePlot();
+  renderSecondaryPlots();
+}
+
+// Everything (used by X/Y dimension changes and initial load).
+function renderAll() {
+  renderSamplePlot();
+  renderSecondaryPlots();
+  renderDataTable();
 }
 
 function buildDownloadFilename(extension) {
-  const xLabel = state.xDimension.toLowerCase().replace(/\s+/g, '-');
-  const yLabel = state.yDimension.toLowerCase().replace(/\s+/g, '-');
+  const xLabel = dimensionFileLabel(state.xDimension);
+  const yLabel = dimensionFileLabel(state.yDimension);
   return `mfa-sample-scores-${xLabel}-vs-${yLabel}.${extension}`;
 }
 
@@ -781,13 +974,9 @@ function getRenderedPlotDimensions(plotId) {
   };
 }
 
-function buildVarianceDownloadFilename(extension) {
-  return `mfa-explained-variance-by-component.${extension}`;
-}
-
-function buildCumulativeVarianceDownloadFilename(extension) {
-  return `mfa-cumulative-explained-variance.${extension}`;
-}
+// ============================================================================
+// COLOR PALETTES & GROUP COLORS
+// ============================================================================
 
 function repopulateColorPaletteOptions() {
   const colorPalette = document.getElementById('color-palette');
@@ -831,11 +1020,26 @@ function getCategoricalLevelCount(colorColumn) {
   return colorColumn.values.length + Number(colorColumn.has_missing);
 }
 
-function getOrderedGroupNames() {
-  return payload.partial_groups;
+// Ordered category list for a categorical column, with the Missing bucket last
+// when present.
+function getOrderedCategories(colorColumn) {
+  const categories = [...colorColumn.values];
+  if (colorColumn.has_missing) {
+    categories.push(MISSING_VALUE_TOKEN);
+  }
+  return categories;
 }
 
-function getGroupColorMap(groups = getOrderedGroupNames()) {
+// Samples whose value in the given column matches a category (or are missing,
+// for the Missing bucket).
+function filterByCategory(samples, colorColumn, category) {
+  return samples.filter((sample) => {
+    const value = sample.metadata[colorColumn.name];
+    return category === MISSING_VALUE_TOKEN ? value === null : value === category;
+  });
+}
+
+function getGroupColorMap(groups = groupNames) {
   const orderedGroups = [...new Set(groups)];
   return Object.fromEntries(
     orderedGroups.map((group, index) => [
@@ -844,6 +1048,10 @@ function getGroupColorMap(groups = getOrderedGroupNames()) {
     ])
   );
 }
+
+// ============================================================================
+// SAMPLE-PLOT TRACE BUILDERS
+// ============================================================================
 
 function buildTraces(samples) {
   const colorColumn = metadataByName[state.colorBy];
@@ -990,19 +1198,8 @@ function buildFeatureTraces() {
       showlegend: false,
       x: groupFeatures.map((feature) => feature.plotX),
       y: groupFeatures.map((feature) => feature.plotY),
-      hovertemplate:
-        '<b>%{customdata[0]}</b><br>' +
-        'Group: %{customdata[1]}<br>' +
-        `${state.xDimension}: %{customdata[2]:.3f}<br>` +
-        `${state.yDimension}: %{customdata[3]:.3f}<br>` +
-        'Plane magnitude: %{customdata[4]:.3f}<extra></extra>',
-      customdata: groupFeatures.map((feature) => [
-        feature.feature_name,
-        feature.group,
-        feature.x,
-        feature.y,
-        feature.rankingScore,
-      ]),
+      hovertemplate: HOVER_TEMPLATE,
+      customdata: groupFeatures.map(buildFeatureHoverText),
       marker: {
         color: groupColors[group],
         size: scalePointSize(9),
@@ -1016,16 +1213,12 @@ function buildFeatureTraces() {
       },
     });
 
-    traces.push(...buildPlotLabelConnectorTraces(groupLabelPlacement, {
-      legendgroup: groupLegend,
-    }));
-    const labelTrace = buildPlotLabelTrace(groupLabelPlacement, state.fontSize, {
-      legendgroup: groupLegend,
-      name: `${group} feature labels`,
-    });
-    if (labelTrace) {
-      traces.push(labelTrace);
-    }
+    pushLabelTraces(
+      traces,
+      groupLabelPlacement,
+      { legendgroup: groupLegend },
+      { legendgroup: groupLegend, name: `${group} feature labels` }
+    );
   });
 
   return traces;
@@ -1036,35 +1229,57 @@ function featureMarkerAngle(feature) {
   return 90 - angleFromXAxis;
 }
 
+// Single source of truth for the feature tooltip, used by both the endpoint
+// markers and the label placement so the two can never drift apart.
+function buildFeatureHoverText(feature) {
+  const featureSourceLabel =
+    state.featureSource === 'coordinates' ? 'coordinates' : 'correlation';
+  return [
+    `<b>${feature.variable}</b>`,
+    `Group: ${feature.group}`,
+    dimLine(state.xDimension, feature.x, featureSourceLabel),
+    dimLine(state.yDimension, feature.y, featureSourceLabel),
+    dimContributionLine(state.xDimension, componentField(feature, state.xDimension, 'contribution')),
+    dimContributionLine(state.yDimension, componentField(feature, state.yDimension, 'contribution')),
+    dimLine(state.xDimension, componentField(feature, state.xDimension, 'cos2'), 'cos2'),
+    dimLine(state.yDimension, componentField(feature, state.yDimension, 'cos2'), 'cos2'),
+    `Plane magnitude ${featureSourceLabel}: ${formatValue(feature.rankingScore)}`,
+  ].join('<br>');
+}
+
+// ============================================================================
+// FEATURE RANKING & SELECTION
+// ============================================================================
+
 function getSelectedFeatureSource() {
-  const source = FEATURE_SOURCE_OPTIONS[state.featureSource] ?? FEATURE_SOURCE_OPTIONS.coordinates;
-  return payload[source.payloadKey] ?? [];
+  return featureSources[state.featureSource] ?? featureSources.coordinates;
 }
 
 function getFeatureGroups() {
-  return [...new Set(getSelectedFeatureSource().map((feature) => feature.group))].sort();
+  return [...new Set(getSelectedFeatureSource().records.map((feature) => feature.group))].sort();
 }
 
 function getRankedFeatures(limit = null, allowedFeatureGroups = null) {
   // Rank by source-vector magnitude in the currently displayed 2D plane so the
   // overlay surfaces the variables best represented in the exact view the user
   // is inspecting.
-  const selectedFeatures = getSelectedFeatureSource();
+  const selectedSource = getSelectedFeatureSource();
+  const selectedFeatures = selectedSource.records;
   const features = allowedFeatureGroups === null
     ? selectedFeatures
     : selectedFeatures.filter((feature) => allowedFeatureGroups.has(feature.group));
   const rankedFeatures = features
     .map((feature) => ({
       ...feature,
-      x: feature.coords[state.xDimension],
-      y: feature.coords[state.yDimension],
+      x: featureValue(feature, selectedSource, state.xDimension),
+      y: featureValue(feature, selectedSource, state.yDimension),
     }))
     .filter((feature) => Number.isFinite(feature.x) && Number.isFinite(feature.y))
     .map((feature) => ({
       ...feature,
       rankingScore: Math.hypot(feature.x, feature.y),
-      display_feature_name: shortenTaxonomyFeatureName(feature.feature_name),
-      plot_feature_name: formatFeaturePlotLabel(feature.feature_name),
+      display_feature_name: shortenTaxonomyFeatureName(feature.variable),
+      plot_feature_name: formatFeaturePlotLabel(feature.variable),
     }))
     .sort((a, b) =>
       b.rankingScore - a.rankingScore ||
@@ -1088,27 +1303,84 @@ function getAllowedGroups(target) {
   if (target === 'partial_samples') {
     return state.showPartialOverlay ? state.partialSampleGroups : new Set();
   }
-  return new Set(payload.partial_groups);
+  return new Set(groupNames);
 }
 
-function getSortedFeatureTableRows() {
-  const features = getRankedFeatures(null, null);
+// ============================================================================
+// TOP FEATURES TABLE (SORT, RENDER, TOOLTIP, EXPORT)
+// ============================================================================
+
+// Column definitions for the currently selected table. Sample tables omit the
+// Group column; the value/aggregate labels track the selected dimensions.
+function getTableColumns() {
+  const source = TABLE_SOURCES[state.tableSource];
+  const columns = [
+    {
+      key: 'name',
+      label: source.entity === 'feature' ? 'Feature' : 'Sample',
+      defaultDirection: 'asc',
+      type: 'text',
+    },
+  ];
+  if (source.entity === 'feature') {
+    columns.push({ key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' });
+  }
+  columns.push(
+    { key: 'x', label: `${dimensionLabel(state.xDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number' },
+    { key: 'y', label: `${dimensionLabel(state.yDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number' },
+    { key: 'aggregate', label: source.aggregateLabel, defaultDirection: 'desc', type: 'number' }
+  );
+  return columns;
+}
+
+// Builds the rows for the selected table: reads the source field for both
+// displayed dimensions, computes the aggregate column, and applies the sort.
+function getTableRows() {
+  const source = TABLE_SOURCES[state.tableSource];
+  const isFeature = source.entity === 'feature';
+  const records = isFeature ? (payload.features ?? []) : samples;
+
+  const rows = records
+    .map((record) => {
+      const x = componentField(record, state.xDimension, source.field);
+      const y = componentField(record, state.yDimension, source.field);
+      return {
+        name: isFeature ? shortenTaxonomyFeatureName(record.variable) : record.sample_id,
+        fullName: isFeature ? record.variable : record.sample_id,
+        group: isFeature ? record.group : null,
+        x,
+        y,
+        aggregate: source.aggregate === 'magnitude' ? Math.hypot(x, y) : x + y,
+        // Kept so the name-cell hover can show the coordinate/contribution/cos2
+        // block regardless of which table field is currently displayed.
+        record,
+      };
+    })
+    .filter((row) => Number.isFinite(row.x) && Number.isFinite(row.y));
+
+  // Default largest-aggregate-first ordering doubles as the stable tiebreak.
+  rows.sort(
+    (a, b) =>
+      b.aggregate - a.aggregate ||
+      String(a.group).localeCompare(String(b.group)) ||
+      a.name.localeCompare(b.name)
+  );
+  rows.forEach((row, index) => {
+    row.rank = index;
+  });
+
   const { column, direction } = state.featureTableSort;
-  return features
+  return rows
     .slice()
-    .sort((left, right) => compareFeatureTableRows(left, right, column, direction))
+    .sort((left, right) => compareTableRows(left, right, column, direction))
     .slice(0, MAX_FEATURE_OVERLAY_COUNT);
 }
 
-function compareFeatureTableRows(left, right, column, direction) {
-  let comparison;
-  if (['x', 'y', 'rankingScore'].includes(column)) {
-    comparison = left[column] - right[column];
-  } else if (column === 'feature_name') {
-    comparison = left.display_feature_name.localeCompare(right.display_feature_name);
-  } else {
-    comparison = String(left[column]).localeCompare(String(right[column]));
-  }
+function compareTableRows(left, right, column, direction) {
+  const numeric = ['x', 'y', 'aggregate'].includes(column);
+  const comparison = numeric
+    ? left[column] - right[column]
+    : String(left[column]).localeCompare(String(right[column]));
 
   if (comparison !== 0) {
     return direction === 'asc' ? comparison : -comparison;
@@ -1131,44 +1403,68 @@ function updateFeatureTableSort(button) {
   };
 }
 
-function renderTopFeaturesTable() {
+function renderDataTable() {
+  const head = document.getElementById('feature-table-head');
   const body = document.getElementById('top-features-table-body');
   const empty = document.getElementById('top-features-empty');
-  if (!body || !empty) {
+  if (!head || !body || !empty) {
     return;
   }
 
-  const xHeading = document.getElementById('feature-table-x-heading');
-  const yHeading = document.getElementById('feature-table-y-heading');
-  if (xHeading) {
-    xHeading.textContent = buildFeatureValueColumnLabel(state.xDimension);
-  }
-  if (yHeading) {
-    yHeading.textContent = buildFeatureValueColumnLabel(state.yDimension);
-  }
+  const source = TABLE_SOURCES[state.tableSource];
+  const columns = getTableColumns();
+  renderTableHeader(head, columns);
 
-  body.replaceChildren();
-  const features = getSortedFeatureTableRows();
+  const rows = getTableRows();
   updateFeatureTableSortHeaders();
-  empty.textContent = features.length ? '' : 'No finite features for the selected source and dimensions.';
+  empty.textContent = rows.length
+    ? ''
+    : 'No finite rows for the selected table and dimensions.';
 
+  const formatCell = source.percent ? formatPercent : formatValue;
   const fragment = document.createDocumentFragment();
-  features.forEach((feature) => {
-    const row = document.createElement('tr');
-    row.appendChild(buildFeatureNameCell(feature));
-    row.appendChild(buildFeatureTableCell(feature.group));
-    row.appendChild(buildFeatureTableCell(formatValue(feature.x), 'feature-table-number'));
-    row.appendChild(buildFeatureTableCell(formatValue(feature.y), 'feature-table-number'));
-    row.appendChild(
-      buildFeatureTableCell(formatValue(feature.rankingScore), 'feature-table-number')
-    );
-    fragment.appendChild(row);
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    columns.forEach((column) => {
+      if (column.key === 'name') {
+        tr.appendChild(
+          source.entity === 'feature'
+            ? buildFeatureNameCell(row)
+            : buildSampleNameCell(row)
+        );
+      } else if (column.type === 'number') {
+        tr.appendChild(buildFeatureTableCell(formatCell(row[column.key]), 'feature-table-number'));
+      } else {
+        tr.appendChild(buildFeatureTableCell(row[column.key]));
+      }
+    });
+    fragment.appendChild(tr);
   });
-  body.appendChild(fragment);
+  body.replaceChildren(fragment);
 }
 
-function buildFeatureValueColumnLabel(dimensionKey) {
-  return `${dimensionsByKey[dimensionKey].label} ${state.featureSource}`;
+function renderTableHeader(head, columns) {
+  const row = document.createElement('tr');
+  columns.forEach((column) => {
+    const th = document.createElement('th');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'feature-table-sort';
+    button.dataset.featureSort = column.key;
+    button.dataset.defaultDirection = column.defaultDirection;
+
+    const label = document.createElement('span');
+    label.textContent = column.label;
+    const indicator = document.createElement('span');
+    indicator.className = 'feature-table-sort-indicator';
+    indicator.setAttribute('aria-hidden', 'true');
+
+    button.appendChild(label);
+    button.appendChild(indicator);
+    th.appendChild(button);
+    row.appendChild(th);
+  });
+  head.replaceChildren(row);
 }
 
 function updateFeatureTableSortHeaders() {
@@ -1195,9 +1491,9 @@ function updateFeatureTableSortHeaders() {
   });
 }
 
-function buildFeatureNameCell(feature) {
-  const tooltipText = feature.feature_name;
-  const cell = buildFeatureTableCell(feature.display_feature_name, 'feature-name-cell');
+function buildFeatureNameCell(row) {
+  const tooltipText = row.fullName;
+  const cell = buildFeatureTableCell(row.name, 'feature-name-cell');
   cell.tabIndex = 0;
   cell.addEventListener('mouseenter', (event) => {
     showFeatureNameTooltip(tooltipText, event.clientX, event.clientY);
@@ -1211,6 +1507,19 @@ function buildFeatureNameCell(feature) {
     showFeatureNameTooltip(tooltipText, rect.left, rect.bottom);
   });
   cell.addEventListener('blur', hideFeatureNameTooltip);
+  return cell;
+}
+
+function buildSampleNameCell(row) {
+  const cell = document.createElement('td');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'sample-name-button';
+  button.textContent = row.name;
+  button.addEventListener('click', () => {
+    toggleSelectedSample(row.fullName, { scrollToPlot: true });
+  });
+  cell.appendChild(button);
   return cell;
 }
 
@@ -1248,6 +1557,122 @@ function hideFeatureNameTooltip() {
   tooltip.classList.remove('is-visible');
 }
 
+// ============================================================================
+// SAMPLE DETAILS PANEL
+// ============================================================================
+
+// Fixed panel that shows the selected sample's selected-axis metrics first,
+// followed by metadata in table form.
+function renderSampleDetailsPanel() {
+  const panel = document.getElementById('sample-details');
+  if (!panel) {
+    return;
+  }
+
+  const sample = state.selectedSampleId ? samplesById[state.selectedSampleId] : null;
+  if (!sample) {
+    panel.replaceChildren(buildSampleDetailsEmptyState());
+    return;
+  }
+
+  const title = document.createElement('div');
+  title.className = 'sample-details-title';
+  title.textContent = sample.sample_id;
+
+  panel.replaceChildren(
+    title,
+    buildSampleMetricsTable(sample),
+    buildSampleMetadataTable(sample)
+  );
+}
+
+function buildSampleDetailsEmptyState() {
+  const empty = document.createElement('div');
+  empty.className = 'sample-details-empty';
+  empty.textContent = 'Click a sample to view details.';
+  return empty;
+}
+
+function buildSampleMetricsTable(sample) {
+  const table = buildSampleDetailsTable('sample-details-metrics');
+  const head = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  ['', dimensionLabel(state.xDimension), dimensionLabel(state.yDimension)].forEach(
+    (label, index) => {
+      const className = index === 0 ? 'sample-details-name' : '';
+      headerRow.appendChild(buildSampleDetailsCell('th', label, className));
+    }
+  );
+  head.appendChild(headerRow);
+
+  const body = document.createElement('tbody');
+  body.appendChild(
+    buildSampleMetricRow('coordinate', [
+      formatValue(componentField(sample, state.xDimension, 'coordinate')),
+      formatValue(componentField(sample, state.yDimension, 'coordinate')),
+    ])
+  );
+  body.appendChild(
+    buildSampleMetricRow('contribution', [
+      formatPercent(componentField(sample, state.xDimension, 'contribution')),
+      formatPercent(componentField(sample, state.yDimension, 'contribution')),
+    ])
+  );
+  body.appendChild(
+    buildSampleMetricRow('cos2', [
+      formatValue(componentField(sample, state.xDimension, 'cos2')),
+      formatValue(componentField(sample, state.yDimension, 'cos2')),
+    ])
+  );
+
+  table.appendChild(head);
+  table.appendChild(body);
+  return table;
+}
+
+function buildSampleMetadataTable(sample) {
+  const table = buildSampleDetailsTable('sample-details-metadata');
+  const body = document.createElement('tbody');
+  payload.metadata_columns.forEach((column) => {
+    const row = document.createElement('tr');
+    row.appendChild(buildSampleDetailsCell('th', column.name, 'sample-details-name'));
+    row.appendChild(
+      buildSampleDetailsCell(
+        'td',
+        formatMetadataValue(sample.metadata[column.name]),
+        'sample-details-value'
+      )
+    );
+    body.appendChild(row);
+  });
+  table.appendChild(body);
+  return table;
+}
+
+function buildSampleMetricRow(label, values) {
+  const row = document.createElement('tr');
+  row.appendChild(buildSampleDetailsCell('th', label, 'sample-details-name'));
+  values.forEach((value) => {
+    row.appendChild(buildSampleDetailsCell('td', value, 'sample-details-value'));
+  });
+  return row;
+}
+
+function buildSampleDetailsTable(className) {
+  const table = document.createElement('table');
+  table.className = `sample-details-table ${className}`;
+  return table;
+}
+
+function buildSampleDetailsCell(tagName, value, className = '') {
+  const cell = document.createElement(tagName);
+  if (className) {
+    cell.className = className;
+  }
+  cell.textContent = value;
+  return cell;
+}
+
 function buildFeatureTableCell(value, className) {
   const cell = document.createElement('td');
   if (className) {
@@ -1258,27 +1683,20 @@ function buildFeatureTableCell(value, className) {
 }
 
 function downloadFeatureTableTsv() {
-  const rows = getSortedFeatureTableRows();
-  const xLabel = buildFeatureValueColumnLabel(state.xDimension);
-  const yLabel = buildFeatureValueColumnLabel(state.yDimension);
-  const header = [
-    'feature',
-    'feature_id',
-    'group',
-    xLabel,
-    yLabel,
-    'plane_magnitude',
-  ];
+  const columns = getTableColumns();
+  const rows = getTableRows();
+  const header = columns.map((column) => column.label);
   const lines = [
     header.map(escapeTsvValue).join('\t'),
-    ...rows.map((feature) => [
-      feature.display_feature_name,
-      feature.feature_id,
-      feature.group,
-      feature.x,
-      feature.y,
-      feature.rankingScore,
-    ].map(escapeTsvValue).join('\t')),
+    // Export the full (unshortened) name for the entity column, and the payload
+    // values otherwise (i.e. more precision than the rounded on-screen table,
+    // though still trimmed once at the Python export step).
+    ...rows.map((row) =>
+      columns
+        .map((column) => (column.key === 'name' ? row.fullName : row[column.key]))
+        .map(escapeTsvValue)
+        .join('\t')
+    ),
   ];
 
   const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/tab-separated-values' });
@@ -1297,9 +1715,9 @@ function escapeTsvValue(value) {
 }
 
 function buildFeatureTableDownloadFilename() {
-  const xLabel = state.xDimension.toLowerCase().replace(/\s+/g, '-');
-  const yLabel = state.yDimension.toLowerCase().replace(/\s+/g, '-');
-  return `mfa-contributing-features-${xLabel}-vs-${yLabel}.tsv`;
+  const xLabel = dimensionFileLabel(state.xDimension);
+  const yLabel = dimensionFileLabel(state.yDimension);
+  return `mfa-${state.tableSource}-${xLabel}-vs-${yLabel}.tsv`;
 }
 
 function formatFeaturePlotLabel(featureName) {
@@ -1328,10 +1746,14 @@ function shortenTaxonomyFeatureName(featureName) {
   return shortened || featureName;
 }
 
+// ============================================================================
+// TRACE BUILDERS: PARTIAL OVERLAY, MARKERS, SIZE LEGEND, BARYCENTER
+// ============================================================================
+
 function buildPartialOverlayTraces(samples, colorColumn) {
   if (
     !state.showPartialOverlay ||
-    !payload.partial_samples?.length
+    !partialSamples.length
   ) {
     return [];
   }
@@ -1341,12 +1763,12 @@ function buildPartialOverlayTraces(samples, colorColumn) {
   const visibleSamplesById = Object.fromEntries(
     samples.map((sample) => [sample.sample_id, sample])
   );
-  const visiblePartialSamples = payload.partial_samples.filter(
+  const visiblePartialSamples = partialSamples.filter(
     (entry) =>
       allowedPartialGroups.has(entry.group) &&
       visibleSampleIds.has(entry.sample_id) &&
-      entry.coords[state.xDimension] !== undefined &&
-      entry.coords[state.yDimension] !== undefined
+      partialSampleValue(entry, state.xDimension) !== undefined &&
+      partialSampleValue(entry, state.yDimension) !== undefined
   );
 
   if (!visiblePartialSamples.length) {
@@ -1357,23 +1779,16 @@ function buildPartialOverlayTraces(samples, colorColumn) {
   const traces = [];
 
   if (colorColumn?.type === 'categorical') {
-    const orderedCategories = [...colorColumn.values];
-    if (colorColumn.has_missing) {
-      orderedCategories.push(MISSING_VALUE_TOKEN);
-    }
     const partialLegendGroupsShown = new Set();
 
-    orderedCategories.forEach((category) => {
-      const categorySamples = samples.filter((sample) => {
-        const value = sample.metadata[colorColumn.name];
-        return category === MISSING_VALUE_TOKEN ? value === null : value === category;
-      });
+    getOrderedCategories(colorColumn).forEach((category) => {
+      const categorySamples = filterByCategory(samples, colorColumn, category);
       if (!categorySamples.length) {
         return;
       }
 
       const categorySampleIds = new Set(categorySamples.map((sample) => sample.sample_id));
-      payload.partial_groups.forEach((group) => {
+      groupNames.forEach((group) => {
         const groupEntries = visiblePartialSamples.filter(
           (entry) => entry.group === group && categorySampleIds.has(entry.sample_id)
         );
@@ -1409,7 +1824,7 @@ function buildPartialOverlayTraces(samples, colorColumn) {
     return traces;
   }
 
-  payload.partial_groups.forEach((group) => {
+  groupNames.forEach((group) => {
     const groupEntries = visiblePartialSamples.filter((entry) => entry.group === group);
     if (!groupEntries.length) {
       return;
@@ -1445,8 +1860,16 @@ function buildPartialConnectorTrace(
 
   groupEntries.forEach((entry) => {
     const sample = visibleSamplesById[entry.sample_id];
-    x.push(sample.coords[state.xDimension], entry.coords[state.xDimension], null);
-    y.push(sample.coords[state.yDimension], entry.coords[state.yDimension], null);
+    x.push(
+      sampleValue(sample, state.xDimension),
+      partialSampleValue(entry, state.xDimension),
+      null
+    );
+    y.push(
+      sampleValue(sample, state.yDimension),
+      partialSampleValue(entry, state.yDimension),
+      null
+    );
   });
 
   return {
@@ -1472,13 +1895,13 @@ function buildPartialPointTrace(groupEntries, color, group, legendgroup, showleg
     name: `${group} partial`,
     legendgroup,
     showlegend,
-    x: groupEntries.map((entry) => entry.coords[state.xDimension]),
-    y: groupEntries.map((entry) => entry.coords[state.yDimension]),
-    text: groupEntries.map(buildPartialHoverText),
-    hovertemplate: '%{text}<extra></extra>',
+    x: groupEntries.map((entry) => partialSampleValue(entry, state.xDimension)),
+    y: groupEntries.map((entry) => partialSampleValue(entry, state.yDimension)),
+    customdata: groupEntries.map(buildPartialHoverText),
+    hovertemplate: HOVER_TEMPLATE,
     marker: {
       color,
-      size: getPartialPointSizes(groupEntries, 6),
+      size: getPointSizes(groupEntries, 6, (entry) => samplesById[entry.sample_id]),
       opacity: state.pointOpacity,
       symbol: 'diamond-open',
       line: { color, width: 2 },
@@ -1486,25 +1909,63 @@ function buildPartialPointTrace(groupEntries, color, group, legendgroup, showleg
   };
 }
 
-function buildSingleTrace(samples, color, name, options = {}) {
+// Shared sample-marker scatter used by the single, categorical, and numeric
+// sample traces. Callers supply marker overrides (color, symbol, colorbar, ...)
+// on top of the common size/opacity/border.
+function buildSampleScatterTrace(samples, name, { showlegend = true, legendgroup, marker = {} } = {}) {
   return {
     type: 'scatter',
     mode: 'markers',
     name: formatSampleLegendName(name, samples),
-    legendgroup: options.legendgroup,
-    showlegend: options.showlegend ?? true,
-    x: samples.map((sample) => sample.coords[state.xDimension]),
-    y: samples.map((sample) => sample.coords[state.yDimension]),
-    customdata: samples.map(buildHoverText),
-    hovertemplate: '%{customdata}<extra></extra>',
+    legendgroup,
+    showlegend,
+    x: samples.map((sample) => sampleValue(sample, state.xDimension)),
+    y: samples.map((sample) => sampleValue(sample, state.yDimension)),
+    // Sample points suppress the native Plotly label and carry only their id,
+    // so click handling can toggle the fixed sample details panel.
+    customdata: samples.map((sample) => sample.sample_id),
+    text: samples.map(buildSampleHoverText),
+    hovertemplate: '%{text}<extra></extra>',
     marker: {
-      color,
-      size: getSamplePointSizes(samples, 8),
+      size: getPointSizes(samples, 8),
       opacity: state.pointOpacity,
-      symbol: options.symbol ?? 'circle',
-      line: buildSamplePointMarkerLine(getThemeColors().markerLine, 1),
+      line: buildSamplePointMarkerLine(samples, getThemeColors().markerLine, 1),
+      ...marker,
     },
   };
+}
+
+function buildSampleHoverText(sample) {
+  return [
+    `<b>${sample.sample_id}</b>`,
+    dimLine(state.xDimension, componentField(sample, state.xDimension, 'coordinate')),
+    dimLine(state.yDimension, componentField(sample, state.yDimension, 'coordinate')),
+    dimContributionLine(
+      state.xDimension,
+      componentField(sample, state.xDimension, 'contribution')
+    ),
+    dimContributionLine(
+      state.yDimension,
+      componentField(sample, state.yDimension, 'contribution')
+    ),
+    `${dimensionLabel(state.xDimension)} cos2: ${formatValue(
+      componentField(sample, state.xDimension, 'cos2')
+    )}`,
+    `${dimensionLabel(state.yDimension)} cos2: ${formatValue(
+      componentField(sample, state.yDimension, 'cos2')
+    )}`,
+  ].join('<br>');
+}
+
+function buildSingleTrace(samples, color, name, options = {}) {
+  return buildSampleScatterTrace(samples, name, {
+    showlegend: options.showlegend,
+    legendgroup: options.legendgroup,
+    marker: {
+      color,
+      symbol: options.symbol ?? 'circle',
+    },
+  });
 }
 
 function formatSampleLegendName(name, samples) {
@@ -1515,25 +1976,17 @@ function scalePointSize(baseSize) {
   return baseSize * state.pointSizeScale;
 }
 
-function getSamplePointSizes(samples, baseSize) {
+// Works for both plain samples and partial-sample entries: pass a resolver that
+// maps each item to the sample carrying the size metadata.
+function getPointSizes(items, baseSize, resolveSample = (item) => item) {
   const sizeColumn = metadataByName[state.sizeBy];
   if (!sizeColumn || sizeColumn.type !== 'numeric') {
     return scalePointSize(baseSize);
   }
 
-  return samples.map((sample) => scaleMetadataPointSize(sample, sizeColumn, baseSize));
-}
-
-function getPartialPointSizes(groupEntries, baseSize) {
-  const sizeColumn = metadataByName[state.sizeBy];
-  if (!sizeColumn || sizeColumn.type !== 'numeric') {
-    return scalePointSize(baseSize);
-  }
-
-  return groupEntries.map((entry) => {
-    const sample = samplesById[entry.sample_id];
-    return scaleMetadataPointSize(sample, sizeColumn, baseSize);
-  });
+  return items.map((item) =>
+    scaleMetadataPointSize(resolveSample(item), sizeColumn, baseSize)
+  );
 }
 
 function scaleMetadataPointSize(sample, sizeColumn, baseSize) {
@@ -1557,61 +2010,64 @@ function buildSizeLegendTraces() {
     return [];
   }
 
-  const markerLine = buildSamplePointMarkerLine(getThemeColors().markerLine, 1);
+  const markerLine = buildStaticSamplePointMarkerLine(getThemeColors().markerLine, 1);
+  const sizeMarker = (size) => ({
+    color: DEFAULT_MARKER_COLOR,
+    size,
+    opacity: state.pointOpacity,
+    symbol: 'circle',
+    line: markerLine,
+  });
   return [
-    buildSizeLegendHeaderTrace(`Size by: ${sizeColumn.name}`),
-    buildSizeLegendTrace(
+    buildSizeLegendEntryTrace(`Size by: ${sizeColumn.name}`),
+    buildSizeLegendEntryTrace(
       `min: ${formatValue(sizeColumn.min)}`,
-      scaleMetadataFractionPointSize(0, 8),
-      markerLine
+      sizeMarker(scaleMetadataFractionPointSize(0, 8))
     ),
-    buildSizeLegendTrace(
+    buildSizeLegendEntryTrace(
       `max: ${formatValue(sizeColumn.max)}`,
-      scaleMetadataFractionPointSize(1, 8),
-      markerLine
+      sizeMarker(scaleMetadataFractionPointSize(1, 8))
     ),
   ];
 }
 
-function buildSizeLegendHeaderTrace(name) {
-  return {
+// A legend-only (off-canvas) trace. With a marker it shows a sized dot; without
+// one it renders an invisible line, used as the size-legend header row.
+function buildSizeLegendEntryTrace(name, marker = null) {
+  const trace = {
     type: 'scatter',
-    mode: 'lines',
+    mode: marker ? 'markers' : 'lines',
     name,
     legendgroup: 'size-legend',
     showlegend: true,
     x: [null],
     y: [null],
     hoverinfo: 'skip',
-    line: {
-      color: 'rgba(0, 0, 0, 0)',
-      width: 0,
-    },
   };
+  if (marker) {
+    trace.marker = marker;
+  } else {
+    trace.line = { color: 'rgba(0, 0, 0, 0)', width: 0 };
+  }
+  return trace;
 }
 
-function buildSizeLegendTrace(name, size, markerLine) {
-  return {
-    type: 'scatter',
-    mode: 'markers',
-    name,
-    legendgroup: 'size-legend',
-    showlegend: true,
-    x: [null],
-    y: [null],
-    hoverinfo: 'skip',
-    marker: {
-      color: DEFAULT_MARKER_COLOR,
-      size,
-      opacity: state.pointOpacity,
-      symbol: 'circle',
-      line: markerLine,
-    },
-  };
-}
-
-function buildSamplePointMarkerLine(color, width) {
+function buildStaticSamplePointMarkerLine(color, width) {
   return state.showPointBorder ? { color, width } : { color, width: 0 };
+}
+
+function buildSamplePointMarkerLine(samples, color, width) {
+  return {
+    color: samples.map((sample) =>
+      sample.sample_id === state.selectedSampleId ? '#000000' : color
+    ),
+    width: samples.map((sample) => {
+      if (sample.sample_id === state.selectedSampleId) {
+        return 3;
+      }
+      return state.showPointBorder ? width : 0;
+    }),
+  };
 }
 
 function buildNumericTraces(samples, colorColumn) {
@@ -1625,15 +2081,8 @@ function buildNumericTraces(samples, colorColumn) {
 
   const traces = [];
   if (numericSamples.length) {
-    traces.push({
-      type: 'scatter',
-      mode: 'markers',
-      name: formatSampleLegendName(colorColumn.name, numericSamples),
+    traces.push(buildSampleScatterTrace(numericSamples, colorColumn.name, {
       showlegend: false,
-      x: numericSamples.map((sample) => sample.coords[state.xDimension]),
-      y: numericSamples.map((sample) => sample.coords[state.yDimension]),
-      customdata: numericSamples.map(buildHoverText),
-      hovertemplate: '%{customdata}<extra></extra>',
       marker: {
         color: numericSamples.map((sample) => sample.metadata[colorColumn.name]),
         colorscale: getNumericColorscale(state.colorPalette),
@@ -1650,13 +2099,10 @@ function buildNumericTraces(samples, colorColumn) {
           thickness: 18,
           tickfont: buildPlotFont(themeColors),
         },
-        size: getSamplePointSizes(numericSamples, 8),
-        opacity: state.pointOpacity,
-        line: buildSamplePointMarkerLine(themeColors.markerLine, 1),
         cmin: colorColumn.min,
         cmax: colorColumn.max,
       },
-    });
+    }));
   }
 
   if (missingSamples.length) {
@@ -1669,17 +2115,10 @@ function buildNumericTraces(samples, colorColumn) {
 function buildCategoricalTraces(samples, colorColumn) {
   const palette = getCategoricalColors(getCategoricalLevelCount(colorColumn));
   const symbols = getCategoricalSymbols(getCategoricalLevelCount(colorColumn));
-  const orderedCategories = [...colorColumn.values];
-  if (colorColumn.has_missing) {
-    orderedCategories.push(MISSING_VALUE_TOKEN);
-  }
 
-  return orderedCategories
+  return getOrderedCategories(colorColumn)
     .map((category, index) => {
-      const subset = samples.filter((sample) => {
-        const value = sample.metadata[colorColumn.name];
-        return category === MISSING_VALUE_TOKEN ? value === null : value === category;
-      });
+      const subset = filterByCategory(samples, colorColumn, category);
 
       if (!subset.length) {
         return null;
@@ -1702,18 +2141,10 @@ function appendBarycenterTraces(traces, samples, colorColumn) {
   const ellipseTraces = [];
 
   if (colorColumn?.type === 'categorical') {
-    const orderedCategories = [...colorColumn.values];
-    if (colorColumn.has_missing) {
-      orderedCategories.push(MISSING_VALUE_TOKEN);
-    }
-
+    const orderedCategories = getOrderedCategories(colorColumn);
     const palette = getCategoricalColors(orderedCategories.length);
     orderedCategories.forEach((category, index) => {
-      const subset = samples.filter((sample) => {
-        const value = sample.metadata[colorColumn.name];
-        return category === MISSING_VALUE_TOKEN ? value === null : value === category;
-      });
-
+      const subset = filterByCategory(samples, colorColumn, category);
       const label = category === MISSING_VALUE_TOKEN ? 'Missing' : category;
       const ellipseTrace = buildBarycenterEllipseTrace(
         subset,
@@ -1773,8 +2204,8 @@ function computeEllipsePoints(samples) {
   }
 
   const points = samples.map((sample) => [
-    sample.coords[state.xDimension],
-    sample.coords[state.yDimension],
+    sampleValue(sample, state.xDimension),
+    sampleValue(sample, state.yDimension),
   ]);
   const meanX = average(points.map((point) => point[0]));
   const meanY = average(points.map((point) => point[1]));
@@ -1843,16 +2274,20 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function getCategoricalColors(count) {
+// Cycle `count` entries out of the active palette's `key` array (colors or
+// symbols), wrapping around and falling back when the palette lacks that key.
+function cyclePalette(count, key, fallback) {
   const palette = COLOR_PALETTES[state.colorPalette] ?? COLOR_PALETTES.Plotly;
-  const colors = palette.colors;
-  return Array.from({ length: count }, (_, index) => colors[index % colors.length]);
+  const values = palette[key] ?? fallback;
+  return Array.from({ length: count }, (_, index) => values[index % values.length]);
+}
+
+function getCategoricalColors(count) {
+  return cyclePalette(count, 'colors', COLOR_PALETTES.Plotly.colors);
 }
 
 function getCategoricalSymbols(count) {
-  const palette = COLOR_PALETTES[state.colorPalette] ?? COLOR_PALETTES.Plotly;
-  const symbols = palette.symbols ?? ['circle'];
-  return Array.from({ length: count }, (_, index) => symbols[index % symbols.length]);
+  return cyclePalette(count, 'symbols', ['circle']);
 }
 
 function getNumericColorscale(paletteName) {
@@ -1878,23 +2313,97 @@ function withAlpha(hexColor, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
+// ============================================================================
+// SHARED PLOT CONFIG, LAYOUT HELPERS & MAIN LAYOUT
+// ============================================================================
+
+// Mode-bar buttons removed from every secondary (non-interactive) plot.
+const SECONDARY_PLOT_MODEBAR_REMOVE = [
+  'lasso2d',
+  'select2d',
+  'zoom2d',
+  'pan2d',
+  'zoomIn2d',
+  'zoomOut2d',
+  'autoScale2d',
+  'resetScale2d',
+];
+
+// A mode-bar button that exports a plot in the given raster/vector format.
+// `filename` includes the extension; downloadPlotImage strips it back off.
+function buildImageDownloadButton(label, plotId, filename, format) {
+  return {
+    name: label,
+    icon: Plotly.Icons.camera,
+    click: () => {
+      downloadPlotImage(plotId, filename, format);
+    },
+  };
+}
+
+// Shared Plotly config for the four secondary plots: PNG via the built-in
+// camera, an added SVG export, and a trimmed mode bar.
+function buildSecondaryPlotConfig(plotId, baseFilename, { width = 1200, height = 700 } = {}) {
+  return {
+    responsive: true,
+    displaylogo: false,
+    toImageButtonOptions: {
+      format: 'png',
+      filename: baseFilename,
+      width,
+      height,
+      scale: 2,
+    },
+    modeBarButtonsToAdd: [
+      buildImageDownloadButton('Download SVG', plotId, `${baseFilename}.svg`, 'svg'),
+    ],
+    modeBarButtonsToRemove: SECONDARY_PLOT_MODEBAR_REMOVE,
+  };
+}
+
+// Common layout scaffolding (transparent background + themed base font).
+function buildBaseLayout(themeColors, overrides = {}) {
+  return {
+    paper_bgcolor: 'rgba(0, 0, 0, 0)',
+    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+    font: {
+      color: themeColors.font,
+      family: themeColors.fontFamily,
+      size: themeColors.fontSize,
+    },
+    ...overrides,
+  };
+}
+
+// Axis with the themed grid + tick font pre-filled; overrides win.
+function buildThemedAxis(themeColors, overrides = {}) {
+  return {
+    gridcolor: themeColors.grid,
+    gridwidth: 1,
+    tickfont: buildPlotFont(themeColors),
+    ...overrides,
+  };
+}
+
+// The zero-line styling shared by the scatter-style plots.
+function themedZeroline(themeColors) {
+  return {
+    zeroline: true,
+    zerolinecolor: themeColors.zeroline,
+    zerolinewidth: 1,
+  };
+}
+
 function buildLayout(traces) {
   const themeColors = getThemeColors();
   const legendRightMargin = computeSampleLegendRightMargin(traces);
   const legendY = hasSampleNumericColorbar(traces) ? SAMPLE_LEGEND_BELOW_COLORBAR_Y : 1;
   const sharedGridStep = computeSharedSampleGridStep(traces);
 
-  return {
-    paper_bgcolor: 'rgba(0, 0, 0, 0)',
-    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+  return buildBaseLayout(themeColors, {
     dragmode: 'pan',
     hovermode: 'closest',
     margin: { t: 32, r: legendRightMargin, b: 78, l: 80 },
-    font: {
-      color: themeColors.font,
-      family: themeColors.fontFamily,
-      size: themeColors.fontSize,
-    },
     legend: {
       orientation: 'v',
       groupclick: 'togglegroup',
@@ -1904,9 +2413,9 @@ function buildLayout(traces) {
       x: 1.02,
       font: buildPlotFont(themeColors),
     },
-    xaxis: {
+    xaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.xDimension].axis_title,
+        text: dimensionAxisTitle(state.xDimension),
         font: buildPlotFont(themeColors),
       },
       scaleanchor: 'y',
@@ -1914,29 +2423,63 @@ function buildLayout(traces) {
       tickmode: 'linear',
       tick0: 0,
       dtick: sharedGridStep,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
-    yaxis: {
+      ...themedZeroline(themeColors),
+    }),
+    yaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.yDimension].axis_title,
+        text: dimensionAxisTitle(state.yDimension),
         font: buildPlotFont(themeColors),
       },
       tickmode: 'linear',
       tick0: 0,
       dtick: sharedGridStep,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
-  };
+      ...themedZeroline(themeColors),
+    }),
+  });
+}
+
+function applySamplePlotSquareDataArea(layout) {
+  const samplePlotShell = document.querySelector('.plot-shell-main');
+  const samplePlot = document.getElementById('sample-plot');
+  const samplePlotLayout = document.querySelector('.sample-plot-layout');
+  const sampleDetailsPanel = document.querySelector('.sample-details-panel');
+  if (!samplePlotShell || !samplePlot || !samplePlotLayout) {
+    return;
+  }
+
+  const margin = layout.margin;
+  const layoutRect = samplePlotLayout.getBoundingClientRect();
+  const shellStyle = window.getComputedStyle(samplePlotShell);
+  const layoutStyle = window.getComputedStyle(samplePlotLayout);
+  const shellHorizontalBorder =
+    parseFloat(shellStyle.borderLeftWidth) + parseFloat(shellStyle.borderRightWidth);
+  const shellVerticalBorder =
+    parseFloat(shellStyle.borderTopWidth) + parseFloat(shellStyle.borderBottomWidth);
+  const columnGap = parseFloat(layoutStyle.columnGap) || 0;
+  const panelWidth = sampleDetailsPanel?.getBoundingClientRect().width ?? 0;
+  const isSideBySide =
+    sampleDetailsPanel &&
+    Math.abs(sampleDetailsPanel.offsetTop - samplePlotShell.offsetTop) < 2;
+  const availableShellWidth = isSideBySide
+    ? layoutRect.width - panelWidth - columnGap
+    : layoutRect.width;
+  const availablePlotWidth = Math.max(1, availableShellWidth - shellHorizontalBorder);
+  const dataAreaSize = Math.max(
+    1,
+    Math.floor(availablePlotWidth - margin.l - margin.r)
+  );
+  const width = dataAreaSize + margin.l + margin.r;
+  const height = dataAreaSize + margin.t + margin.b;
+  const shellWidth = width + shellHorizontalBorder;
+  const shellHeight = height + shellVerticalBorder;
+
+  samplePlotShell.style.width = `${shellWidth}px`;
+  samplePlotShell.style.height = `${shellHeight}px`;
+  samplePlot.style.width = `${width}px`;
+  samplePlot.style.height = `${height}px`;
+  samplePlotLayout.style.setProperty('--sample-plot-height', `${shellHeight}px`);
+  layout.width = width;
+  layout.height = height;
 }
 
 function computeSharedSampleGridStep(traces) {
@@ -1983,28 +2526,6 @@ function hasSampleNumericColorbar(traces) {
   return traces.some((trace) => trace.marker?.colorbar);
 }
 
-function updateSamplePlotResizeLimits(layout) {
-  const samplePlotShell = document.querySelector('.plot-shell-main');
-  const samplePlot = document.getElementById('sample-plot');
-  if (!samplePlotShell || !samplePlot) {
-    return;
-  }
-
-  const shellWidth = samplePlotShell.getBoundingClientRect().width;
-  const plotWidth = samplePlot.getBoundingClientRect().width;
-  const shellExtraWidth = Math.max(shellWidth - plotWidth, 0);
-  const plotHeight = samplePlot.getBoundingClientRect().height || 682;
-  const squarePlotWidth = Math.max(
-    plotHeight - layout.margin.t - layout.margin.b,
-    0
-  );
-  const minimumShellWidth = Math.ceil(
-    squarePlotWidth + layout.margin.l + layout.margin.r + shellExtraWidth
-  );
-
-  samplePlotShell.style.minWidth = `min(${minimumShellWidth}px, 100%)`;
-}
-
 function computeSampleLegendRightMargin(traces) {
   const legendLabels = traces.flatMap((trace) => {
     const labels = [];
@@ -2037,12 +2558,16 @@ function computeSampleLegendRightMargin(traces) {
   );
 }
 
+// ============================================================================
+// SECONDARY PLOTS (GROUP, PARTIAL AXES, VARIANCE) & LABEL PLACEMENT
+// ============================================================================
+
 function renderGroupPlot() {
   const themeColors = getThemeColors();
-  const groups = (payload.group_summary ?? []).filter(
+  const groups = groupSummary.filter(
     (entry) =>
-      entry.coords[state.xDimension] !== undefined &&
-      entry.coords[state.yDimension] !== undefined
+      groupCoordinateValue(entry, state.xDimension) !== undefined &&
+      groupCoordinateValue(entry, state.yDimension) !== undefined
   );
   const groupColors = getGroupColorMap(groups.map((entry) => entry.group));
   const labelPlacement = placeGroupInertiaLabels(groups, groupColors);
@@ -2051,11 +2576,12 @@ function renderGroupPlot() {
     type: 'scatter',
     mode: 'markers',
     name: 'Groups',
-    x: groups.map((entry) => entry.coords[state.xDimension]),
-    y: groups.map((entry) => entry.coords[state.yDimension]),
-    text: groups.map((entry) => entry.group),
-    hovertemplate: '%{text}<br>%{customdata}<extra></extra>',
-    customdata: groups.map(buildGroupHoverText),
+    x: groups.map((entry) => groupCoordinateValue(entry, state.xDimension)),
+    y: groups.map((entry) => groupCoordinateValue(entry, state.yDimension)),
+    hovertemplate: HOVER_TEMPLATE,
+    customdata: groups.map(
+      (entry) => `<b>${entry.group}</b><br>${buildGroupHoverText(entry)}`
+    ),
     marker: {
       color: groups.map((entry) => groupColors[entry.group]),
       size: 14,
@@ -2066,49 +2592,17 @@ function renderGroupPlot() {
       },
     },
   };
-  const traces = [
-    trace,
-    ...buildPlotLabelConnectorTraces(labelPlacement),
-  ];
-  const labelTrace = buildPlotLabelTrace(labelPlacement, state.fontSize);
-  if (labelTrace) {
-    traces.push(labelTrace);
-  }
+  const traces = [trace];
+  pushLabelTraces(traces, labelPlacement);
 
   Plotly.react(
     'group-plot',
     traces,
     buildGroupLayout(),
-    {
-      responsive: true,
-      displaylogo: false,
-      toImageButtonOptions: {
-        format: 'png',
-        filename: 'mfa-group-partial-inertia',
-        width: 1200,
-        height: 1200,
-        scale: 2,
-      },
-      modeBarButtonsToAdd: [
-        {
-          name: 'Download SVG',
-          icon: Plotly.Icons.camera,
-          click: () => {
-            downloadPlotImage('group-plot', 'mfa-group-partial-inertia.svg', 'svg');
-          },
-        },
-      ],
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'zoom2d',
-        'pan2d',
-        'zoomIn2d',
-        'zoomOut2d',
-        'autoScale2d',
-        'resetScale2d',
-      ],
-    }
+    buildSecondaryPlotConfig('group-plot', 'mfa-group-partial-inertia', {
+      width: 1200,
+      height: 1200,
+    })
   );
 
   updateGroupSummary(groups);
@@ -2116,19 +2610,19 @@ function renderGroupPlot() {
 
 function buildGroupHoverText(entry) {
   return [
-    `${dimensionsByKey[state.xDimension].label} partial inertia: ${formatValue(entry.coords[state.xDimension])}`,
-    `${dimensionsByKey[state.yDimension].label} partial inertia: ${formatValue(entry.coords[state.yDimension])}`,
-    `${dimensionsByKey[state.xDimension].label} contribution: ${formatValue(entry.contribution[state.xDimension])}`,
-    `${dimensionsByKey[state.yDimension].label} contribution: ${formatValue(entry.contribution[state.yDimension])}`,
-    `${dimensionsByKey[state.xDimension].label} cos2: ${formatValue(entry.cos2[state.xDimension])}`,
-    `${dimensionsByKey[state.yDimension].label} cos2: ${formatValue(entry.cos2[state.yDimension])}`,
+    dimLine(state.xDimension, groupCoordinateValue(entry, state.xDimension), 'partial inertia'),
+    dimLine(state.yDimension, groupCoordinateValue(entry, state.yDimension), 'partial inertia'),
+    dimContributionLine(state.xDimension, groupContributionValue(entry, state.xDimension)),
+    dimContributionLine(state.yDimension, groupContributionValue(entry, state.yDimension)),
+    dimLine(state.xDimension, groupCos2Value(entry, state.xDimension), 'cos2'),
+    dimLine(state.yDimension, groupCos2Value(entry, state.yDimension), 'cos2'),
   ].join('<br>');
 }
 
 function placeGroupInertiaLabels(groups, groupColors) {
   const items = groups.map((entry) => ({
-    anchorX: entry.coords[state.xDimension],
-    anchorY: entry.coords[state.yDimension],
+    anchorX: groupCoordinateValue(entry, state.xDimension),
+    anchorY: groupCoordinateValue(entry, state.yDimension),
     color: groupColors[entry.group],
     hoverText: `${entry.group}<br>${buildGroupHoverText(entry)}`,
     text: entry.group,
@@ -2149,12 +2643,7 @@ function placeFeatureLabels(features, groupColors) {
     anchorY: feature.plotY,
     color: groupColors[feature.group],
     group: feature.group,
-    hoverText:
-      `<b>${feature.feature_name}</b><br>` +
-      `Group: ${feature.group}<br>` +
-      `${state.xDimension}: ${formatValue(feature.x)}<br>` +
-      `${state.yDimension}: ${formatValue(feature.y)}<br>` +
-      `Plane magnitude: ${formatValue(feature.rankingScore)}`,
+    hoverText: buildFeatureHoverText(feature),
     text: feature.plot_feature_name,
   }));
   return placePlotLabels(items, {
@@ -2337,6 +2826,16 @@ function buildPlotLabelTrace(labelPlacement, fontSize, traceOptions = {}) {
   };
 }
 
+// Push the connector traces + (if any) the label trace for a placement onto an
+// existing trace array. Shared by the feature, group, and partial-axes plots.
+function pushLabelTraces(traces, labelPlacement, connectorOptions = {}, labelOptions = {}) {
+  traces.push(...buildPlotLabelConnectorTraces(labelPlacement, connectorOptions));
+  const labelTrace = buildPlotLabelTrace(labelPlacement, state.fontSize, labelOptions);
+  if (labelTrace) {
+    traces.push(labelTrace);
+  }
+}
+
 function computeLabelRange(values, includeZero) {
   const finiteValues = values.filter((value) => Number.isFinite(value));
   if (includeZero) {
@@ -2360,19 +2859,12 @@ function computeLabelRange(values, includeZero) {
 
 function buildGroupLayout() {
   const themeColors = getThemeColors();
-  return {
-    paper_bgcolor: 'rgba(0, 0, 0, 0)',
-    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+  return buildBaseLayout(themeColors, {
     margin: SECONDARY_SQUARE_PLOT_MARGIN,
     showlegend: false,
-    font: {
-      color: themeColors.font,
-      family: themeColors.fontFamily,
-      size: themeColors.fontSize,
-    },
-    xaxis: {
+    xaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.xDimension].label,
+        text: dimensionLabel(state.xDimension),
         font: buildPlotFont(themeColors),
       },
       range: [0, 1],
@@ -2381,90 +2873,70 @@ function buildGroupLayout() {
       scaleanchor: 'y',
       scaleratio: 1,
       automargin: true,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
-    yaxis: {
+      ...themedZeroline(themeColors),
+    }),
+    yaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.yDimension].label,
+        text: dimensionLabel(state.yDimension),
         font: buildPlotFont(themeColors),
       },
       range: [0, 1],
       fixedrange: true,
       constrain: 'domain',
       automargin: true,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
+      ...themedZeroline(themeColors),
+    }),
     annotations: [],
-  };
+  });
+}
+
+// Sets the text of a summary element, tolerating a missing element.
+function setSummary(id, text) {
+  const target = document.getElementById(id);
+  if (target) {
+    target.textContent = text;
+  }
 }
 
 function updateGroupSummary(groups) {
-  const target = document.getElementById('group-summary-text');
-  if (!target) {
-    return;
-  }
-  if (!groups.length) {
-    target.textContent = '';
-    return;
-  }
-
-  target.textContent = `${groups.length} groups shown`;
+  setSummary('group-summary-text', groups.length ? `${groups.length} groups shown` : '');
 }
 
 function renderPartialAxesPlot() {
   const themeColors = getThemeColors();
-  const partialAxes = (payload.partial_correlations ?? []).filter(
-    (entry) => entry.partial_axis === 1 || entry.partial_axis === 2
+  const partialAxes = (payload.partial_axes ?? []).filter(
+    (entry) => entry.partial_component < state.partialAxisCount
   );
-  const seriesKeys = [...new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`))];
   const groupColors = getGroupColorMap();
 
-  const vectorSeries = seriesKeys.map((seriesKey) => {
-    const [group, partialAxisText] = seriesKey.split('::');
-    const partialAxis = Number(partialAxisText);
-    const seriesEntries = partialAxes.filter(
-      (entry) => entry.group === group && entry.partial_axis === partialAxis
-    );
-    const vector = buildPartialAxesVector(seriesEntries);
+  const vectorSeries = partialAxes.map((entry) => {
+    const partialAxis = entry.partial_component + 1;
+    const vector = buildPartialAxesVector(entry);
     if (!vector) {
       return null;
     }
 
-    const label = `Dim ${partialAxis} ${group}`;
-    const color = groupColors[group];
+    const label = `${entry.group} partial dim ${partialAxis}`;
+    const color = groupColors[entry.group];
 
     return {
       color,
-      hoverText: seriesEntries
-        .map(
-          (entry) =>
-            `${entry.group}<br>Partial axis ${entry.partial_axis}<br>${entry.global_dim}: ${formatValue(entry.value)}`
-        )
-        .join('<br>'),
+      hoverText: [
+        `<b>${entry.group}</b>`,
+        `Partial dim ${partialAxis}`,
+        dimLine(state.xDimension, componentField(entry, state.xDimension, 'correlation'), 'correlation'),
+        dimLine(state.yDimension, componentField(entry, state.yDimension, 'correlation'), 'correlation'),
+      ].join('<br>'),
       label,
-      seriesKey,
+      seriesKey: `${entry.group}::${entry.partial_component}`,
       vector,
     };
   }).filter(Boolean);
   const labelPlacement = placePartialAxesLabels(vectorSeries);
-  const traces = vectorSeries.flatMap((series) => [
-    buildPartialAxesVectorTrace(series, themeColors),
-  ]);
-  traces.push(...buildPlotLabelConnectorTraces(labelPlacement));
-  const labelTrace = buildPlotLabelTrace(labelPlacement, state.fontSize);
-  if (labelTrace) {
-    traces.push(labelTrace);
-  }
+  const traces = vectorSeries.flatMap((series) =>
+    buildPartialAxesVectorTrace(series, themeColors)
+  );
+  pushLabelTraces(traces, labelPlacement);
 
   traces.unshift(buildPartialAxesCircleBoundary());
 
@@ -2472,65 +2944,53 @@ function renderPartialAxesPlot() {
     'partial-axes-plot',
     traces,
     buildPartialAxesLayout(),
-    {
-      responsive: true,
-      displaylogo: false,
-      toImageButtonOptions: {
-        format: 'png',
-        filename: 'mfa-partial-axes',
-        width: 1200,
-        height: 700,
-        scale: 2,
-      },
-      modeBarButtonsToAdd: [
-        {
-          name: 'Download SVG',
-          icon: Plotly.Icons.camera,
-          click: () => {
-            downloadPlotImage('partial-axes-plot', 'mfa-partial-axes.svg', 'svg');
-          },
-        },
-      ],
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'zoom2d',
-        'pan2d',
-        'zoomIn2d',
-        'zoomOut2d',
-        'autoScale2d',
-        'resetScale2d',
-      ],
-    }
+    buildSecondaryPlotConfig('partial-axes-plot', 'mfa-partial-axes')
   );
 
   updatePartialAxesSummary(partialAxes);
 }
 
+// A partial-axis vector is drawn as a non-hoverable line from the origin plus a
+// single hoverable endpoint marker, so the shared (0, 0) origin never triggers
+// an (empty) hover label.
 function buildPartialAxesVectorTrace(series, themeColors) {
-  return {
-    type: 'scatter',
-    mode: 'lines+markers',
-    name: series.label,
-    legendgroup: `axes:${series.seriesKey}`,
-    x: [0, series.vector.x],
-    y: [0, series.vector.y],
-    customdata: ['', series.hoverText],
-    hovertemplate: '%{customdata}<extra></extra>',
-    marker: {
-      color: series.color,
-      size: [0, 9],
-      symbol: 'circle',
+  const legendgroup = `axes:${series.seriesKey}`;
+  return [
+    {
+      type: 'scatter',
+      mode: 'lines',
+      name: series.label,
+      legendgroup,
+      x: [0, series.vector.x],
+      y: [0, series.vector.y],
       line: {
-        color: themeColors.markerLine,
-        width: 1,
+        color: withAlpha(series.color, 0.7),
+        width: 2,
       },
+      hoverinfo: 'skip',
+      showlegend: false,
     },
-    line: {
-      color: withAlpha(series.color, 0.7),
-      width: 2,
+    {
+      type: 'scatter',
+      mode: 'markers',
+      name: series.label,
+      legendgroup,
+      x: [series.vector.x],
+      y: [series.vector.y],
+      customdata: [series.hoverText],
+      hovertemplate: HOVER_TEMPLATE,
+      marker: {
+        color: series.color,
+        size: 9,
+        symbol: 'circle',
+        line: {
+          color: themeColors.markerLine,
+          width: 1,
+        },
+      },
+      showlegend: false,
     },
-  };
+  ];
 }
 
 function placePartialAxesLabels(vectorSeries) {
@@ -2561,17 +3021,14 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function buildPartialAxesVector(groupEntries) {
-  const xEntry = groupEntries.find((entry) => entry.global_dim === state.xDimension);
-  const yEntry = groupEntries.find((entry) => entry.global_dim === state.yDimension);
-  if (!xEntry || !yEntry) {
+function buildPartialAxesVector(entry) {
+  const x = componentField(entry, state.xDimension, 'correlation');
+  const y = componentField(entry, state.yDimension, 'correlation');
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return null;
   }
 
-  return {
-    x: xEntry.value,
-    y: yEntry.value,
-  };
+  return { x, y };
 }
 
 function buildPartialAxesCircleBoundary() {
@@ -2600,19 +3057,12 @@ function buildPartialAxesCircleBoundary() {
 
 function buildPartialAxesLayout() {
   const themeColors = getThemeColors();
-  return {
-    paper_bgcolor: 'rgba(0, 0, 0, 0)',
-    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+  return buildBaseLayout(themeColors, {
     margin: SECONDARY_SQUARE_PLOT_MARGIN,
-    font: {
-      color: themeColors.font,
-      family: themeColors.fontFamily,
-      size: themeColors.fontSize,
-    },
     showlegend: false,
-    xaxis: {
+    xaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.xDimension].label,
+        text: dimensionLabel(state.xDimension),
         font: buildPlotFont(themeColors),
       },
       range: PARTIAL_AXES_X_RANGE,
@@ -2620,49 +3070,35 @@ function buildPartialAxesLayout() {
       scaleanchor: 'y',
       scaleratio: 1,
       automargin: true,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
-    yaxis: {
+      ...themedZeroline(themeColors),
+    }),
+    yaxis: buildThemedAxis(themeColors, {
       title: {
-        text: dimensionsByKey[state.yDimension].label,
+        text: dimensionLabel(state.yDimension),
         font: buildPlotFont(themeColors),
       },
       range: PARTIAL_AXES_Y_RANGE,
       constrain: 'domain',
       automargin: true,
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      zeroline: true,
-      zerolinecolor: themeColors.zeroline,
-      zerolinewidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
+      ...themedZeroline(themeColors),
+    }),
     annotations: [],
-  };
+  });
 }
 
 function updatePartialAxesSummary(partialAxes) {
-  const target = document.getElementById('partial-axes-summary');
-  if (!target) {
-    return;
-  }
   if (!partialAxes.length) {
-    target.textContent = '';
+    setSummary('partial-axes-summary', '');
     return;
   }
 
   const groups = new Set(partialAxes.map((entry) => entry.group));
-  const axes = new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_axis}`));
-  target.textContent = `${axes.size} partial axes across ${groups.size} groups`;
+  const axes = new Set(partialAxes.map((entry) => `${entry.group}::${entry.partial_component}`));
+  setSummary('partial-axes-summary', `${axes.size} partial axes across ${groups.size} groups`);
 }
 
 function renderVariancePlot() {
-  const components = payload.component_variance.filter(
+  const components = payload.dimensions.filter(
     (component) => component.variance_explained !== null
   );
   const selectedDimensions = new Set([state.xDimension, state.yDimension]);
@@ -2675,7 +3111,7 @@ function renderVariancePlot() {
     y: components.map((component) => component.variance_explained),
     marker: {
       color: components.map((component) =>
-        selectedDimensions.has(component.key)
+        selectedDimensions.has(component.component)
           ? SELECTED_DIMENSION_COLOR
           : VARIANCE_MARKER_COLOR
       ),
@@ -2692,40 +3128,7 @@ function renderVariancePlot() {
     'variance-plot',
     [barTrace],
     buildVarianceLayout(),
-    {
-      responsive: true,
-      displaylogo: false,
-      toImageButtonOptions: {
-        format: 'png',
-        filename: buildVarianceDownloadFilename('png').replace('.png', ''),
-        width: 1200,
-        height: 700,
-        scale: 2,
-      },
-      modeBarButtonsToAdd: [
-        {
-          name: 'Download SVG',
-          icon: Plotly.Icons.camera,
-          click: () => {
-            downloadPlotImage(
-              'variance-plot',
-              buildVarianceDownloadFilename('svg'),
-              'svg'
-            );
-          },
-        },
-      ],
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'zoom2d',
-        'pan2d',
-        'zoomIn2d',
-        'zoomOut2d',
-        'autoScale2d',
-        'resetScale2d',
-      ],
-    }
+    buildSecondaryPlotConfig('variance-plot', 'mfa-explained-variance-by-component')
   );
 
   renderCumulativeVariancePlot(components, themeColors);
@@ -2733,24 +3136,20 @@ function renderVariancePlot() {
 }
 
 function renderCumulativeVariancePlot(components, themeColors) {
-  let cumulativeTotal = 0;
   const selectedDimensions = new Set([state.xDimension, state.yDimension]);
   const cumulativeTrace = {
     type: 'scatter',
     mode: 'lines+markers',
     name: 'Cumulative explained variance',
     x: components.map((component) => component.label),
-    y: components.map((component) => {
-      cumulativeTotal += component.variance_explained;
-      return cumulativeTotal;
-    }),
+    y: components.map((component) => component.cumulative_variance_explained),
     line: {
       color: VARIANCE_MARKER_COLOR,
       width: 3,
     },
     marker: {
       color: components.map((component) =>
-        selectedDimensions.has(component.key)
+        selectedDimensions.has(component.component)
           ? SELECTED_DIMENSION_COLOR
           : VARIANCE_MARKER_COLOR
       ),
@@ -2767,104 +3166,53 @@ function renderCumulativeVariancePlot(components, themeColors) {
     'cumulative-variance-plot',
     [cumulativeTrace],
     buildCumulativeVarianceLayout(),
-    {
-      responsive: true,
-      displaylogo: false,
-      toImageButtonOptions: {
-        format: 'png',
-        filename: buildCumulativeVarianceDownloadFilename('png').replace('.png', ''),
-        width: 1200,
-        height: 700,
-        scale: 2,
-      },
-      modeBarButtonsToAdd: [
-        {
-          name: 'Download SVG',
-          icon: Plotly.Icons.camera,
-          click: () => {
-            downloadPlotImage(
-              'cumulative-variance-plot',
-              buildCumulativeVarianceDownloadFilename('svg'),
-              'svg'
-            );
-          },
-        },
-      ],
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'zoom2d',
-        'pan2d',
-        'zoomIn2d',
-        'zoomOut2d',
-        'autoScale2d',
-        'resetScale2d',
-      ],
-    }
+    buildSecondaryPlotConfig('cumulative-variance-plot', 'mfa-cumulative-explained-variance')
   );
   updateCumulativeSummary(components);
 }
 
 function buildVarianceLayout() {
   const themeColors = getThemeColors();
-  return {
-    paper_bgcolor: 'rgba(0, 0, 0, 0)',
-    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+  return buildBaseLayout(themeColors, {
     margin: VARIANCE_PLOT_MARGIN,
-    font: {
-      color: themeColors.font,
-      family: themeColors.fontFamily,
-      size: themeColors.fontSize,
-    },
     bargap: 0.24,
     xaxis: {
       tickfont: buildPlotFont(themeColors),
     },
-    yaxis: {
+    yaxis: buildThemedAxis(themeColors, {
       title: {
         text: 'Explained variance (%)',
         font: buildPlotFont(themeColors),
       },
       rangemode: 'tozero',
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
+    }),
     annotations: [],
-  };
+  });
 }
 
 function buildCumulativeVarianceLayout() {
   const themeColors = getThemeColors();
-  return {
-    paper_bgcolor: 'rgba(0, 0, 0, 0)',
-    plot_bgcolor: 'rgba(255, 255, 255, 0)',
+  return buildBaseLayout(themeColors, {
     margin: CUMULATIVE_VARIANCE_PLOT_MARGIN,
-    font: {
-      color: themeColors.font,
-      family: themeColors.fontFamily,
-      size: themeColors.fontSize,
-    },
-    xaxis: {
+    xaxis: buildThemedAxis(themeColors, {
       showgrid: true,
       gridcolor: themeColors.gridSoft,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
-    },
-    yaxis: {
+    }),
+    yaxis: buildThemedAxis(themeColors, {
       title: {
         text: 'Cumulative explained variance (%)',
         font: buildPlotFont(themeColors),
       },
       range: [0, 104],
-      gridcolor: themeColors.grid,
-      gridwidth: 1,
-      tickfont: buildPlotFont(themeColors),
       zeroline: true,
-    },
+    }),
     annotations: [],
-  };
+  });
 }
+
+// ============================================================================
+// THEME, FONTS & FORMATTING UTILITIES
+// ============================================================================
 
 function getThemeColors() {
   const styles = getComputedStyle(document.body);
@@ -2888,26 +3236,32 @@ function buildPlotFont(themeColors, size = themeColors.fontSize) {
   };
 }
 
-function buildHoverText(sample) {
-  const lines = [
-    `<b>${sample.sample_id}</b>`,
-    `${dimensionsByKey[state.xDimension].label}: ${formatValue(sample.coords[state.xDimension])}`,
-    `${dimensionsByKey[state.yDimension].label}: ${formatValue(sample.coords[state.yDimension])}`,
-  ];
+// One "<dim label>[ <suffix>]: <value>" hover line. Shared by every hover
+// builder so the coordinate/contribution/cos2/correlation lines all match.
+function dimLine(component, value, suffix = '') {
+  const label = suffix
+    ? `${dimensionLabel(component)} ${suffix}`
+    : dimensionLabel(component);
+  return `${label}: ${formatValue(value)}`;
+}
 
-  payload.metadata_columns.forEach((column) => {
-    lines.push(`${column.name}: ${formatMetadataValue(sample.metadata[column.name])}`);
-  });
+// Contributions are stored as fractions (0-1); everywhere they are shown they
+// are rendered as percentages.
+function formatPercent(value) {
+  return typeof value === 'number' ? `${formatValue(value * 100)}%` : formatValue(value);
+}
 
-  return lines.join('<br>');
+// Contribution hover line, using the same layout as dimLine but as a percentage.
+function dimContributionLine(component, value) {
+  return `${dimensionLabel(component)} contribution: ${formatPercent(value)}`;
 }
 
 function buildPartialHoverText(entry) {
   return [
     `<b>${entry.sample_id}</b>`,
     `Group: ${entry.group}`,
-    `${dimensionsByKey[state.xDimension].label}: ${formatValue(entry.coords[state.xDimension])}`,
-    `${dimensionsByKey[state.yDimension].label}: ${formatValue(entry.coords[state.yDimension])}`,
+    dimLine(state.xDimension, partialSampleValue(entry, state.xDimension)),
+    dimLine(state.yDimension, partialSampleValue(entry, state.yDimension)),
   ].join('<br>');
 }
 
@@ -2916,17 +3270,19 @@ function updateVarianceSummary(components) {
     (sum, component) => sum + component.variance_explained,
     0
   );
-  document.getElementById('variance-summary').textContent =
-    `${formatValue(totalExplained)}% across ${components.length} components`;
+  setSummary(
+    'variance-summary',
+    `${formatValue(totalExplained)}% across ${components.length} components`
+  );
 }
 
 function updateCumulativeSummary(components) {
-  const finalValue = components.reduce(
-    (sum, component) => sum + component.variance_explained,
-    0
+  const finalComponent = components.length ? components[components.length - 1] : null;
+  const finalValue = finalComponent?.cumulative_variance_explained ?? 0;
+  setSummary(
+    'cumulative-summary',
+    `${formatValue(finalValue)}% at component ${components.length}`
   );
-  document.getElementById('cumulative-summary').textContent =
-    `${formatValue(finalValue)}% at component ${components.length}`;
 }
 
 function formatMetadataValue(value) {

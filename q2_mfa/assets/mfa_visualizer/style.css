@@ -16,6 +16,10 @@
   --plot-zero: rgba(31, 41, 51, 0.24);
   --plot-annotation: #52606d;
   --plot-marker-line: #ffffff;
+  --text-sm: 0.9rem;
+  --text-xs: 0.84rem;
+  --radius-control: 12px;
+  --radius-pill: 8px;
 }
 
 * {
@@ -32,6 +36,15 @@ body {
   background: var(--page-bg);
   color: var(--text-main);
   font-family: Arial, sans-serif;
+}
+
+/* Form controls don't inherit font-family by default; do it once here so the
+   individual control rules stay uniform without repeating the family. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 .page-shell {
@@ -51,30 +64,16 @@ body {
 .eyebrow {
   margin: 0;
   color: var(--accent);
-  font-family: Arial, sans-serif;
   font-size: 1rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(1.22rem, 1.8vw, 1.78rem);
-  line-height: 1.05;
-}
-
-.page-copy {
-  max-width: 480px;
-  margin: 0;
-  color: var(--text-muted);
-  line-height: 1.5;
 }
 
 .control-panel,
 .plot-shell,
 .feature-table-shell {
   border: 1px solid var(--panel-border);
-  border-radius: 24px;
+  border-radius: 10px;
   background: var(--panel-bg);
   box-shadow: var(--shadow);
 }
@@ -185,8 +184,7 @@ h1 {
 label,
 .control-label-placeholder {
   color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   letter-spacing: normal;
   line-height: 1.2;
   text-transform: none;
@@ -197,16 +195,22 @@ label,
 }
 
 select,
-input[type="number"] {
+input[type="number"],
+.filter-numeric-cell input,
+.filter-add {
   min-height: 34px;
-  width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-bg);
   color: var(--text-main);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+}
+
+select,
+input[type="number"] {
+  width: 100%;
 }
 
 .toggle-option {
@@ -217,13 +221,12 @@ input[type="number"] {
   min-height: 34px;
   padding: 6px 8px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-bg);
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   letter-spacing: normal;
   text-transform: none;
-  font-family: Arial, sans-serif;
   line-height: 1.2;
 }
 
@@ -247,7 +250,7 @@ input[type="number"] {
   border-radius: 0;
   background: transparent;
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .help-tooltip {
@@ -263,7 +266,6 @@ input[type="number"] {
   background: var(--control-bg);
   color: var(--text-muted);
   cursor: help;
-  font-family: Arial, sans-serif;
   font-size: 0.82rem;
   font-weight: 700;
   line-height: 1;
@@ -283,7 +285,7 @@ input[type="number"] {
   background: var(--control-bg);
   box-shadow: var(--shadow);
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   font-weight: 400;
   line-height: 1.35;
   opacity: 0;
@@ -334,8 +336,7 @@ input[type="number"] {
 
 .filter-title {
   color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   line-height: 1.2;
 }
 
@@ -353,16 +354,10 @@ input[type="number"] {
   align-items: center;
 }
 
-.filter-placeholder {
-  color: var(--text-main);
-  font-size: 0.9rem;
-}
-
 .filter-options {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
-  margin-top: 0;
 }
 
 .filter-option {
@@ -370,7 +365,7 @@ input[type="number"] {
   gap: 8px;
   align-items: center;
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .filter-option-disabled {
@@ -387,19 +382,11 @@ input[type="number"] {
 .filter-numeric-cell input {
   flex: 1;
   min-width: 0;
-  min-height: 34px;
-  padding: 6px 8px;
-  border: 1px solid var(--control-border);
-  border-radius: 12px;
-  background: var(--control-bg);
-  color: var(--text-main);
-  font: inherit;
-  font-size: 0.9rem;
 }
 
 .filter-numeric-label {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -408,12 +395,11 @@ input[type="number"] {
 .filter-add {
   appearance: none;
   border: 1px solid var(--control-border);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   background: var(--control-bg);
   color: var(--text-muted);
   cursor: pointer;
-  font-family: Arial, sans-serif;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .filter-remove {
@@ -425,12 +411,8 @@ input[type="number"] {
 
 .filter-add {
   width: 100%;
-  min-height: 34px;
-  padding: 6px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   color: var(--text-main);
-  font: inherit;
-  font-size: 0.9rem;
   text-align: left;
 }
 
@@ -457,19 +439,17 @@ input[type="number"] {
   gap: 16px;
   margin-bottom: 8px;
   color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.92rem;
+  font-size: var(--text-sm);
 }
 
 .feature-table-download {
   appearance: none;
   border: 1px solid var(--control-border);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   background: var(--control-bg);
   color: var(--text-muted);
   cursor: pointer;
-  font-family: Arial, sans-serif;
-  font-size: 0.92rem;
+  font-size: var(--text-sm);
   font-weight: 400;
   letter-spacing: normal;
   padding: 7px 10px;
@@ -487,19 +467,75 @@ input[type="number"] {
   min-width: 0;
 }
 
+.table-source-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+}
+
+.table-source-control select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 200px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-size: var(--text-sm);
+}
+
+.feature-table-download-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.partial-axes-count-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.partial-axes-count-control input[type="number"] {
+  width: 62px;
+  min-height: 28px;
+}
+
+.sample-plot-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+
 .plot-shell-main {
   position: relative;
-  width: 100%;
-  min-width: min(640px, 100%);
+  width: max-content;
+  min-width: 0;
   max-width: 100%;
-  overflow: auto;
-  resize: horizontal;
+  overflow: hidden;
+  justify-self: start;
 }
 
 .plot-canvas {
   width: 100%;
   min-height: 682px;
   overflow: visible;
+}
+
+#sample-plot {
+  height: auto;
+  min-height: 0;
 }
 
 .plot-canvas-secondary {
@@ -534,7 +570,7 @@ input[type="number"] {
   min-width: 760px;
   table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.84rem;
+  font-size: var(--text-xs);
 }
 
 .feature-table th,
@@ -554,8 +590,7 @@ input[type="number"] {
   z-index: 1;
   background: var(--panel-bg);
   color: var(--text-muted);
-  font-family: Arial, sans-serif;
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
   font-weight: 400;
   letter-spacing: normal;
   text-transform: none;
@@ -592,16 +627,33 @@ input[type="number"] {
 }
 
 .feature-table-number {
-  font-family: Arial, sans-serif;
   white-space: nowrap;
-}
-
-.feature-table-number {
-  text-align: left;
 }
 
 .feature-name-cell {
   cursor: help;
+}
+
+.sample-name-button {
+  appearance: none;
+  display: inline;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.sample-name-button:hover,
+.sample-name-button:focus-visible {
+  color: var(--text-main);
 }
 
 .feature-name-tooltip {
@@ -615,7 +667,7 @@ input[type="number"] {
   background: var(--control-bg);
   box-shadow: var(--shadow);
   color: var(--text-main);
-  font-size: 0.88rem;
+  font-size: var(--text-xs);
   line-height: 1.35;
   overflow-wrap: anywhere;
   pointer-events: none;
@@ -626,9 +678,75 @@ input[type="number"] {
   display: block;
 }
 
+.sample-details-panel {
+  width: 280px;
+  max-width: 100%;
+  height: var(--sample-plot-height, auto);
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--control-bg);
+  box-shadow: var(--shadow);
+  color: var(--text-main);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.sample-details-title {
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sample-details-empty {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.sample-details-table {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.sample-details-name {
+  width: 44%;
+}
+
+.sample-details-table + .sample-details-table {
+  margin-top: 8px;
+}
+
+.sample-details-table th,
+.sample-details-table td {
+  max-width: 128px;
+  padding: 3px 5px;
+  border: 1px solid var(--panel-border);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.sample-details-table th {
+  background: var(--accent-soft);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.sample-details-value {
+  text-align: right;
+}
+
 .feature-table-empty {
   color: var(--text-muted);
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
   padding: 10px 0 2px;
 }
 
@@ -657,8 +775,32 @@ input[type="number"] {
     grid-column: span 2;
   }
 
+  .filter-row-coordinate-control {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .filter-row-coordinate-control > * {
+    grid-column: 1 / -1 !important;
+    justify-self: start;
+    width: 100%;
+  }
+
+  .filter-row-coordinate-control .filter-options {
+    justify-content: flex-start;
+  }
+
   .plot-grid-secondary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sample-plot-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sample-details-panel {
+    width: 100%;
+    max-height: 420px;
   }
 }
 

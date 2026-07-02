@@ -11,10 +11,10 @@ from importlib import resources
 from pathlib import Path
 from shutil import copyfile
 
+import numpy as np
 import pandas as pd
 import q2templates
 from rachis import Metadata
-from skbio import OrdinationResults
 
 from q2_mfa.types import ComponentAnalysisDirFmt
 
@@ -25,355 +25,443 @@ _STATIC_ASSET_FILES = (
     "plotly-basic-2.35.2.min.js",
     "plotly-basic-2.35.2.min.js.LICENSE.txt",
 )
+# Stored precision for the numeric value arrays. The plot is pixel-identical and
+# every displayed value is trimmed well below this, so 6 decimals roughly halves
+# the embedded payload with no visible change.
+_PAYLOAD_FLOAT_DECIMALS = 6
+_REQUIRED_TABLES = (
+    "percentage_of_variance",
+    "cumulative_percentage_of_variance",
+    "sample_coordinates",
+    "sample_contributions",
+    "sample_cosine_similarities",
+    "feature_coordinates",
+    "feature_correlations",
+    "feature_contributions",
+    "feature_cosine_similarities",
+    "group_coordinates",
+    "group_contributions",
+    "group_cosine_similarities",
+    "partial_sample_coordinates",
+    "partial_correlations",
+)
 
 
 def mfa_visualizer(
     output_dir: str, mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata
 ):
-    (
-        ordination,
-        partial_sample_coordinates,
-        group_summary,
-        partial_correlations,
-        feature_correlations,
-    ) = _load_mfa_visualizer_inputs(mfa_results)
+    """
+    Writes an interactive MFA visualization from JSONL component-analysis tables.
 
-    payload = _build_payload(
-        ordination,
-        sample_metadata,
-        partial_sample_coordinates,
-        group_summary,
-        partial_correlations,
-        feature_correlations,
-    )
+    Args:
+        output_dir (str): The directory where visualization assets are written.
+        mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
+            directory format.
+        sample_metadata (Metadata): Sample metadata used for browser-side
+            coloring, sizing, and filtering.
+
+    Returns:
+        None
+    """
+    payload = _build_payload(mfa_results, sample_metadata)
     _write_visualization(output_dir, payload)
 
 
-def _load_mfa_visualizer_inputs(
-    mfa_results: ComponentAnalysisDirFmt,
-) -> tuple[
-    OrdinationResults,
-    pd.DataFrame,
-    dict[str, pd.DataFrame],
-    pd.DataFrame,
-    pd.DataFrame,
-]:
-    ordination = OrdinationResults.read(str(mfa_results.path / "ordination.txt"))
-    partial_sample_coordinates = _read_prince_wide_tsv(
-        mfa_results.path / "partial-sample-coordinates.tsv"
-    )
-    group_summary = {
-        "coordinates": _read_prince_wide_tsv(
-            mfa_results.path / "group-coordinates.tsv"
-        ),
-        "contributions": _read_prince_wide_tsv(
-            mfa_results.path / "group-contributions.tsv"
-        ),
-        "cos2": _read_prince_wide_tsv(
-            mfa_results.path / "group-cosine-similarities.tsv"
-        ),
-    }
-    partial_correlations = _read_prince_wide_tsv(
-        mfa_results.path / "partial-correlations.tsv"
-    )
-    feature_correlations = pd.read_csv(
-        mfa_results.path / "feature-correlations.tsv", sep="\t"
-    )
-    return (
-        ordination,
-        partial_sample_coordinates,
-        group_summary,
-        partial_correlations,
-        feature_correlations,
-    )
-
-
 def _build_payload(
-    ordination: OrdinationResults,
-    sample_metadata: Metadata,
-    partial_sample_coordinates: pd.DataFrame,
-    group_summary: dict[str, pd.DataFrame],
-    partial_correlations: pd.DataFrame,
-    feature_correlations: pd.DataFrame,
+    mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata
 ) -> dict[str, object]:
-    sample_coordinates = ordination.samples.copy()
-    sample_coordinates.index = sample_coordinates.index.astype(str)
-    sample_coordinates.columns = sample_coordinates.columns.astype(str)
+    """
+    Builds the browser payload from long JSONL result tables.
 
+    Args:
+        mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
+            directory format.
+        sample_metadata (Metadata): Sample metadata to attach by sample ID.
+
+    Returns:
+        dict[str, object]: The JSON-serializable visualization payload.
+    """
+    tables = {
+        table_name: getattr(mfa_results, table_name).view(pd.DataFrame)
+        for table_name in _REQUIRED_TABLES
+    }
+    dimensions = _build_dimensions(
+        tables["percentage_of_variance"],
+        tables["cumulative_percentage_of_variance"],
+    )
+    sample_ids = list(
+        dict.fromkeys(
+            str(sample_id) for sample_id in tables["sample_coordinates"]["sample_id"]
+        )
+    )
     metadata = sample_metadata.to_dataframe().copy()
     metadata.index = metadata.index.astype(str)
-    metadata = metadata.reindex(sample_coordinates.index)
-
-    dimensions = _build_dimensions(sample_coordinates, ordination.proportion_explained)
-    dimension_keys = {
-        dimension["source_key"]: dimension["key"] for dimension in dimensions
-    }
+    metadata = metadata.reindex(sample_ids)
     metadata_columns, metadata_types = _build_metadata_columns(metadata)
-    partial_samples, partial_groups = _build_partial_sample_payload(
-        partial_sample_coordinates,
-        sample_coordinates.index,
-        dimensions,
+    samples = _build_samples(
+        tables["sample_coordinates"],
+        tables["sample_contributions"],
+        tables["sample_cosine_similarities"],
+        metadata,
+        metadata_columns,
+        metadata_types,
     )
-    group_summary_payload = _build_group_summary_payload(group_summary, dimensions)
-    partial_correlations_payload = _build_partial_correlation_payload(
-        partial_correlations, dimensions
+    features = _build_features(
+        tables["feature_coordinates"],
+        tables["feature_correlations"],
+        tables["feature_contributions"],
+        tables["feature_cosine_similarities"],
     )
-    feature_coordinate_payload = _build_feature_coordinate_payload(
-        ordination.features, dimensions
+    groups = _build_groups(
+        tables["group_coordinates"],
+        tables["group_contributions"],
+        tables["group_cosine_similarities"],
     )
-    feature_correlation_payload = _build_feature_correlation_payload(
-        feature_correlations, dimensions
-    )
-
-    included_columns = [column["name"] for column in metadata_columns]
-    samples = []
-    for sample_id, coordinates in sample_coordinates.iterrows():
-        metadata_row = {}
-        for column_name in included_columns:
-            value = metadata.at[sample_id, column_name]
-            metadata_row[column_name] = _to_json_value(
-                value, metadata_types[column_name]
-            )
-
-        samples.append(
-            {
-                "sample_id": sample_id,
-                "coords": {
-                    dimension_keys[column_name]: float(value)
-                    for column_name, value in coordinates.items()
-                },
-                "metadata": metadata_row,
-            }
-        )
 
     return {
         "title": "MFA sample scores",
-        "default_x": dimensions[0]["key"],
-        "default_y": dimensions[1]["key"],
+        "default_x": dimensions[0]["component"],
+        "default_y": dimensions[1]["component"],
         "dimensions": dimensions,
-        "component_variance": [
-            {
-                "key": dimension["key"],
-                "label": dimension["label"],
-                "variance_explained": dimension["variance_explained"],
-            }
-            for dimension in dimensions
-        ],
         "metadata_columns": metadata_columns,
         "samples": samples,
-        "partial_groups": partial_groups,
-        "partial_samples": partial_samples,
-        "group_summary": group_summary_payload,
-        "partial_correlations": partial_correlations_payload,
-        "feature_coordinates": feature_coordinate_payload,
-        "feature_correlations": feature_correlation_payload,
+        "features": features,
+        "groups": groups,
+        "partial_samples": _build_component_entities(
+            tables["partial_sample_coordinates"],
+            ("sample_id", "group"),
+            component_column="partial_component",
+            value_columns={"coordinate": "value"},
+        ),
+        "partial_axes": _build_component_entities(
+            tables["partial_correlations"],
+            ("group", "partial_component"),
+            component_column="component",
+            value_columns={"correlation": "value"},
+        ),
     }
-
-
-def _build_partial_sample_payload(
-    partial_sample_coordinates: pd.DataFrame,
-    sample_ids: pd.Index,
-    dimensions: list[dict[str, object]],
-) -> tuple[list[dict[str, object]], list[str]]:
-    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
-    grouped = {}
-    groups = set()
-    for _, row in partial_sample_coordinates.iterrows():
-        sample_id = str(row["id"])
-        for column_name, value in row.items():
-            if column_name == "id":
-                continue
-            group, dimension = _split_group_dimension_column(column_name)
-            groups.add(group)
-            grouped.setdefault((sample_id, group), {})[dim_lookup[dimension]] = float(
-                value
-            )
-
-    partial_samples = []
-    ordered_groups = sorted(groups)
-    for sample_id in sample_ids:
-        for group in ordered_groups:
-            partial_samples.append(
-                {
-                    "sample_id": sample_id,
-                    "group": group,
-                    "coords": grouped[(sample_id, group)],
-                }
-            )
-
-    return partial_samples, ordered_groups
-
-
-def _build_group_summary_payload(
-    group_summary: dict[str, pd.DataFrame],
-    dimensions: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    coordinate_table = group_summary["coordinates"]
-    contribution_table = group_summary["contributions"]
-    cos2_table = group_summary["cos2"]
-
-    contribution_by_group = _index_by_id(contribution_table)
-    cos2_by_group = _index_by_id(cos2_table)
-    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
-    payload = []
-    for _, coordinate_row in coordinate_table.iterrows():
-        group = str(coordinate_row["id"])
-        contribution_row = contribution_by_group[group]
-        cos2_row = cos2_by_group[group]
-
-        group_entry = {
-            "group": group,
-            "coords": {},
-            "contribution": {},
-            "cos2": {},
-        }
-        for dimension, dim_key in dim_lookup.items():
-            column_name = str(dimension)
-            group_entry["coords"][dim_key] = float(coordinate_row[column_name])
-            group_entry["contribution"][dim_key] = float(contribution_row[column_name])
-            group_entry["cos2"][dim_key] = float(cos2_row[column_name])
-
-        payload.append(group_entry)
-
-    return sorted(payload, key=lambda entry: entry["group"])
-
-
-def _build_partial_correlation_payload(
-    partial_correlations: pd.DataFrame,
-    dimensions: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    dim_lookup = _build_zero_indexed_dimension_lookup(dimensions)
-    payload = []
-    for _, row in partial_correlations.iterrows():
-        group, partial_axis = _split_group_dimension_column(row["id"])
-        for dimension, dim_key in dim_lookup.items():
-            column_name = str(dimension)
-            payload.append(
-                {
-                    "group": group,
-                    "partial_axis": partial_axis + 1,
-                    "global_dim": dim_key,
-                    "value": float(row[column_name]),
-                }
-            )
-
-    return payload
-
-
-def _build_feature_correlation_payload(
-    feature_correlations: pd.DataFrame,
-    dimensions: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    dimension_columns = _build_zero_indexed_dimension_lookup(dimensions)
-
-    payload = []
-    for _, row in feature_correlations.iterrows():
-        feature_id = str(row["id"])
-        group, feature_name = feature_id.split(":", 1)
-        coords = {}
-        for column in dimension_columns:
-            column = str(column)
-            value = row[column]
-            coords[dimension_columns[int(column)]] = (
-                None if pd.isna(value) else float(value)
-            )
-
-        payload.append(
-            {
-                "feature_id": feature_id,
-                "group": group,
-                "feature_name": feature_name,
-                "coords": coords,
-            }
-        )
-
-    return payload
-
-
-def _build_feature_coordinate_payload(
-    feature_coordinates: pd.DataFrame,
-    dimensions: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    dimension_columns = {
-        str(dimension["source_key"]): dimension["key"] for dimension in dimensions
-    }
-
-    payload = []
-    feature_coordinates = feature_coordinates.copy()
-    feature_coordinates.index = feature_coordinates.index.astype(str)
-    feature_coordinates.columns = feature_coordinates.columns.astype(str)
-    for feature_id, row in feature_coordinates.iterrows():
-        group, feature_name = _split_feature_id(feature_id)
-        coords = {}
-        for column_name, dimension_key in dimension_columns.items():
-            value = row[column_name]
-            coords[dimension_key] = None if pd.isna(value) else float(value)
-
-        payload.append(
-            {
-                "feature_id": feature_id,
-                "group": group,
-                "feature_name": feature_name,
-                "coords": coords,
-            }
-        )
-
-    return payload
-
-
-def _split_feature_id(feature_id: str) -> tuple[str, str]:
-    if ":" not in feature_id:
-        return "Ungrouped", feature_id
-
-    return feature_id.split(":", 1)
-
-
-def _read_prince_wide_tsv(path: Path) -> pd.DataFrame:
-    table = pd.read_csv(path, sep="\t")
-    table["id"] = table["id"].astype(str)
-    return table
-
-
-def _build_zero_indexed_dimension_lookup(
-    dimensions: list[dict[str, object]],
-) -> dict[int, str]:
-    return {index: dimension["key"] for index, dimension in enumerate(dimensions)}
-
-
-def _split_group_dimension_column(column_name: str) -> tuple[str, int]:
-    group, dimension = str(column_name).split(":", 1)
-    return group, int(dimension)
-
-
-def _index_by_id(table: pd.DataFrame) -> dict[str, pd.Series]:
-    return {str(row["id"]): row for _, row in table.iterrows()}
 
 
 def _build_dimensions(
-    sample_coordinates: pd.DataFrame, proportion_explained: pd.Series
+    percentage_of_variance: pd.DataFrame,
+    cumulative_percentage_of_variance: pd.DataFrame,
 ) -> list[dict[str, object]]:
-    dimensions = []
-    for index, column_name in enumerate(sample_coordinates.columns):
-        explained = float(proportion_explained.iloc[index])
-        label = f"Dim {index + 1}"
-        axis_title = f"{label} ({explained:.1f}% explained)"
+    """
+    Builds component metadata from variance JSONL records.
 
+    Args:
+        percentage_of_variance (pd.DataFrame): Long percentage-variance table.
+        cumulative_percentage_of_variance (pd.DataFrame): Long cumulative
+            percentage-variance table.
+
+    Returns:
+        list[dict[str, object]]: Component metadata ordered by component ID.
+    """
+    cumulative_by_component = {
+        int(row["component"]): float(row["value"])
+        for _, row in cumulative_percentage_of_variance.iterrows()
+    }
+    dimensions = []
+    for _, row in percentage_of_variance.sort_values("component").iterrows():
+        component = int(row["component"])
+        explained = float(row["value"])
+        label = f"Dim {component + 1}"
         dimensions.append(
             {
-                "key": label,
+                "component": component,
                 "label": label,
-                "source_key": column_name,
-                "axis_title": axis_title,
+                "axis_title": f"{label} ({explained:.1f}% explained)",
                 "variance_explained": explained,
+                "cumulative_variance_explained": cumulative_by_component.get(component),
             }
         )
 
+    if len(dimensions) < 2:
+        raise ValueError(
+            "MFA visualizer requires at least two components in "
+            "percentage_of_variance.jsonl."
+        )
     return dimensions
+
+
+def _build_samples(
+    sample_coordinates: pd.DataFrame,
+    sample_contributions: pd.DataFrame,
+    sample_cosine_similarities: pd.DataFrame,
+    metadata: pd.DataFrame,
+    metadata_columns: list[dict[str, object]],
+    metadata_types: dict[str, str],
+) -> list[dict[str, object]]:
+    """
+    Builds sample view-model records for browser-side plotting and controls.
+
+    Args:
+        sample_coordinates (pd.DataFrame): Long sample coordinate records.
+        sample_contributions (pd.DataFrame): Long sample contribution records.
+        sample_cosine_similarities (pd.DataFrame): Long sample cos2 records.
+        metadata (pd.DataFrame): Metadata rows reindexed to sample coordinates.
+        metadata_columns (list[dict[str, object]]): Included metadata columns.
+        metadata_types (dict[str, str]): Metadata column type lookup.
+
+    Returns:
+        list[dict[str, object]]: Sample records with metadata and component
+            values.
+    """
+    included_columns = [column["name"] for column in metadata_columns]
+    merged = _merge_value_tables(
+        {
+            "coordinate": sample_coordinates,
+            "contribution": sample_contributions,
+            "cos2": sample_cosine_similarities,
+        },
+        ["sample_id", "component"],
+    )
+    arrays_by_sample = _component_arrays_by_entity(
+        merged,
+        ("sample_id",),
+        component_column="component",
+        value_columns={
+            "coordinate": "coordinate",
+            "contribution": "contribution",
+            "cos2": "cos2",
+        },
+    )
+    samples = []
+    for sample_id, row in metadata.iterrows():
+        metadata_row = {}
+        for column_name in included_columns:
+            metadata_row[column_name] = _to_json_value(
+                row[column_name], metadata_types[column_name]
+            )
+        sample = {"sample_id": str(sample_id), "metadata": metadata_row}
+        sample.update(arrays_by_sample[(str(sample_id),)])
+        samples.append(sample)
+    return samples
+
+
+def _build_features(
+    feature_coordinates: pd.DataFrame,
+    feature_correlations: pd.DataFrame,
+    feature_contributions: pd.DataFrame,
+    feature_cosine_similarities: pd.DataFrame,
+) -> list[dict[str, object]]:
+    """
+    Builds feature view-model records with coordinate and correlation values.
+
+    Args:
+        feature_coordinates (pd.DataFrame): Long feature coordinate records.
+        feature_correlations (pd.DataFrame): Long feature correlation records.
+        feature_contributions (pd.DataFrame): Long feature contribution
+            records.
+        feature_cosine_similarities (pd.DataFrame): Long feature cos2 records.
+
+    Returns:
+        list[dict[str, object]]: Feature records keyed by group and variable.
+    """
+    merged = _merge_value_tables(
+        {
+            "coordinate": feature_coordinates,
+            "correlation": feature_correlations,
+            "contribution": feature_contributions,
+            "cos2": feature_cosine_similarities,
+        },
+        ["group", "variable", "component"],
+    )
+    return _build_component_entities(
+        merged,
+        ("group", "variable"),
+        component_column="component",
+        value_columns={
+            "coordinate": "coordinate",
+            "correlation": "correlation",
+            "contribution": "contribution",
+            "cos2": "cos2",
+        },
+    )
+
+
+def _build_groups(
+    group_coordinates: pd.DataFrame,
+    group_contributions: pd.DataFrame,
+    group_cosine_similarities: pd.DataFrame,
+) -> list[dict[str, object]]:
+    """
+    Builds group view-model records with per-component summary values.
+
+    Args:
+        group_coordinates (pd.DataFrame): Long group coordinate records.
+        group_contributions (pd.DataFrame): Long group contribution records.
+        group_cosine_similarities (pd.DataFrame): Long group cos2 records.
+
+    Returns:
+        list[dict[str, object]]: Group records with component summaries.
+    """
+    merged = _merge_value_tables(
+        {
+            "coordinate": group_coordinates,
+            "contribution": group_contributions,
+            "cos2": group_cosine_similarities,
+        },
+        ["group", "component"],
+    )
+
+    return _build_component_entities(
+        merged,
+        ("group",),
+        component_column="component",
+        value_columns={
+            "coordinate": "coordinate",
+            "contribution": "contribution",
+            "cos2": "cos2",
+        },
+    )
+
+
+def _merge_value_tables(
+    tables: dict[str, pd.DataFrame], join_columns: list[str]
+) -> pd.DataFrame:
+    """
+    Merges same-shaped long value tables on shared key columns.
+
+    Args:
+        tables (dict[str, pd.DataFrame]): Mapping of output value names to
+            source tables containing a generic value column.
+        join_columns (list[str]): Columns used to join the tables.
+
+    Returns:
+        pd.DataFrame: Merged table with semantic value columns.
+    """
+    merged = None
+    for value_name, table in tables.items():
+        renamed = table.rename(columns={"value": value_name})
+        if merged is None:
+            merged = renamed
+            continue
+        # Outer join so an entity/component present in only some value tables is
+        # kept (missing values become NaN -> null in the payload) instead of
+        # being silently dropped.
+        merged = merged.merge(renamed, on=join_columns, how="outer")
+    return merged
+
+
+def _build_component_entities(
+    table: pd.DataFrame,
+    key_columns: tuple[str, ...],
+    component_column: str,
+    value_columns: dict[str, str],
+) -> list[dict[str, object]]:
+    """
+    Builds entity records with grouped component values.
+
+    Args:
+        table (pd.DataFrame): The long component table.
+        key_columns (tuple[str, ...]): Columns to copy onto each entity.
+        component_column (str): The source component column.
+        value_columns (dict[str, str]): Mapping of output component field names
+            to input table column names.
+
+    Returns:
+        list[dict[str, object]]: Entity records with columnar value arrays.
+    """
+    arrays_by_entity = _component_arrays_by_entity(
+        table,
+        key_columns,
+        component_column=component_column,
+        value_columns=value_columns,
+    )
+    entities = []
+    for key, arrays in arrays_by_entity.items():
+        entity = dict(zip(key_columns, key))
+        entity.update(arrays)
+        entities.append(entity)
+    return entities
+
+
+def _component_arrays_by_entity(
+    table: pd.DataFrame,
+    key_columns: tuple[str, ...],
+    component_column: str,
+    value_columns: dict[str, str],
+) -> dict[tuple, dict[str, list]]:
+    """
+    Groups long component rows into per-entity columnar value arrays.
+
+    Each entity maps to a dict of output field name -> list indexed by component
+    id (list position). This columnar layout lets the browser read a value with
+    an O(1) index (``entity[field][component]``) and keeps the embedded payload
+    small by writing each field name once per entity instead of once per
+    component. Missing components are filled with ``None``.
+
+    Args:
+        table (pd.DataFrame): The long component table.
+        key_columns (tuple[str, ...]): Columns that identify each entity.
+        component_column (str): The source component column.
+        value_columns (dict[str, str]): Mapping of output field names to input
+            table column names.
+
+    Returns:
+        dict[tuple, dict[str, list]]: Per-entity columnar value arrays.
+    """
+    keys = list(key_columns)
+    n_components = int(table[component_column].max()) + 1
+
+    # Preserve first-appearance entity order (matching the previous
+    # groupby(sort=False) behaviour) so downstream lists stay stable.
+    ordered_keys = table[keys].drop_duplicates()
+    entity_index = (
+        pd.Index(ordered_keys[keys[0]])
+        if len(keys) == 1
+        else pd.MultiIndex.from_frame(ordered_keys)
+    )
+
+    # Reshape each long value column to a dense (entity x component) matrix in a
+    # single vectorized pass instead of looping row by row.
+    field_rows = {}
+    for output_name, source_column in value_columns.items():
+        wide = table.pivot_table(
+            index=keys,
+            columns=component_column,
+            values=source_column,
+            aggfunc="first",
+        ).reindex(index=entity_index, columns=range(n_components))
+
+        matrix = np.round(wide.to_numpy(dtype=float), _PAYLOAD_FLOAT_DECIMALS)
+        rows = matrix.tolist()
+        # Only pay the per-cell None substitution when components are actually
+        # missing; the common (complete) case stays pure C + one tolist().
+        if np.isnan(matrix).any():
+            rows = [
+                [None if value != value else value for value in row] for row in rows
+            ]
+        field_rows[output_name] = rows
+
+    grouped = {}
+    for position, key in enumerate(entity_index):
+        key_tuple = (
+            (_to_python_json_value(key),)
+            if len(keys) == 1
+            else tuple(_to_python_json_value(value) for value in key)
+        )
+        grouped[key_tuple] = {
+            output_name: field_rows[output_name][position]
+            for output_name in value_columns
+        }
+    return grouped
 
 
 def _build_metadata_columns(
     metadata: pd.DataFrame,
 ) -> tuple[list[dict[str, object]], dict[str, str]]:
+    """
+    Builds metadata control descriptors and type lookup.
+
+    Args:
+        metadata (pd.DataFrame): Sample metadata reindexed to plotted samples.
+
+    Returns:
+        tuple[list[dict[str, object]], dict[str, str]]: Metadata column
+            descriptors and their inferred types.
+    """
     columns = []
     column_types = {}
 
@@ -409,6 +497,16 @@ def _build_metadata_columns(
 
 
 def _to_json_value(value, column_type: str):
+    """
+    Converts one metadata value to a JSON-compatible scalar.
+
+    Args:
+        value: The metadata value.
+        column_type (str): The inferred metadata column type.
+
+    Returns:
+        object: A JSON-compatible scalar or None.
+    """
     if pd.isna(value):
         return None
 
@@ -418,7 +516,34 @@ def _to_json_value(value, column_type: str):
     return str(value)
 
 
+def _to_python_json_value(value):
+    """
+    Converts pandas and NumPy scalar values to JSON-compatible Python values.
+
+    Args:
+        value: The value to normalize.
+
+    Returns:
+        object: A JSON-compatible scalar or None.
+    """
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
 def _write_visualization(output_dir: str, payload: dict[str, object]):
+    """
+    Writes rendered visualization assets and the embedded data payload.
+
+    Args:
+        output_dir (str): The output directory.
+        payload (dict[str, object]): The JSON-serializable payload.
+
+    Returns:
+        None
+    """
     output_path = Path(output_dir)
     asset_dir = resources.files("q2_mfa") / "assets" / "mfa_visualizer"
 

@@ -140,8 +140,10 @@ const samplesById = Object.fromEntries(
   samples.map((sample) => [sample.sample_id, sample])
 );
 const state = {
-  xDimension: payload.default_x,
-  yDimension: payload.default_y,
+  // Prince always returns components in order, so the first two dimensions (0
+  // and 1) are the default axes.
+  xDimension: 0,
+  yDimension: 1,
   colorBy: '',
   sizeBy: '',
   colorPalette: 'Plotly',
@@ -2983,6 +2985,8 @@ function renderPartialAxesPlot() {
         `Partial dim ${partialAxis}`,
         dimLine(state.xDimension, componentField(entry, state.xDimension, 'correlation'), 'correlation'),
         dimLine(state.yDimension, componentField(entry, state.yDimension, 'correlation'), 'correlation'),
+        dimContributionLine(state.xDimension, componentField(entry, state.xDimension, 'contribution')),
+        dimContributionLine(state.yDimension, componentField(entry, state.yDimension, 'contribution')),
       ].join('<br>'),
       label,
       seriesKey: `${entry.group}::${entry.partial_component}`,

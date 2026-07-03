@@ -6,6 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import json
+from collections.abc import Mapping
 from contextlib import ExitStack
 from importlib import resources
 from pathlib import Path
@@ -16,7 +17,7 @@ import pandas as pd
 import q2templates
 from rachis import Metadata
 
-from q2_mfa.types import ComponentAnalysisDirFmt
+from q2_mfa.types import ComponentAnalysis
 
 _TEMPLATE_FILES = ("index.html",)
 _STATIC_ASSET_FILES = (
@@ -29,30 +30,11 @@ _STATIC_ASSET_FILES = (
 # every displayed value is trimmed well below this, so 6 decimals roughly halves
 # the embedded payload with no visible change.
 _PAYLOAD_FLOAT_DECIMALS = 6
-_SHARED_REQUIRED_TABLES = (
-    "eigenvalues",
-    "percentage_of_variance",
-    "cumulative_percentage_of_variance",
-    "sample_coordinates",
-    "sample_contributions",
-    "sample_cosine_similarities",
-    "feature_coordinates",
-    "feature_correlations",
-    "feature_contributions",
-    "feature_cosine_similarities",
-)
-_MFA_REQUIRED_TABLES = (
-    "group_coordinates",
-    "group_contributions",
-    "group_cosine_similarities",
-    "partial_sample_coordinates",
-    "partial_correlations",
-)
 
 
 def component_visualizer(
     output_dir: str,
-    component_analysis: ComponentAnalysisDirFmt,
+    component_analysis: ComponentAnalysis,
     analysis_type: str,
     sample_metadata: Metadata = None,
 ):
@@ -61,8 +43,8 @@ def component_visualizer(
 
     Args:
         output_dir (str): The directory where visualization assets are written.
-        component_analysis (ComponentAnalysisDirFmt): The JSONL-backed
-            component-analysis result directory format.
+        component_analysis (ComponentAnalysis): The reconstructed component-analysis
+            result object holding Prince-shaped wide tables.
         analysis_type (str): Whether to render the result as PCA or MFA.
         sample_metadata (Metadata | None): Optional sample metadata used for
             browser-side coloring, sizing, and filtering.
@@ -75,16 +57,16 @@ def component_visualizer(
 
 
 def _build_payload(
-    component_analysis: ComponentAnalysisDirFmt,
+    component_analysis: ComponentAnalysis,
     analysis_type: str,
     sample_metadata: Metadata = None,
 ) -> dict[str, object]:
     """
-    Builds the browser payload from long JSONL result tables.
+    Builds the browser payload from the Prince-shaped wide result tables.
 
     Args:
-        component_analysis (ComponentAnalysisDirFmt): The JSONL-backed
-            component-analysis result directory format.
+        component_analysis (ComponentAnalysis): The reconstructed
+            component-analysis result object holding wide tables and vectors.
         analysis_type (str): Whether to render the result as PCA or MFA.
         sample_metadata (Metadata | None): Optional sample metadata to attach
             by sample ID.
@@ -92,23 +74,17 @@ def _build_payload(
     Returns:
         dict[str, object]: The JSON-serializable visualization payload.
     """
-    table_names = _SHARED_REQUIRED_TABLES
-    if analysis_type == "mfa":
-        table_names = (*table_names, *_MFA_REQUIRED_TABLES)
-    tables = {
-        table_name: getattr(component_analysis, table_name).view(pd.DataFrame)
-        for table_name in table_names
-    }
+    # Build Dimensions
     dimensions = _build_dimensions(
-        tables["eigenvalues"],
-        tables["percentage_of_variance"],
-        tables["cumulative_percentage_of_variance"],
+        component_analysis.eigenvalues,
+        component_analysis.percentage_of_variance,
+        component_analysis.cumulative_percentage_of_variance,
     )
-    sample_ids = list(
-        dict.fromkeys(
-            str(sample_id) for sample_id in tables["sample_coordinates"]["sample_id"]
-        )
-    )
+
+    # Build Metadata
+    sample_ids = [
+        str(sample_id) for sample_id in component_analysis.sample_coordinates.index
+    ]
     if sample_metadata is None:
         metadata = pd.DataFrame(index=sample_ids)
     else:
@@ -117,46 +93,69 @@ def _build_payload(
         metadata = metadata.reindex(sample_ids)
 
     metadata_columns, metadata_types = _build_metadata_columns(metadata)
+
+    # Build Samples
     samples = _build_samples(
-        tables["sample_coordinates"],
-        tables["sample_contributions"],
-        tables["sample_cosine_similarities"],
+        component_analysis.sample_coordinates,
+        component_analysis.sample_contributions,
+        component_analysis.sample_cosine_similarities,
         metadata,
         metadata_columns,
         metadata_types,
     )
-    features = _build_features(
-        tables["feature_coordinates"],
-        tables["feature_correlations"],
-        tables["feature_contributions"],
-        tables["feature_cosine_similarities"],
-        analysis_type,
+
+    # Build Features
+    # PCA feature tables have a flat ``variable`` index; MFA tables have a
+    # ``(group, variable)`` MultiIndex.
+    feature_key_columns = (
+        ("group", "variable") if analysis_type == "mfa" else ("variable",)
+    )
+    features = _build_component_entities(
+        {
+            "coordinate": component_analysis.feature_coordinates,
+            "correlation": component_analysis.feature_correlations,
+            "contribution": component_analysis.feature_contributions,
+            "cos2": component_analysis.feature_cosine_similarities,
+        },
+        feature_key_columns,
     )
     groups = []
     partial_samples = []
     partial_axes = []
     if analysis_type == "mfa":
-        groups = _build_groups(
-            tables["group_coordinates"],
-            tables["group_contributions"],
-            tables["group_cosine_similarities"],
+        # Build Groups
+        groups = _build_component_entities(
+            {
+                "coordinate": component_analysis.group_coordinates,
+                "contribution": component_analysis.group_contributions,
+                "cos2": component_analysis.group_cosine_similarities,
+            },
+            ("group",),
         )
+
+        # Build Partial sample Coordinates
+        # Move the group column level onto the row index so each partial sample
+        # record is keyed by (sample_id, group), leaving partial components as
+        # the columns.
+        stacked = component_analysis.partial_sample_coordinates.stack(
+            level=0, future_stack=True
+        )
+        stacked.index = stacked.index.set_names(["sample_id", "group"])
         partial_samples = _build_component_entities(
-            tables["partial_sample_coordinates"],
+            {"coordinate": stacked},
             ("sample_id", "group"),
-            component_column="partial_component",
-            value_columns={"coordinate": "value"},
         )
+
+        # Build Partial Axes
         partial_axes = _build_component_entities(
-            tables["partial_correlations"],
+            {
+                "correlation": component_analysis.partial_correlations,
+                "contribution": component_analysis.partial_contributions,
+            },
             ("group", "partial_component"),
-            component_column="component",
-            value_columns={"correlation": "value"},
         )
     return {
         "analysis_type": analysis_type,
-        "default_x": dimensions[0]["component"],
-        "default_y": dimensions[1]["component"],
         "dimensions": dimensions,
         "metadata_columns": metadata_columns,
         "samples": samples,
@@ -168,36 +167,35 @@ def _build_payload(
 
 
 def _build_dimensions(
-    eigenvalues: pd.DataFrame,
-    percentage_of_variance: pd.DataFrame,
-    cumulative_percentage_of_variance: pd.DataFrame,
+    eigenvalues: np.ndarray,
+    percentage_of_variance: np.ndarray,
+    cumulative_percentage_of_variance: np.ndarray,
 ) -> list[dict[str, object]]:
     """
-    Builds component metadata from variance JSONL records.
+    Builds component metadata from the variance vectors.
 
     Args:
-        eigenvalues (pd.DataFrame): Long eigenvalue table.
-        percentage_of_variance (pd.DataFrame): Long percentage-variance table.
-        cumulative_percentage_of_variance (pd.DataFrame): Long cumulative
-            percentage-variance table.
+        eigenvalues (np.ndarray): Eigenvalue per component.
+        percentage_of_variance (np.ndarray): Percentage of variance per component.
+        cumulative_percentage_of_variance (np.ndarray): Cumulative percentage of
+            variance per component.
 
     Returns:
         list[dict[str, object]]: Component metadata ordered by component ID.
     """
     dimensions = []
-    for _, row in percentage_of_variance.sort_values("component").iterrows():
-        component = int(row["component"])
-        explained = float(row["value"])
+    for component in range(len(percentage_of_variance)):
+        explained = float(percentage_of_variance[component])
         label = f"Dim {component + 1}"
         dimensions.append(
             {
                 "component": component,
                 "label": label,
                 "axis_title": f"{label} ({explained:.1f}% explained)",
-                "eigenvalue": float(eigenvalues.loc[component, "value"]),
+                "eigenvalue": float(eigenvalues[component]),
                 "variance_explained": explained,
                 "cumulative_variance_explained": float(
-                    cumulative_percentage_of_variance.loc[component, "value"]
+                    cumulative_percentage_of_variance[component]
                 ),
             }
         )
@@ -217,9 +215,10 @@ def _build_samples(
     Builds sample view-model records for browser-side plotting and controls.
 
     Args:
-        sample_coordinates (pd.DataFrame): Long sample coordinate records.
-        sample_contributions (pd.DataFrame): Long sample contribution records.
-        sample_cosine_similarities (pd.DataFrame): Long sample cos2 records.
+        sample_coordinates (pd.DataFrame): Wide sample coordinate table
+            (index = sample ID, columns = components).
+        sample_contributions (pd.DataFrame): Wide sample contribution table.
+        sample_cosine_similarities (pd.DataFrame): Wide sample cos2 table.
         metadata (pd.DataFrame): Metadata rows reindexed to sample coordinates,
             or an empty-column frame indexed by sample ID when metadata is not
             provided.
@@ -231,247 +230,115 @@ def _build_samples(
             values.
     """
     included_columns = [column["name"] for column in metadata_columns]
-    merged = _merge_value_tables(
+    records = _build_component_entities(
         {
             "coordinate": sample_coordinates,
             "contribution": sample_contributions,
             "cos2": sample_cosine_similarities,
         },
-        ["sample_id", "component"],
-    )
-    arrays_by_sample = _component_arrays_by_entity(
-        merged,
         ("sample_id",),
-        component_column="component",
-        value_columns={
-            "coordinate": "coordinate",
-            "contribution": "contribution",
-            "cos2": "cos2",
-        },
     )
     samples = []
-    sample_ids = list(
-        dict.fromkeys(str(sample_id) for sample_id in sample_coordinates["sample_id"])
-    )
-    for sample_id in sample_ids:
+    for record in records:
+        sample_id = str(record["sample_id"])
         row = metadata.loc[sample_id]
         metadata_row = {}
         for column_name in included_columns:
             metadata_row[column_name] = _to_json_value(
                 row[column_name], metadata_types[column_name]
             )
-        sample = {"sample_id": str(sample_id), "metadata": metadata_row}
-        sample.update(arrays_by_sample[(str(sample_id),)])
+        sample = {"sample_id": sample_id, "metadata": metadata_row}
+        for field in ("coordinate", "contribution", "cos2"):
+            sample[field] = record[field]
         samples.append(sample)
     return samples
 
 
-def _build_features(
-    feature_coordinates: pd.DataFrame,
-    feature_correlations: pd.DataFrame,
-    feature_contributions: pd.DataFrame,
-    feature_cosine_similarities: pd.DataFrame,
-    analysis_type: str,
-) -> list[dict[str, object]]:
-    """
-    Builds feature view-model records with coordinate and correlation values.
-
-    Args:
-        feature_coordinates (pd.DataFrame): Long feature coordinate records.
-        feature_correlations (pd.DataFrame): Long feature correlation records.
-        feature_contributions (pd.DataFrame): Long feature contribution
-            records.
-        feature_cosine_similarities (pd.DataFrame): Long feature cos2 records.
-        analysis_type (str): The plugin-constrained analysis type slug.
-
-    Returns:
-        list[dict[str, object]]: Feature records keyed by variable and, for MFA,
-            group.
-    """
-    key_columns = ("group", "variable") if analysis_type == "mfa" else ("variable",)
-    join_columns = [*key_columns, "component"]
-    merged = _merge_value_tables(
-        {
-            "coordinate": feature_coordinates,
-            "correlation": feature_correlations,
-            "contribution": feature_contributions,
-            "cos2": feature_cosine_similarities,
-        },
-        join_columns,
-    )
-    return _build_component_entities(
-        merged,
-        key_columns,
-        component_column="component",
-        value_columns={
-            "coordinate": "coordinate",
-            "correlation": "correlation",
-            "contribution": "contribution",
-            "cos2": "cos2",
-        },
-    )
-
-
-def _build_groups(
-    group_coordinates: pd.DataFrame,
-    group_contributions: pd.DataFrame,
-    group_cosine_similarities: pd.DataFrame,
-) -> list[dict[str, object]]:
-    """
-    Builds group view-model records with per-component summary values.
-
-    Args:
-        group_coordinates (pd.DataFrame): Long group coordinate records.
-        group_contributions (pd.DataFrame): Long group contribution records.
-        group_cosine_similarities (pd.DataFrame): Long group cos2 records.
-
-    Returns:
-        list[dict[str, object]]: Group records with component summaries.
-    """
-    merged = _merge_value_tables(
-        {
-            "coordinate": group_coordinates,
-            "contribution": group_contributions,
-            "cos2": group_cosine_similarities,
-        },
-        ["group", "component"],
-    )
-
-    return _build_component_entities(
-        merged,
-        ("group",),
-        component_column="component",
-        value_columns={
-            "coordinate": "coordinate",
-            "contribution": "contribution",
-            "cos2": "cos2",
-        },
-    )
-
-
-def _merge_value_tables(
-    tables: dict[str, pd.DataFrame], join_columns: list[str]
-) -> pd.DataFrame:
-    """
-    Merges same-shaped long value tables on shared key columns.
-
-    Args:
-        tables (dict[str, pd.DataFrame]): Mapping of output value names to
-            source tables containing a generic value column.
-        join_columns (list[str]): Columns used to join the tables.
-
-    Returns:
-        pd.DataFrame: Merged table with semantic value columns.
-    """
-    merged = None
-    for value_name, table in tables.items():
-        renamed = table.rename(columns={"value": value_name})
-        if merged is None:
-            merged = renamed
-            continue
-        merged = merged.merge(renamed, on=join_columns, how="outer")
-    return merged
-
-
 def _build_component_entities(
-    table: pd.DataFrame,
+    fields: Mapping[str, pd.DataFrame | None],
     key_columns: tuple[str, ...],
-    component_column: str,
-    value_columns: dict[str, str],
 ) -> list[dict[str, object]]:
     """
-    Builds entity records with grouped component values.
+    Builds entity records with columnar per-component value arrays from wide
+    tables.
+
+    Each field is a wide ``entity x component`` table sharing the same row index.
+    Secondary fields are aligned to the first field's index order, then each row
+    becomes a list indexed by component id (list position). This columnar layout
+    lets the browser read a value with an O(1) index (``entity[field][component]``)
+    and keeps the embedded payload small by writing each field name once per
+    entity. Missing components are filled with ``None``.
+
+    Tables are typed optional because the MFA-only result tables are ``None`` on a
+    PCA result, but every field passed here is expected to be present; a ``None``
+    is treated as a caller error.
 
     Args:
-        table (pd.DataFrame): The long component table.
-        key_columns (tuple[str, ...]): Columns to copy onto each entity.
-        component_column (str): The source component column.
-        value_columns (dict[str, str]): Mapping of output component field names
-            to input table column names.
+        fields (Mapping[str, pd.DataFrame | None]): Mapping of output field names
+            to wide source tables. The first entry defines the entity order.
+        key_columns (tuple[str, ...]): Names for the entity identifier levels,
+            paired positionally with the (possibly Multi-) index values.
 
     Returns:
         list[dict[str, object]]: Entity records with columnar value arrays.
     """
-    arrays_by_entity = _component_arrays_by_entity(
-        table,
-        key_columns,
-        component_column=component_column,
-        value_columns=value_columns,
-    )
+    primary = next(iter(fields.values()))
+    if primary is None:
+        raise ValueError("The first component field must be a table, not None.")
+    index = primary.index
+    key_tuples = _index_key_tuples(index)
+    field_rows = {}
+    for name, table in fields.items():
+        if table is None:
+            raise ValueError(f"Missing component table for field '{name}'.")
+        field_rows[name] = _wide_value_rows(table.reindex(index))
     entities = []
-    for key, arrays in arrays_by_entity.items():
-        entity = dict(zip(key_columns, key))
-        entity.update(arrays)
+    for position, key_tuple in enumerate(key_tuples):
+        entity = dict(zip(key_columns, key_tuple))
+        for name in fields:
+            entity[name] = field_rows[name][position]
         entities.append(entity)
     return entities
 
 
-def _component_arrays_by_entity(
-    table: pd.DataFrame,
-    key_columns: tuple[str, ...],
-    component_column: str,
-    value_columns: dict[str, str],
-) -> dict[tuple, dict[str, list]]:
+def _wide_value_rows(wide: pd.DataFrame) -> list[list]:
     """
-    Groups long component rows into per-entity columnar value arrays.
+    Converts a wide ``entity x component`` table to per-entity value rows.
 
-    Each entity maps to a dict of output field name -> list indexed by component
-    id (list position). This columnar layout lets the browser read a value with
-    an O(1) index (``entity[field][component]``) and keeps the embedded payload
-    small by writing each field name once per entity instead of once per
-    component. Missing components are filled with ``None``.
+    Components are densified to a contiguous ``0..max`` range, values are rounded
+    to the stored precision, and NaNs (missing components/entities) become
+    ``None``.
 
     Args:
-        table (pd.DataFrame): The long component table.
-        key_columns (tuple[str, ...]): Columns that identify each entity.
-        component_column (str): The source component column.
-        value_columns (dict[str, str]): Mapping of output field names to input
-            table column names.
+        wide (pd.DataFrame): The wide table (columns are component ids).
 
     Returns:
-        dict[tuple, dict[str, list]]: Per-entity columnar value arrays.
+        list[list]: One list of per-component values per row, in index order.
     """
-    keys = list(key_columns)
-    n_components = int(table[component_column].max()) + 1
-
-    ordered_keys = table[keys].drop_duplicates()
-    entity_index = (
-        pd.Index(ordered_keys[keys[0]])
-        if len(keys) == 1
-        else pd.MultiIndex.from_frame(ordered_keys)
+    n_components = int(max(wide.columns)) + 1 if len(wide.columns) else 0
+    matrix = np.round(
+        wide.reindex(columns=range(n_components)).to_numpy(dtype=float),
+        _PAYLOAD_FLOAT_DECIMALS,
     )
+    rows = matrix.tolist()
+    if np.isnan(matrix).any():
+        rows = [[None if value != value else value for value in row] for row in rows]
+    return rows
 
-    # Reshape each long value column to a dense (entity x component) matrix in a
-    # single vectorized pass.
-    field_rows = {}
-    for output_name, source_column in value_columns.items():
-        wide = table.pivot_table(
-            index=keys,
-            columns=component_column,
-            values=source_column,
-            aggfunc="first",
-        ).reindex(index=entity_index, columns=range(n_components))
 
-        matrix = np.round(wide.to_numpy(dtype=float), _PAYLOAD_FLOAT_DECIMALS)
-        rows = matrix.tolist()
-        if np.isnan(matrix).any():
-            rows = [
-                [None if value != value else value for value in row] for row in rows
-            ]
-        field_rows[output_name] = rows
+def _index_key_tuples(index: pd.Index) -> list[tuple]:
+    """
+    Normalizes a (possibly Multi-) index into JSON-compatible key tuples.
 
-    grouped = {}
-    for position, key in enumerate(entity_index):
-        key_tuple = (
-            (_to_python_json_value(key),)
-            if len(keys) == 1
-            else tuple(_to_python_json_value(value) for value in key)
-        )
-        grouped[key_tuple] = {
-            output_name: field_rows[output_name][position]
-            for output_name in value_columns
-        }
-    return grouped
+    Args:
+        index (pd.Index): The entity row index.
+
+    Returns:
+        list[tuple]: One key tuple per index entry.
+    """
+    if isinstance(index, pd.MultiIndex):
+        return [tuple(_to_python_json_value(value) for value in key) for key in index]
+    return [(_to_python_json_value(key),) for key in index]
 
 
 def _build_metadata_columns(

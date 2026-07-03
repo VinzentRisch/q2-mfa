@@ -14,6 +14,7 @@ from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa._component_visualizer import component_visualizer
 from q2_mfa.types import ComponentAnalysisDirFmt
+from q2_mfa.types._transformer import _dirfmt_to_component_analysis
 
 
 class TestComponentVisualizer(TestPluginBase):
@@ -23,21 +24,28 @@ class TestComponentVisualizer(TestPluginBase):
     def setUpClass(cls):
         instance = cls()
         cls.metadata = Metadata.load(instance.get_data_path("mfa/mfa_vis_metadata.tsv"))
-        cls.mfa_component_analysis = ComponentAnalysisDirFmt(
-            instance.get_data_path("mfa/mfa_vis_results"),
-            mode="r",
+        # The visualizer takes the reconstructed ComponentAnalysis object; rachis
+        # runs this transformer automatically when the action is invoked, so we
+        # apply it directly when calling the function under test.
+        cls.mfa_component_analysis = _dirfmt_to_component_analysis(
+            ComponentAnalysisDirFmt(
+                instance.get_data_path("mfa/mfa_vis_results"),
+                mode="r",
+            )
         )
-        cls.pca_component_analysis = ComponentAnalysisDirFmt(
-            str(
-                Path(__file__).parents[1]
-                / "types"
-                / "tests"
-                / "data"
-                / "component-analysis"
-                / "jsonl"
-                / "pca"
-            ),
-            mode="r",
+        cls.pca_component_analysis = _dirfmt_to_component_analysis(
+            ComponentAnalysisDirFmt(
+                str(
+                    Path(__file__).parents[1]
+                    / "types"
+                    / "tests"
+                    / "data"
+                    / "component-analysis"
+                    / "jsonl"
+                    / "pca"
+                ),
+                mode="r",
+            )
         )
 
     def _load_payload(self, output_dir):
@@ -203,8 +211,8 @@ class TestComponentVisualizer(TestPluginBase):
         self.assertEqual(payload["analysis_type"], "mfa")
         self.assertNotIn("analysis_slug", payload)
         self.assertNotIn("analysis_label", payload)
-        self.assertEqual(payload["default_x"], 0)
-        self.assertEqual(payload["default_y"], 1)
+        self.assertNotIn("default_x", payload)
+        self.assertNotIn("default_y", payload)
         self.assertEqual(
             payload["dimensions"],
             [
@@ -350,7 +358,10 @@ class TestComponentVisualizer(TestPluginBase):
         )
         self._assert_component_arrays_almost_equal(
             payload["partial_axes"][0],
-            {"correlation": [0.9196109002, 0.3841112645]},
+            {
+                "correlation": [0.9196109002, 0.3841112645],
+                "contribution": [0.5817966032, 0.1782227521],
+            },
         )
 
     def test_pca_visualizer_writes_payload_without_mfa_only_data(self):

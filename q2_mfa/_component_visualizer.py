@@ -29,7 +29,8 @@ _STATIC_ASSET_FILES = (
 # every displayed value is trimmed well below this, so 6 decimals roughly halves
 # the embedded payload with no visible change.
 _PAYLOAD_FLOAT_DECIMALS = 6
-_REQUIRED_TABLES = (
+_SHARED_REQUIRED_TABLES = (
+    "eigenvalues",
     "percentage_of_variance",
     "cumulative_percentage_of_variance",
     "sample_coordinates",
@@ -39,6 +40,8 @@ _REQUIRED_TABLES = (
     "feature_correlations",
     "feature_contributions",
     "feature_cosine_similarities",
+)
+_MFA_REQUIRED_TABLES = (
     "group_coordinates",
     "group_contributions",
     "group_cosine_similarities",
@@ -47,48 +50,57 @@ _REQUIRED_TABLES = (
 )
 
 
-def mfa_visualizer(
+def component_visualizer(
     output_dir: str,
-    mfa_results: ComponentAnalysisDirFmt,
+    component_analysis: ComponentAnalysisDirFmt,
+    analysis_type: str,
     sample_metadata: Metadata = None,
 ):
     """
-    Writes an interactive MFA visualization from JSONL component-analysis tables.
+    Writes an interactive PCA or MFA visualization from component-analysis tables.
 
     Args:
         output_dir (str): The directory where visualization assets are written.
-        mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
-            directory format.
+        component_analysis (ComponentAnalysisDirFmt): The JSONL-backed
+            component-analysis result directory format.
+        analysis_type (str): Whether to render the result as PCA or MFA.
         sample_metadata (Metadata | None): Optional sample metadata used for
             browser-side coloring, sizing, and filtering.
 
     Returns:
         None
     """
-    payload = _build_payload(mfa_results, sample_metadata)
+    payload = _build_payload(component_analysis, analysis_type, sample_metadata)
     _write_visualization(output_dir, payload)
 
 
 def _build_payload(
-    mfa_results: ComponentAnalysisDirFmt, sample_metadata: Metadata = None
+    component_analysis: ComponentAnalysisDirFmt,
+    analysis_type: str,
+    sample_metadata: Metadata = None,
 ) -> dict[str, object]:
     """
     Builds the browser payload from long JSONL result tables.
 
     Args:
-        mfa_results (ComponentAnalysisDirFmt): The JSONL-backed MFA result
-            directory format.
+        component_analysis (ComponentAnalysisDirFmt): The JSONL-backed
+            component-analysis result directory format.
+        analysis_type (str): Whether to render the result as PCA or MFA.
         sample_metadata (Metadata | None): Optional sample metadata to attach
             by sample ID.
 
     Returns:
         dict[str, object]: The JSON-serializable visualization payload.
     """
+    table_names = _SHARED_REQUIRED_TABLES
+    if analysis_type == "mfa":
+        table_names = (*table_names, *_MFA_REQUIRED_TABLES)
     tables = {
-        table_name: getattr(mfa_results, table_name).view(pd.DataFrame)
-        for table_name in _REQUIRED_TABLES
+        table_name: getattr(component_analysis, table_name).view(pd.DataFrame)
+        for table_name in table_names
     }
     dimensions = _build_dimensions(
+        tables["eigenvalues"],
         tables["percentage_of_variance"],
         tables["cumulative_percentage_of_variance"],
     )
@@ -118,15 +130,31 @@ def _build_payload(
         tables["feature_correlations"],
         tables["feature_contributions"],
         tables["feature_cosine_similarities"],
+        analysis_type,
     )
-    groups = _build_groups(
-        tables["group_coordinates"],
-        tables["group_contributions"],
-        tables["group_cosine_similarities"],
-    )
-
+    groups = []
+    partial_samples = []
+    partial_axes = []
+    if analysis_type == "mfa":
+        groups = _build_groups(
+            tables["group_coordinates"],
+            tables["group_contributions"],
+            tables["group_cosine_similarities"],
+        )
+        partial_samples = _build_component_entities(
+            tables["partial_sample_coordinates"],
+            ("sample_id", "group"),
+            component_column="partial_component",
+            value_columns={"coordinate": "value"},
+        )
+        partial_axes = _build_component_entities(
+            tables["partial_correlations"],
+            ("group", "partial_component"),
+            component_column="component",
+            value_columns={"correlation": "value"},
+        )
     return {
-        "title": "MFA sample scores",
+        "analysis_type": analysis_type,
         "default_x": dimensions[0]["component"],
         "default_y": dimensions[1]["component"],
         "dimensions": dimensions,
@@ -134,22 +162,13 @@ def _build_payload(
         "samples": samples,
         "features": features,
         "groups": groups,
-        "partial_samples": _build_component_entities(
-            tables["partial_sample_coordinates"],
-            ("sample_id", "group"),
-            component_column="partial_component",
-            value_columns={"coordinate": "value"},
-        ),
-        "partial_axes": _build_component_entities(
-            tables["partial_correlations"],
-            ("group", "partial_component"),
-            component_column="component",
-            value_columns={"correlation": "value"},
-        ),
+        "partial_samples": partial_samples,
+        "partial_axes": partial_axes,
     }
 
 
 def _build_dimensions(
+    eigenvalues: pd.DataFrame,
     percentage_of_variance: pd.DataFrame,
     cumulative_percentage_of_variance: pd.DataFrame,
 ) -> list[dict[str, object]]:
@@ -157,6 +176,7 @@ def _build_dimensions(
     Builds component metadata from variance JSONL records.
 
     Args:
+        eigenvalues (pd.DataFrame): Long eigenvalue table.
         percentage_of_variance (pd.DataFrame): Long percentage-variance table.
         cumulative_percentage_of_variance (pd.DataFrame): Long cumulative
             percentage-variance table.
@@ -164,10 +184,6 @@ def _build_dimensions(
     Returns:
         list[dict[str, object]]: Component metadata ordered by component ID.
     """
-    cumulative_by_component = {
-        int(row["component"]): float(row["value"])
-        for _, row in cumulative_percentage_of_variance.iterrows()
-    }
     dimensions = []
     for _, row in percentage_of_variance.sort_values("component").iterrows():
         component = int(row["component"])
@@ -178,16 +194,14 @@ def _build_dimensions(
                 "component": component,
                 "label": label,
                 "axis_title": f"{label} ({explained:.1f}% explained)",
+                "eigenvalue": float(eigenvalues.loc[component, "value"]),
                 "variance_explained": explained,
-                "cumulative_variance_explained": cumulative_by_component.get(component),
+                "cumulative_variance_explained": float(
+                    cumulative_percentage_of_variance.loc[component, "value"]
+                ),
             }
         )
 
-    if len(dimensions) < 2:
-        raise ValueError(
-            "MFA visualizer requires at least two components in "
-            "percentage_of_variance.jsonl."
-        )
     return dimensions
 
 
@@ -257,6 +271,7 @@ def _build_features(
     feature_correlations: pd.DataFrame,
     feature_contributions: pd.DataFrame,
     feature_cosine_similarities: pd.DataFrame,
+    analysis_type: str,
 ) -> list[dict[str, object]]:
     """
     Builds feature view-model records with coordinate and correlation values.
@@ -267,10 +282,14 @@ def _build_features(
         feature_contributions (pd.DataFrame): Long feature contribution
             records.
         feature_cosine_similarities (pd.DataFrame): Long feature cos2 records.
+        analysis_type (str): The plugin-constrained analysis type slug.
 
     Returns:
-        list[dict[str, object]]: Feature records keyed by group and variable.
+        list[dict[str, object]]: Feature records keyed by variable and, for MFA,
+            group.
     """
+    key_columns = ("group", "variable") if analysis_type == "mfa" else ("variable",)
+    join_columns = [*key_columns, "component"]
     merged = _merge_value_tables(
         {
             "coordinate": feature_coordinates,
@@ -278,11 +297,11 @@ def _build_features(
             "contribution": feature_contributions,
             "cos2": feature_cosine_similarities,
         },
-        ["group", "variable", "component"],
+        join_columns,
     )
     return _build_component_entities(
         merged,
-        ("group", "variable"),
+        key_columns,
         component_column="component",
         value_columns={
             "coordinate": "coordinate",
@@ -350,9 +369,6 @@ def _merge_value_tables(
         if merged is None:
             merged = renamed
             continue
-        # Outer join so an entity/component present in only some value tables is
-        # kept (missing values become NaN -> null in the payload) instead of
-        # being silently dropped.
         merged = merged.merge(renamed, on=join_columns, how="outer")
     return merged
 
@@ -418,8 +434,6 @@ def _component_arrays_by_entity(
     keys = list(key_columns)
     n_components = int(table[component_column].max()) + 1
 
-    # Preserve first-appearance entity order (matching the previous
-    # groupby(sort=False) behaviour) so downstream lists stay stable.
     ordered_keys = table[keys].drop_duplicates()
     entity_index = (
         pd.Index(ordered_keys[keys[0]])
@@ -428,7 +442,7 @@ def _component_arrays_by_entity(
     )
 
     # Reshape each long value column to a dense (entity x component) matrix in a
-    # single vectorized pass instead of looping row by row.
+    # single vectorized pass.
     field_rows = {}
     for output_name, source_column in value_columns.items():
         wide = table.pivot_table(
@@ -440,8 +454,6 @@ def _component_arrays_by_entity(
 
         matrix = np.round(wide.to_numpy(dtype=float), _PAYLOAD_FLOAT_DECIMALS)
         rows = matrix.tolist()
-        # Only pay the per-cell None substitution when components are actually
-        # missing; the common (complete) case stays pure C + one tolist().
         if np.isnan(matrix).any():
             rows = [
                 [None if value != value else value for value in row] for row in rows
@@ -558,7 +570,7 @@ def _write_visualization(output_dir: str, payload: dict[str, object]):
         None
     """
     output_path = Path(output_dir)
-    asset_dir = resources.files("q2_mfa") / "assets" / "mfa_visualizer"
+    asset_dir = resources.files("q2_mfa") / "assets" / "component_visualizer"
 
     with ExitStack() as stack:
         template_paths = [
@@ -577,6 +589,6 @@ def _write_visualization(output_dir: str, payload: dict[str, object]):
 
     data_path = output_path / "data.js"
     data_path.write_text(
-        f"window.MFA_VISUALIZER_DATA = {json.dumps(payload)};\n",
+        f"window.COMPONENT_VISUALIZER_DATA = {json.dumps(payload)};\n",
         encoding="utf-8",
     )

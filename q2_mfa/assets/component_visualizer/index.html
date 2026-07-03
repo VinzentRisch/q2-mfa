@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MFA</title>
+  <title>Component Analysis</title>
   <link rel="stylesheet" href="style.css">
   <script src="plotly-basic-2.35.2.min.js"></script>
 </head>
@@ -11,7 +11,7 @@
   <div class="page-shell">
     <header class="page-header">
       <div>
-        <p class="eyebrow">MFA</p>
+        <p id="analysis-eyebrow" class="eyebrow">Component Analysis</p>
       </div>
     </header>
 
@@ -46,7 +46,7 @@
         <label class="toggle-option" for="show-barycenter">
           <input id="show-barycenter" type="checkbox">
           <span>Barycenter ellipse</span>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Barycenter ellipse help" data-tooltip="Shows an ellipse around the visible sample scores from the MFA sample coordinate table. The ellipse is calculated from the filtered samples on the selected X and Y axes: the center is the mean score and the shape comes from the two-dimensional covariance of those scores. Wider ellipses indicate more dispersion on the selected MFA axes.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Barycenter ellipse help" data-tooltip="Shows an ellipse around the visible sample scores from the component-analysis sample coordinate table. The ellipse is calculated from the filtered samples on the selected X and Y axes: the center is the mean score and the shape comes from the two-dimensional covariance of those scores. Wider ellipses indicate more dispersion on the selected axes.">?</span>
         </label>
       </div>
 
@@ -125,7 +125,7 @@
     <section class="plot-grid-secondary">
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Explained variance by component <span class="help-tooltip" tabindex="0" role="button" aria-label="Explained variance help" data-tooltip="Shows the percentage of variance values stored in the MFA percentage-of-variance result table. Larger bars indicate axes that capture more structure and are usually better candidates for interpretation.">?</span></span>
+          <span class="plot-title-with-help">Explained variance by component <span class="help-tooltip" tabindex="0" role="button" aria-label="Explained variance help" data-tooltip="Shows the percentage of variance values stored in the component-analysis percentage-of-variance result table. Larger bars indicate axes that capture more structure and are usually better candidates for interpretation.">?</span></span>
           <span id="variance-summary"></span>
         </div>
         <div id="variance-plot" class="plot-canvas plot-canvas-secondary"></div>
@@ -133,20 +133,20 @@
 
       <div class="plot-shell plot-shell-secondary">
         <div class="plot-status">
-          <span class="plot-title-with-help">Cumulative explained variance <span class="help-tooltip" tabindex="0" role="button" aria-label="Cumulative variance help" data-tooltip="Shows the cumulative percentage of variance values stored in the MFA cumulative-percentage-of-variance result table, which helps judge how many axes are needed to summarize the dataset.">?</span></span>
+          <span class="plot-title-with-help">Cumulative explained variance <span class="help-tooltip" tabindex="0" role="button" aria-label="Cumulative variance help" data-tooltip="Shows the cumulative percentage of variance values stored in the component-analysis cumulative-percentage-of-variance result table, which helps judge how many axes are needed to summarize the dataset.">?</span></span>
           <span id="cumulative-summary"></span>
         </div>
         <div id="cumulative-variance-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
 
-      <div class="plot-shell plot-shell-secondary">
+      <div class="plot-shell plot-shell-secondary mfa-only">
         <div class="plot-status">
           <span class="plot-title-with-help">Group coordinates (Partial inertia) <span class="help-tooltip" tabindex="0" role="button" aria-label="Group coordinates partial inertia help" data-tooltip="Shows group coordinates from the MFA group coordinate result table for the selected axes. Hover details add group contribution and cos2 values from the matching MFA result tables. Groups farther from zero are more influential in the displayed dimensions.">?</span></span>
         </div>
         <div id="group-plot" class="plot-canvas plot-canvas-secondary"></div>
       </div>
 
-      <div class="plot-shell plot-shell-secondary">
+      <div class="plot-shell plot-shell-secondary mfa-only">
         <div class="plot-status">
           <span class="plot-title-with-help">Partial axes <span class="help-tooltip" tabindex="0" role="button" aria-label="Partial axes help" data-tooltip="Shows partial axis correlations from the MFA partial correlation result table. Each vector is a group's own principal axis (partial dim) projected onto the selected global MFA axes, so vectors pointing in similar directions indicate agreement between groups and vectors near zero are weakly aligned with this view.">?</span></span>
           <label class="partial-axes-count-control">Partial dims per group
@@ -161,7 +161,7 @@
       <div class="plot-status">
         <label class="table-source-control">
           <select id="table-source" aria-label="Table"></select>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Table help" data-tooltip="Choose which MFA result table to show. Coordinate and correlation tables rank rows by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y axis values. Contribution and cos2 tables instead show the sum of the two displayed dimensions; contributions are shown as percentages.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Table help" data-tooltip="Choose which component-analysis result table to show. Coordinate and correlation tables rank rows by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y axis values. Contribution and cos2 tables instead show the sum of the two displayed dimensions; contributions are shown as percentages.">?</span>
         </label>
         <div class="feature-table-download-control">
           <button id="download-feature-table" class="feature-table-download" type="button">Download tsv</button>

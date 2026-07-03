@@ -94,18 +94,6 @@ const SAMPLE_LEGEND_CHARACTER_WIDTH = 7.2;
 const SAMPLE_NUMERIC_COLORBAR_Y = 1;
 const SAMPLE_NUMERIC_COLORBAR_LENGTH = 0.28;
 const SAMPLE_LEGEND_BELOW_COLORBAR_Y = 0.72;
-const FEATURE_SOURCE_OPTIONS = {
-  coordinates: {
-    label: 'coordinates',
-    tooltip:
-      'Uses feature coordinates from the MFA feature coordinate result table. The scale circle is only a visual reference for one coordinate unit after feature scaling.',
-  },
-  correlations: {
-    label: 'correlations',
-    tooltip:
-      'Uses feature correlations from the MFA feature correlation result table. The scale circle represents correlation magnitude 1 after feature scaling.',
-  },
-};
 const FEATURE_SCALE_CIRCLE_COLOR = 'rgba(148, 163, 184, 0.72)';
 const SECONDARY_SQUARE_PLOT_MARGIN = { t: 20, r: 46, b: 70, l: 80 };
 const VARIANCE_PLOT_MARGIN = { t: 20, r: 20, b: 42, l: 80 };
@@ -115,7 +103,10 @@ const CUMULATIVE_VARIANCE_PLOT_MARGIN = { t: 28, r: 56, b: 42, l: 80 };
 // DATA & APPLICATION STATE
 // ============================================================================
 
-const payload = window.MFA_VISUALIZER_DATA;
+const payload = window.COMPONENT_VISUALIZER_DATA;
+const analysisType = payload.analysis_type ?? 'mfa';
+const analysisLabel = analysisType.toUpperCase();
+const isMfa = analysisType === 'mfa';
 const metadataColumns = payload.metadata_columns ?? [];
 const hasMetadata = metadataColumns.length > 0;
 const metadataByName = Object.fromEntries(
@@ -240,6 +231,8 @@ function createDefaultSampleFilter() {
 // ============================================================================
 
 function initialize() {
+  applyAnalysisLabels();
+  applyAnalysisMode();
   applyMetadataAvailability();
   populateDimensionSelectors();
   populateColorControls();
@@ -247,6 +240,20 @@ function initialize() {
   bindSamplePlotResizeObserver();
   renderFilterControls();
   renderAll();
+}
+
+function applyAnalysisLabels() {
+  document.title = analysisLabel;
+  const eyebrow = document.getElementById('analysis-eyebrow');
+  if (eyebrow) {
+    eyebrow.textContent = analysisLabel;
+  }
+}
+
+function applyAnalysisMode() {
+  document.querySelectorAll('.mfa-only').forEach((element) => {
+    element.hidden = !isMfa;
+  });
 }
 
 function applyMetadataAvailability() {
@@ -453,7 +460,9 @@ function renderFilterControls() {
   container.replaceChildren();
 
   container.appendChild(buildFeaturesRow());
-  container.appendChild(buildPartialCoordinatesRow());
+  if (isMfa) {
+    container.appendChild(buildPartialCoordinatesRow());
+  }
   container.appendChild(buildSampleCoordinatesRow());
 
   if (!hasMetadata) {
@@ -546,7 +555,7 @@ function buildFeatureSourceToggle() {
   help.setAttribute('aria-label', 'Features help');
   help.setAttribute(
     'data-tooltip',
-    'Overlays the strongest features from the selected source for the selected axes. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y values. Feature coordinates and correlations come from the MFA JSONL result tables. The checkbox controls whether features are drawn.'
+    'Overlays the strongest features from the selected source for the selected axes. Features are ordered by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y values. Feature coordinates and correlations come from the component-analysis JSONL result tables. The checkbox controls whether features are drawn.'
   );
   help.textContent = '?';
 
@@ -576,13 +585,15 @@ function buildFeaturesRow() {
   toggle.style.gridColumn = '1';
   row.appendChild(toggle);
 
-  const groups = buildGroupTogglesContainer(
-    state.featureGroups,
-    !state.showFeatures,
-    getFeatureGroups()
-  );
-  groups.style.gridColumn = '2 / -1';
-  row.appendChild(groups);
+  if (isMfa) {
+    const groups = buildGroupTogglesContainer(
+      state.featureGroups,
+      !state.showFeatures,
+      getFeatureGroups()
+    );
+    groups.style.gridColumn = '2 / -1';
+    row.appendChild(groups);
+  }
 
   return row;
 }
@@ -622,7 +633,7 @@ function buildSampleCoordinatesRow() {
       state.showSampleScores = checked;
       renderSamplePlot();
     },
-    'Shows the global MFA sample coordinates (also called sample scores) from the MFA sample coordinate result table on the selected X and Y axes.'
+    `Shows the global ${analysisLabel} sample coordinates (also called sample scores) from the ${analysisLabel} sample coordinate result table on the selected X and Y axes.`
   );
   row.appendChild(toggle);
 
@@ -953,8 +964,10 @@ function getTraceSampleIds(trace) {
 }
 
 function renderSecondaryPlots() {
-  renderGroupPlot();
-  renderPartialAxesPlot();
+  if (isMfa) {
+    renderGroupPlot();
+    renderPartialAxesPlot();
+  }
   renderVariancePlot();
 }
 
@@ -974,7 +987,7 @@ function renderAll() {
 function buildDownloadFilename(extension) {
   const xLabel = dimensionFileLabel(state.xDimension);
   const yLabel = dimensionFileLabel(state.yDimension);
-  return `mfa-sample-scores-${xLabel}-vs-${yLabel}.${extension}`;
+  return `${analysisType}-sample-scores-${xLabel}-vs-${yLabel}.${extension}`;
 }
 
 function downloadPlotImage(plotId, filename, format) {
@@ -1163,13 +1176,17 @@ function buildFeatureTraces() {
     return [];
   }
 
-  const groupOrder = [...new Set(rankedFeatures.map((feature) => feature.group))].sort();
+  const groupOrder = isMfa
+    ? [...new Set(rankedFeatures.map((feature) => feature.group))].sort()
+    : ['Features'];
   const groupColors = getGroupColorMap(groupOrder);
   const labelPlacement = placeFeatureLabels(rankedFeatures, groupColors);
 
   const traces = [];
   groupOrder.forEach((group) => {
-    const groupFeatures = rankedFeatures.filter((feature) => feature.group === group);
+    const groupFeatures = isMfa
+      ? rankedFeatures.filter((feature) => feature.group === group)
+      : rankedFeatures;
     if (!groupFeatures.length) {
       return;
     }
@@ -1263,9 +1280,8 @@ function featureMarkerAngle(feature) {
 function buildFeatureHoverText(feature) {
   const featureSourceLabel =
     state.featureSource === 'coordinates' ? 'coordinates' : 'correlation';
-  return [
+  const lines = [
     `<b>${feature.variable}</b>`,
-    `Group: ${feature.group}`,
     dimLine(state.xDimension, feature.x, featureSourceLabel),
     dimLine(state.yDimension, feature.y, featureSourceLabel),
     dimContributionLine(state.xDimension, componentField(feature, state.xDimension, 'contribution')),
@@ -1273,7 +1289,11 @@ function buildFeatureHoverText(feature) {
     dimLine(state.xDimension, componentField(feature, state.xDimension, 'cos2'), 'cos2'),
     dimLine(state.yDimension, componentField(feature, state.yDimension, 'cos2'), 'cos2'),
     `Plane magnitude ${featureSourceLabel}: ${formatValue(feature.rankingScore)}`,
-  ].join('<br>');
+  ];
+  if (isMfa) {
+    lines.splice(1, 0, `Group: ${feature.group}`);
+  }
+  return lines.join('<br>');
 }
 
 // ============================================================================
@@ -1285,6 +1305,9 @@ function getSelectedFeatureSource() {
 }
 
 function getFeatureGroups() {
+  if (!isMfa) {
+    return [];
+  }
   return [...new Set(getSelectedFeatureSource().records.map((feature) => feature.group))].sort();
 }
 
@@ -1312,7 +1335,7 @@ function getRankedFeatures(limit = null, allowedFeatureGroups = null) {
     }))
     .sort((a, b) =>
       b.rankingScore - a.rankingScore ||
-      a.group.localeCompare(b.group) ||
+      String(a.group ?? '').localeCompare(String(b.group ?? '')) ||
       a.display_feature_name.localeCompare(b.display_feature_name)
     )
     .map((feature, index) => ({
@@ -1327,7 +1350,10 @@ function getRankedFeatures(limit = null, allowedFeatureGroups = null) {
 
 function getAllowedGroups(target) {
   if (target === 'features') {
-    return state.showFeatures ? state.featureGroups : new Set();
+    if (!state.showFeatures) {
+      return new Set();
+    }
+    return isMfa ? state.featureGroups : null;
   }
   if (target === 'partial_samples') {
     return state.showPartialOverlay ? state.partialSampleGroups : new Set();
@@ -1351,7 +1377,7 @@ function getTableColumns() {
       type: 'text',
     },
   ];
-  if (source.entity === 'feature') {
+  if (source.entity === 'feature' && isMfa) {
     columns.push({ key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' });
   }
   columns.push(
@@ -1376,7 +1402,7 @@ function getTableRows() {
       return {
         name: isFeature ? shortenTaxonomyFeatureName(record.variable) : record.sample_id,
         fullName: isFeature ? record.variable : record.sample_id,
-        group: isFeature ? record.group : null,
+        group: isFeature && isMfa ? record.group : null,
         x,
         y,
         aggregate: source.aggregate === 'magnitude' ? Math.hypot(x, y) : x + y,
@@ -1746,7 +1772,7 @@ function escapeTsvValue(value) {
 function buildFeatureTableDownloadFilename() {
   const xLabel = dimensionFileLabel(state.xDimension);
   const yLabel = dimensionFileLabel(state.yDimension);
-  return `mfa-${state.tableSource}-${xLabel}-vs-${yLabel}.tsv`;
+  return `${analysisType}-${state.tableSource}-${xLabel}-vs-${yLabel}.tsv`;
 }
 
 function formatFeaturePlotLabel(featureName) {
@@ -2630,7 +2656,7 @@ function renderGroupPlot() {
     'group-plot',
     traces,
     buildGroupLayout(),
-    buildSecondaryPlotConfig('group-plot', 'mfa-group-partial-inertia', {
+    buildSecondaryPlotConfig('group-plot', `${analysisType}-group-partial-inertia`, {
       width: 1200,
       height: 1200,
     })
@@ -2672,8 +2698,8 @@ function placeFeatureLabels(features, groupColors) {
   const items = features.map((feature) => ({
     anchorX: feature.plotX,
     anchorY: feature.plotY,
-    color: groupColors[feature.group],
-    group: feature.group,
+    color: groupColors[isMfa ? feature.group : 'Features'],
+    group: isMfa ? feature.group : 'Features',
     hoverText: buildFeatureHoverText(feature),
     text: feature.plot_feature_name,
   }));
@@ -2975,7 +3001,7 @@ function renderPartialAxesPlot() {
     'partial-axes-plot',
     traces,
     buildPartialAxesLayout(),
-    buildSecondaryPlotConfig('partial-axes-plot', 'mfa-partial-axes')
+    buildSecondaryPlotConfig('partial-axes-plot', `${analysisType}-partial-axes`)
   );
 
   updatePartialAxesSummary(partialAxes);
@@ -3151,15 +3177,26 @@ function renderVariancePlot() {
         width: 1,
       },
     },
-    customdata: components.map((component) => [component.variance_explained]),
-    hovertemplate: '%{x}: %{customdata[0]:.2f}% explained<extra></extra>',
+    customdata: components.map((component) => [
+      component.variance_explained,
+      component.eigenvalue,
+    ]),
+    hovertemplate: [
+      '%{x}',
+      'Explained variance: %{customdata[0]:.2f}%',
+      'Eigenvalue: %{customdata[1]:.3f}',
+      '<extra></extra>',
+    ].join('<br>'),
   };
 
   Plotly.react(
     'variance-plot',
     [barTrace],
     buildVarianceLayout(),
-    buildSecondaryPlotConfig('variance-plot', 'mfa-explained-variance-by-component')
+    buildSecondaryPlotConfig(
+      'variance-plot',
+      `${analysisType}-explained-variance-by-component`
+    )
   );
 
   renderCumulativeVariancePlot(components, themeColors);
@@ -3190,14 +3227,28 @@ function renderCumulativeVariancePlot(components, themeColors) {
         width: 1,
       },
     },
-    hovertemplate: '%{x}: %{y:.2f}% cumulative<extra></extra>',
+    customdata: components.map((component) => [
+      component.cumulative_variance_explained,
+      component.variance_explained,
+      component.eigenvalue,
+    ]),
+    hovertemplate: [
+      '%{x}',
+      'Cumulative explained variance: %{customdata[0]:.2f}%',
+      'Explained variance: %{customdata[1]:.2f}%',
+      'Eigenvalue: %{customdata[2]:.3f}',
+      '<extra></extra>',
+    ].join('<br>'),
   };
 
   Plotly.react(
     'cumulative-variance-plot',
     [cumulativeTrace],
     buildCumulativeVarianceLayout(),
-    buildSecondaryPlotConfig('cumulative-variance-plot', 'mfa-cumulative-explained-variance')
+    buildSecondaryPlotConfig(
+      'cumulative-variance-plot',
+      `${analysisType}-cumulative-explained-variance`
+    )
   );
   updateCumulativeSummary(components);
 }

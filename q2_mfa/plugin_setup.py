@@ -12,7 +12,7 @@ from rachis.core.type import Bool, Choices, Collection, Float, Int, Range, Str
 from rachis.plugin import Citations, Metadata, Plugin
 
 from q2_mfa import __version__, transform_clr
-from q2_mfa._mfa_visualizer import mfa_visualizer
+from q2_mfa._component_visualizer import component_visualizer
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
 from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisType
@@ -191,24 +191,28 @@ plugin.methods.register_function(
 )
 
 plugin.visualizers.register_function(
-    function=mfa_visualizer,
-    inputs={"mfa_results": ComponentAnalysisType},
-    parameters={"sample_metadata": Metadata},
+    function=component_visualizer,
+    inputs={"component_analysis": ComponentAnalysisType},
+    parameters={
+        "analysis_type": Str % Choices("pca", "mfa"),
+        "sample_metadata": Metadata,
+    },
     input_descriptions={
-        "mfa_results": (
-            "The MFA results containing the global ordination and MFA-specific "
-            "support tables."
+        "component_analysis": (
+            "The PCA or MFA results containing component-analysis support " "tables."
         )
     },
     parameter_descriptions={
+        "analysis_type": "If the input is from MFA or PCA.",
         "sample_metadata": (
             "Sample metadata used for live coloring and filtering in the browser."
         ),
     },
-    name="MFA Visualizer",
+    name="Component Visualizer",
     description=(
-        "Interactive MFA sample-score visualization with selectable dimensions, "
-        "metadata coloring, metadata filtering, and browser-based zoom and pan."
+        "Interactive PCA/MFA sample-score visualization with selectable "
+        "dimensions, metadata coloring, metadata filtering, and browser-based "
+        "zoom and pan."
     ),
     citations=[
         citations["escofier1994multiple"],

@@ -12,24 +12,36 @@ from pathlib import Path
 from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa._mfa_visualizer import mfa_visualizer
+from q2_mfa._component_visualizer import component_visualizer
 from q2_mfa.types import ComponentAnalysisDirFmt
 
 
-class TestMFAVisualizer(TestPluginBase):
+class TestComponentVisualizer(TestPluginBase):
     package = "q2_mfa.tests"
 
     @classmethod
     def setUpClass(cls):
         instance = cls()
         cls.metadata = Metadata.load(instance.get_data_path("mfa/mfa_vis_metadata.tsv"))
-        cls.mfa_results = ComponentAnalysisDirFmt(
+        cls.mfa_component_analysis = ComponentAnalysisDirFmt(
             instance.get_data_path("mfa/mfa_vis_results"),
+            mode="r",
+        )
+        cls.pca_component_analysis = ComponentAnalysisDirFmt(
+            str(
+                Path(__file__).parents[1]
+                / "types"
+                / "tests"
+                / "data"
+                / "component-analysis"
+                / "jsonl"
+                / "pca"
+            ),
             mode="r",
         )
 
     def _load_payload(self, output_dir):
-        prefix = "window.MFA_VISUALIZER_DATA = "
+        prefix = "window.COMPONENT_VISUALIZER_DATA = "
         data = Path(output_dir) / "data.js"
         payload = data.read_text(encoding="utf-8")
         self.assertTrue(payload.startswith(prefix))
@@ -62,12 +74,14 @@ class TestMFAVisualizer(TestPluginBase):
                 else:
                     self.assertEqual(observed_value, expected_value)
 
-    def test_plugin_registers_mfa_visualizer(self):
-        self.assertIn("mfa_visualizer", self.plugin.visualizers)
+    def test_plugin_registers_component_visualizer(self):
+        self.assertIn("component_visualizer", self.plugin.visualizers)
 
-    def test_mfa_visualizer_writes_assets_and_jsonl_payload(self):
+    def test_component_visualizer_writes_assets_and_jsonl_payload(self):
         with tempfile.TemporaryDirectory() as output_dir:
-            mfa_visualizer(output_dir, self.mfa_results, self.metadata)
+            component_visualizer(
+                output_dir, self.mfa_component_analysis, "mfa", self.metadata
+            )
 
             output_path = Path(output_dir)
             for filename in (
@@ -86,12 +100,12 @@ class TestMFAVisualizer(TestPluginBase):
             visualization_assets = index_html + app_js
 
             for expected_text in (
-                "MFA sample coordinate result table",
-                "MFA percentage-of-variance result table",
-                "MFA cumulative-percentage-of-variance result table",
+                "component-analysis sample coordinate table",
+                "component-analysis percentage-of-variance result table",
+                "component-analysis cumulative-percentage-of-variance result table",
                 "MFA group coordinate result table",
                 "MFA partial correlation result table",
-                "MFA JSONL result tables",
+                "component-analysis JSONL result tables",
                 "sqrt(x^2 + y^2)",
             ):
                 self.assertIn(expected_text, visualization_assets)
@@ -99,6 +113,12 @@ class TestMFAVisualizer(TestPluginBase):
             self.assertIn("payload.samples", app_js)
             self.assertIn("payload.features", app_js)
             self.assertIn("payload.groups", app_js)
+            self.assertIn("Eigenvalue: %{customdata[1]:.3f}", app_js)
+            self.assertIn("Eigenvalue: %{customdata[2]:.3f}", app_js)
+            self.assertIn("const analysisLabel = analysisType.toUpperCase();", app_js)
+            self.assertIn("const isMfa = analysisType === 'mfa';", app_js)
+            self.assertIn("document.querySelectorAll('.mfa-only')", app_js)
+            self.assertIn("source.entity === 'feature' && isMfa", app_js)
             self.assertIn("feature.variable", app_js)
             self.assertIn('id="sample-details"', index_html)
             self.assertIn("Click a sample to view details.", index_html)
@@ -180,6 +200,9 @@ class TestMFAVisualizer(TestPluginBase):
 
             payload = self._load_payload(output_dir)
 
+        self.assertEqual(payload["analysis_type"], "mfa")
+        self.assertNotIn("analysis_slug", payload)
+        self.assertNotIn("analysis_label", payload)
         self.assertEqual(payload["default_x"], 0)
         self.assertEqual(payload["default_y"], 1)
         self.assertEqual(
@@ -189,6 +212,7 @@ class TestMFAVisualizer(TestPluginBase):
                     "component": 0,
                     "label": "Dim 1",
                     "axis_title": "Dim 1 (60.0% explained)",
+                    "eigenvalue": 1.4535736427000001,
                     "variance_explained": 60.025414068,
                     "cumulative_variance_explained": 60.025414068,
                 },
@@ -196,6 +220,7 @@ class TestMFAVisualizer(TestPluginBase):
                     "component": 1,
                     "label": "Dim 2",
                     "axis_title": "Dim 2 (34.2% explained)",
+                    "eigenvalue": 0.827848643,
                     "variance_explained": 34.1860612503,
                     "cumulative_variance_explained": 94.2114753183,
                 },
@@ -226,9 +251,9 @@ class TestMFAVisualizer(TestPluginBase):
             },
         )
 
-    def test_mfa_visualizer_accepts_missing_metadata(self):
+    def test_component_visualizer_accepts_missing_metadata(self):
         with tempfile.TemporaryDirectory() as output_dir:
-            mfa_visualizer(output_dir, self.mfa_results)
+            component_visualizer(output_dir, self.mfa_component_analysis, "mfa")
 
             output_path = Path(output_dir)
             for filename in (
@@ -256,9 +281,11 @@ class TestMFAVisualizer(TestPluginBase):
             },
         )
 
-    def test_mfa_visualizer_payload_uses_domain_view_model_records(self):
+    def test_component_visualizer_payload_uses_domain_view_model_records(self):
         with tempfile.TemporaryDirectory() as output_dir:
-            mfa_visualizer(output_dir, self.mfa_results, self.metadata)
+            component_visualizer(
+                output_dir, self.mfa_component_analysis, "mfa", self.metadata
+            )
             payload = self._load_payload(output_dir)
 
         self.assertEqual(
@@ -325,3 +352,35 @@ class TestMFAVisualizer(TestPluginBase):
             payload["partial_axes"][0],
             {"correlation": [0.9196109002, 0.3841112645]},
         )
+
+    def test_pca_visualizer_writes_payload_without_mfa_only_data(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            component_visualizer(output_dir, self.pca_component_analysis, "pca")
+
+            output_path = Path(output_dir)
+            for filename in (
+                "index.html",
+                "style.css",
+                "app.js",
+                "plotly-basic-2.35.2.min.js",
+                "plotly-basic-2.35.2.min.js.LICENSE.txt",
+                "data.js",
+            ):
+                self.assertTrue((output_path / filename).exists())
+
+            app_js = (output_path / "app.js").read_text(encoding="utf-8")
+            self.assertIn("if (isMfa) {", app_js)
+            self.assertIn("source.entity === 'feature' && isMfa", app_js)
+            self.assertIn("isMfa ? feature.group : 'Features'", app_js)
+            payload = self._load_payload(output_dir)
+
+        self.assertEqual(payload["analysis_type"], "pca")
+        self.assertNotIn("analysis_slug", payload)
+        self.assertNotIn("analysis_label", payload)
+        self.assertEqual(payload["groups"], [])
+        self.assertEqual(payload["partial_samples"], [])
+        self.assertEqual(payload["partial_axes"], [])
+        self.assertGreater(len(payload["features"]), 0)
+        self.assertIn("eigenvalue", payload["dimensions"][0])
+        self.assertNotIn("group", payload["features"][0])
+        self.assertIn("variable", payload["features"][0])

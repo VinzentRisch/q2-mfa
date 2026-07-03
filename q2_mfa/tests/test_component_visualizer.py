@@ -158,6 +158,12 @@ class TestComponentVisualizer(TestPluginBase):
             self.assertIn("text: samples.map(buildSampleHoverText),", app_js)
             self.assertIn("hovertemplate: '%{text}<extra></extra>'", app_js)
             self.assertIn("function buildSampleHoverText(sample)", app_js)
+            self.assertIn('id="show-sample-coordinates"', index_html)
+            self.assertIn("N features", index_html)
+            self.assertIn("control-group-feature-controls", index_html)
+            self.assertIn(".feature-compact-controls", style_css)
+            self.assertIn("filters: [],", app_js)
+            self.assertIn("Add metadata filter", app_js)
             self.assertIn("function buildSampleNameCell(row)", app_js)
             self.assertIn(
                 "toggleSelectedSample(row.fullName, { scrollToPlot: true });", app_js
@@ -183,8 +189,6 @@ class TestComponentVisualizer(TestPluginBase):
             self.assertIn("buildSampleMetricRow('cos2'", app_js)
             self.assertIn("formatPercent(componentField(sample", app_js)
             self.assertIn("function buildSampleMetadataTable(sample)", app_js)
-            self.assertIn("container.appendChild(buildSampleCoordinatesRow());", app_js)
-            self.assertIn("function buildSampleCoordinatesRow()", app_js)
             self.assertIn("const hasMetadata = metadataColumns.length > 0;", app_js)
             self.assertIn("function applyMetadataAvailability()", app_js)
             self.assertIn("element.hidden = !hasMetadata;", app_js)

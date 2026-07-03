@@ -170,7 +170,7 @@ const state = {
   partialSampleGroups: new Set(groupNames),
   fontFamily: SCIENTIFIC_FONTS[0].family,
   fontSize: 12,
-  filters: [createDefaultSampleFilter()],
+  filters: [],
 };
 
 // ============================================================================
@@ -340,6 +340,7 @@ function populateColorControls() {
   repopulateColorPaletteOptions();
   sizeBy.value = state.sizeBy;
   document.getElementById('show-barycenter').checked = state.showBarycenter;
+  document.getElementById('show-sample-coordinates').checked = state.showSampleScores;
   document.getElementById('show-full-feature-labels').checked = state.showFullFeatureLabels;
   document.getElementById('show-feature-scale-circle').checked = state.showFeatureScaleCircle;
   document.getElementById('top-feature-count').value = state.topFeatureCount;
@@ -369,6 +370,7 @@ const SELECT_BINDINGS = [
 ];
 
 const CHECKBOX_BINDINGS = [
+  { id: 'show-sample-coordinates', key: 'showSampleScores' },
   { id: 'show-barycenter', key: 'showBarycenter' },
   { id: 'show-full-feature-labels', key: 'showFullFeatureLabels' },
   { id: 'show-feature-scale-circle', key: 'showFeatureScaleCircle' },
@@ -465,7 +467,6 @@ function renderFilterControls() {
   if (isMfa) {
     container.appendChild(buildPartialCoordinatesRow());
   }
-  container.appendChild(buildSampleCoordinatesRow());
 
   if (!hasMetadata) {
     return;
@@ -481,7 +482,7 @@ function renderFilterControls() {
   const addButton = document.createElement('button');
   addButton.className = 'filter-add';
   addButton.type = 'button';
-  addButton.textContent = 'Add filter...';
+  addButton.textContent = 'Add metadata filter';
   addButton.style.gridColumn = '1';
   addButton.addEventListener('click', () => {
     state.filters.push(createDefaultSampleFilter());
@@ -624,28 +625,9 @@ function buildPartialCoordinatesRow() {
   return row;
 }
 
-function buildSampleCoordinatesRow() {
-  const row = document.createElement('div');
-  row.className = 'filter-row filter-row-coordinate-control';
-
-  const toggle = buildOverlayToggle(
-    'Sample coordinates',
-    state.showSampleScores,
-    (checked) => {
-      state.showSampleScores = checked;
-      renderSamplePlot();
-    },
-    `Shows the global ${analysisLabel} sample coordinates (also called sample scores) from the ${analysisLabel} sample coordinate result table on the selected X and Y axes.`
-  );
-  row.appendChild(toggle);
-
-  return row;
-}
-
 function buildSampleFilterRow(filter, index) {
   const row = document.createElement('div');
   row.className = 'filter-row';
-  const isFirstRow = index === 0;
   const isNumeric = filter.field && metadataByName[filter.field]?.type === 'numeric';
 
   // Col 1: metadata field selector.
@@ -658,16 +640,13 @@ function buildSampleFilterRow(filter, index) {
     appendNumericFilterCells(row, filter);
   } else {
     const valueControls = buildFilterValueControls(filter);
-    valueControls.style.gridColumn = isFirstRow ? '2 / -1' : '2 / 5';
+    valueControls.style.gridColumn = '2 / 5';
     row.appendChild(valueControls);
   }
 
-  // Trailing remove button on every row except the first.
-  if (!isFirstRow) {
-    const removeButton = buildFilterRemoveButton(index);
-    removeButton.style.gridColumn = isNumeric ? '4' : '5';
-    row.appendChild(removeButton);
-  }
+  const removeButton = buildFilterRemoveButton(index);
+  removeButton.style.gridColumn = isNumeric ? '4' : '5';
+  row.appendChild(removeButton);
 
   return row;
 }

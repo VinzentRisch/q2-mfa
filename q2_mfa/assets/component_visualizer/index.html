@@ -50,14 +50,26 @@
         </label>
       </div>
 
-      <div class="control-group control-group-top-features">
-        <label for="top-feature-count">Number of features</label>
-        <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
+      <div class="control-group control-group-toggle control-group-sample-coordinates">
+        <span class="control-label-placeholder" aria-hidden="true">&nbsp;</span>
+        <label class="toggle-option" for="show-sample-coordinates">
+          <input id="show-sample-coordinates" type="checkbox" checked>
+          <span>Sample coordinates</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Sample coordinates help" data-tooltip="Shows the global sample coordinates (also called sample scores) from the component-analysis sample coordinate result table on the selected X and Y axes.">?</span>
+        </label>
       </div>
 
-      <div class="control-group control-group-feature-scale">
-        <label for="feature-scale">Feature scale</label>
-        <input id="feature-scale" type="number" min="1" step="1" value="1">
+      <div class="control-group control-group-feature-controls">
+        <div class="feature-compact-controls">
+          <div class="feature-compact-control">
+            <label for="top-feature-count">N features</label>
+            <input id="top-feature-count" type="number" min="1" max="100" step="1" value="10">
+          </div>
+          <div class="feature-compact-control">
+            <label for="feature-scale">Feature scale</label>
+            <input id="feature-scale" type="number" min="1" step="1" value="1">
+          </div>
+        </div>
       </div>
 
       <div class="control-group control-group-font-family">

@@ -130,12 +130,12 @@ textarea {
   grid-row: 1;
 }
 
-.control-group-top-features {
+.control-group-sample-coordinates {
   grid-column: 1 / span 2;
   grid-row: 2;
 }
 
-.control-group-feature-scale {
+.control-group-feature-controls {
   grid-column: 3 / span 2;
   grid-row: 2;
 }
@@ -215,6 +215,19 @@ input[type="number"],
 select,
 input[type="number"] {
   width: 100%;
+}
+
+.feature-compact-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.feature-compact-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .toggle-option {

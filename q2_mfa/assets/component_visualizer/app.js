@@ -1280,17 +1280,26 @@ function featureMarkerAngle(feature) {
 // Single source of truth for the feature tooltip, used by both the endpoint
 // markers and the label placement so the two can never drift apart.
 function buildFeatureHoverText(feature) {
-  const featureSourceLabel =
-    state.featureSource === 'coordinates' ? 'coordinates' : 'correlation';
+  const coordinateMagnitude = Math.hypot(
+    componentField(feature, state.xDimension, 'coordinate'),
+    componentField(feature, state.yDimension, 'coordinate')
+  );
+  const correlationMagnitude = Math.hypot(
+    componentField(feature, state.xDimension, 'correlation'),
+    componentField(feature, state.yDimension, 'correlation')
+  );
   const lines = [
     `<b>${feature.variable}</b>`,
-    dimLine(state.xDimension, feature.x, featureSourceLabel),
-    dimLine(state.yDimension, feature.y, featureSourceLabel),
+    dimLine(state.xDimension, componentField(feature, state.xDimension, 'coordinate'), 'coordinate'),
+    dimLine(state.yDimension, componentField(feature, state.yDimension, 'coordinate'), 'coordinate'),
+    dimLine(state.xDimension, componentField(feature, state.xDimension, 'correlation'), 'correlation'),
+    dimLine(state.yDimension, componentField(feature, state.yDimension, 'correlation'), 'correlation'),
     dimContributionLine(state.xDimension, componentField(feature, state.xDimension, 'contribution')),
     dimContributionLine(state.yDimension, componentField(feature, state.yDimension, 'contribution')),
     dimLine(state.xDimension, componentField(feature, state.xDimension, 'cos2'), 'cos2'),
     dimLine(state.yDimension, componentField(feature, state.yDimension, 'cos2'), 'cos2'),
-    `Plane magnitude ${featureSourceLabel}: ${formatValue(feature.rankingScore)}`,
+    `Plane magnitude coordinates: ${formatValue(coordinateMagnitude)}`,
+    `Plane magnitude correlation: ${formatValue(correlationMagnitude)}`,
   ];
   if (isMfa) {
     lines.splice(1, 0, `Group: ${feature.group}`);
@@ -1995,8 +2004,8 @@ function buildSampleScatterTrace(samples, name, { showlegend = true, legendgroup
 function buildSampleHoverText(sample) {
   return [
     `<b>${sample.sample_id}</b>`,
-    dimLine(state.xDimension, componentField(sample, state.xDimension, 'coordinate')),
-    dimLine(state.yDimension, componentField(sample, state.yDimension, 'coordinate')),
+    dimLine(state.xDimension, componentField(sample, state.xDimension, 'coordinate'), 'coordinate'),
+    dimLine(state.yDimension, componentField(sample, state.yDimension, 'coordinate'), 'coordinate'),
     dimContributionLine(
       state.xDimension,
       componentField(sample, state.xDimension, 'contribution')
@@ -3181,16 +3190,8 @@ function renderVariancePlot() {
         width: 1,
       },
     },
-    customdata: components.map((component) => [
-      component.variance_explained,
-      component.eigenvalue,
-    ]),
-    hovertemplate: [
-      '%{x}',
-      'Explained variance: %{customdata[0]:.2f}%',
-      'Eigenvalue: %{customdata[1]:.3f}',
-      '<extra></extra>',
-    ].join('<br>'),
+    customdata: components.map(buildVarianceHoverText),
+    hovertemplate: HOVER_TEMPLATE,
   };
 
   Plotly.react(
@@ -3231,18 +3232,8 @@ function renderCumulativeVariancePlot(components, themeColors) {
         width: 1,
       },
     },
-    customdata: components.map((component) => [
-      component.cumulative_variance_explained,
-      component.variance_explained,
-      component.eigenvalue,
-    ]),
-    hovertemplate: [
-      '%{x}',
-      'Cumulative explained variance: %{customdata[0]:.2f}%',
-      'Explained variance: %{customdata[1]:.2f}%',
-      'Eigenvalue: %{customdata[2]:.3f}',
-      '<extra></extra>',
-    ].join('<br>'),
+    customdata: components.map(buildVarianceHoverText),
+    hovertemplate: HOVER_TEMPLATE,
   };
 
   Plotly.react(
@@ -3346,8 +3337,17 @@ function buildPartialHoverText(entry) {
   return [
     `<b>${entry.sample_id}</b>`,
     `Group: ${entry.group}`,
-    dimLine(state.xDimension, partialSampleValue(entry, state.xDimension)),
-    dimLine(state.yDimension, partialSampleValue(entry, state.yDimension)),
+    dimLine(state.xDimension, partialSampleValue(entry, state.xDimension), 'coordinate'),
+    dimLine(state.yDimension, partialSampleValue(entry, state.yDimension), 'coordinate'),
+  ].join('<br>');
+}
+
+function buildVarianceHoverText(component) {
+  return [
+    `<b>${component.label}</b>`,
+    `Explained variance: ${formatValue(component.variance_explained)}%`,
+    `Cumulative explained variance: ${formatValue(component.cumulative_variance_explained)}%`,
+    `Eigenvalue: ${formatValue(component.eigenvalue)}`,
   ].join('<br>');
 }
 

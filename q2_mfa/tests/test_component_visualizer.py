@@ -121,8 +121,13 @@ class TestComponentVisualizer(TestPluginBase):
             self.assertIn("payload.samples", app_js)
             self.assertIn("payload.features", app_js)
             self.assertIn("payload.groups", app_js)
-            self.assertIn("Eigenvalue: %{customdata[1]:.3f}", app_js)
-            self.assertIn("Eigenvalue: %{customdata[2]:.3f}", app_js)
+            self.assertIn("function buildVarianceHoverText(component)", app_js)
+            self.assertIn(
+                "`Cumulative explained variance: ${formatValue("
+                "component.cumulative_variance_explained)}%`",
+                app_js,
+            )
+            self.assertIn("customdata: components.map(buildVarianceHoverText)", app_js)
             self.assertIn("const analysisLabel = analysisType.toUpperCase();", app_js)
             self.assertIn("const isMfa = analysisType === 'mfa';", app_js)
             self.assertIn("document.querySelectorAll('.mfa-only')", app_js)
@@ -158,12 +163,19 @@ class TestComponentVisualizer(TestPluginBase):
                 "toggleSelectedSample(row.fullName, { scrollToPlot: true });", app_js
             )
             self.assertIn(".sample-name-button", style_css)
-            self.assertIn("const featureSourceLabel =", app_js)
             self.assertIn(
-                "dimLine(state.xDimension, feature.x, featureSourceLabel)", app_js
+                "dimLine(state.xDimension, componentField(feature, "
+                "state.xDimension, 'coordinate'), 'coordinate')",
+                app_js,
+            )
+            self.assertIn(
+                "dimLine(state.xDimension, componentField(feature, "
+                "state.xDimension, 'correlation'), 'correlation')",
+                app_js,
             )
             self.assertIn("dimContributionLine(state.xDimension", app_js)
-            self.assertIn("`Plane magnitude ${featureSourceLabel}: ", app_js)
+            self.assertIn("`Plane magnitude coordinates: ", app_js)
+            self.assertIn("`Plane magnitude correlation: ", app_js)
             self.assertIn("filter-row filter-row-coordinate-control", app_js)
             self.assertIn("function buildSampleMetricsTable(sample)", app_js)
             self.assertIn("buildSampleMetricRow('coordinate'", app_js)

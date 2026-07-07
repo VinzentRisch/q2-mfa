@@ -323,6 +323,24 @@ class TestComponentVisualizer(TestPluginBase):
             },
         )
 
+    def test_component_visualizer_rejects_metadata_with_no_sample_overlap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            metadata_path = Path(temp_dir) / "metadata.tsv"
+            metadata_path.write_text(
+                "sample-id\tbody_site\n" "not-s1\tgut\n" "not-s2\tskin\n",
+                encoding="utf-8",
+            )
+            metadata = Metadata.load(metadata_path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "No sample IDs overlap between sample metadata and component "
+                "coordinates.",
+            ):
+                component_visualizer(
+                    temp_dir, self.mfa_component_analysis, "mfa", metadata
+                )
+
     def test_component_visualizer_payload_uses_domain_view_model_records(self):
         with tempfile.TemporaryDirectory() as output_dir:
             component_visualizer(

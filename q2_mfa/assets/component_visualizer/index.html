@@ -173,11 +173,11 @@
       <div class="plot-status">
         <label class="table-source-control">
           <select id="table-source" aria-label="Table"></select>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Table help" data-tooltip="Choose which component-analysis result table to show. Coordinate and correlation tables rank rows by plane magnitude, calculated as sqrt(x^2 + y^2) from the selected X and Y axis values. Contribution and cos2 tables instead show the sum of the two displayed dimensions; contributions are shown as percentages.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Table help" data-tooltip="Choose which component-analysis result table to show. Eigenvalues, variance explained, and cumulative variance are combined in one component summary table. Other tables show the selected X and Y dimensions. Coordinate and correlation tables include plane magnitude; cos2 tables include the selected-plane cos2 sum. Contribution tables show per-dimension percentages without a combined sum.">?</span>
         </label>
         <div class="feature-table-download-control">
           <button id="download-feature-table" class="feature-table-download" type="button">Download tsv</button>
-          <span class="help-tooltip" tabindex="0" role="button" aria-label="Download tsv help" data-tooltip="Downloads only the table shown here: at most the top 100 rows for the selected X and Y axes. Coordinate and correlation tables include the calculated plane magnitude column (sqrt(x^2 + y^2)); contribution and cos2 tables include the sum of the two displayed dimensions (contributions as percentages). The downloaded values have less precision than the original data.">?</span>
+          <span class="help-tooltip" tabindex="0" role="button" aria-label="Download tsv help" data-tooltip="Downloads only the table shown here: at most the top 100 rows for the selected X and Y axes, except the component summary table, which includes all components. The downloaded values have less precision than the original data because the visualization payload is rounded for browser display.">?</span>
         </div>
       </div>
       <div class="feature-table-wrapper">

@@ -74,17 +74,24 @@ const DEFAULT_LABEL_PLOT_WIDTH = 560;
 const DEFAULT_LABEL_PLOT_HEIGHT = 420;
 const MAX_FEATURE_OVERLAY_COUNT = 100;
 // Tables selectable in the data-table dropdown. `field` is the per-component
-// value read from each record; `aggregate` is how the last column combines the
-// two displayed dimensions ('magnitude' = sqrt(x^2 + y^2), 'sum' = x + y);
-// `percent` renders values as percentages (contributions).
+// value read from each record; `aggregate`, when present, is how the last column
+// combines the two displayed dimensions ('magnitude' = sqrt(x^2 + y^2),
+// 'sum' = x + y).
 const TABLE_SOURCES = {
-  'sample-coordinates': { label: 'Sample coordinates', entity: 'sample', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
-  'sample-contributions': { label: 'Sample contributions', entity: 'sample', field: 'contribution', valueLabel: 'contribution', aggregate: 'sum', aggregateLabel: 'Sum', percent: true },
-  'sample-cos2': { label: 'Sample cos2', entity: 'sample', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
-  'feature-coordinates': { label: 'Feature coordinates', entity: 'feature', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
-  'feature-contributions': { label: 'Feature contributions', entity: 'feature', field: 'contribution', valueLabel: 'contribution', aggregate: 'sum', aggregateLabel: 'Sum', percent: true },
-  'feature-cos2': { label: 'Feature cos2', entity: 'feature', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
-  'feature-correlations': { label: 'Feature correlations', entity: 'feature', field: 'correlation', valueLabel: 'correlation', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'component-summary': { label: 'Eigenvalues and variance', entity: 'dimension', recordSet: 'dimensions' },
+  'sample-coordinates': { label: 'Sample coordinates', entity: 'sample', recordSet: 'samples', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'sample-contributions': { label: 'Sample contributions', entity: 'sample', recordSet: 'samples', field: 'contribution', valueLabel: 'contribution', format: 'fractionPercent' },
+  'sample-cos2': { label: 'Sample cos2', entity: 'sample', recordSet: 'samples', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
+  'feature-coordinates': { label: 'Feature coordinates', entity: 'feature', recordSet: 'features', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'feature-correlations': { label: 'Feature correlations', entity: 'feature', recordSet: 'features', field: 'correlation', valueLabel: 'correlation', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude' },
+  'feature-contributions': { label: 'Feature contributions', entity: 'feature', recordSet: 'features', field: 'contribution', valueLabel: 'contribution', format: 'fractionPercent' },
+  'feature-cos2': { label: 'Feature cos2', entity: 'feature', recordSet: 'features', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum' },
+  'group-coordinates': { label: 'Group coordinates', entity: 'group', recordSet: 'groups', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude', mfaOnly: true },
+  'group-contributions': { label: 'Group contributions', entity: 'group', recordSet: 'groups', field: 'contribution', valueLabel: 'contribution', format: 'fractionPercent', mfaOnly: true },
+  'group-cos2': { label: 'Group cos2', entity: 'group', recordSet: 'groups', field: 'cos2', valueLabel: 'cos2', aggregate: 'sum', aggregateLabel: 'Sum', mfaOnly: true },
+  'partial-sample-coordinates': { label: 'Partial sample coordinates', entity: 'partial_sample', recordSet: 'partial_samples', field: 'coordinate', valueLabel: 'coordinate', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude', mfaOnly: true },
+  'partial-correlations': { label: 'Partial correlations', entity: 'partial_axis', recordSet: 'partial_axes', field: 'correlation', valueLabel: 'correlation', aggregate: 'magnitude', aggregateLabel: 'Plane magnitude', mfaOnly: true },
+  'partial-contributions': { label: 'Partial contributions', entity: 'partial_axis', recordSet: 'partial_axes', field: 'contribution', valueLabel: 'contribution', format: 'fractionPercent', mfaOnly: true },
 };
 const SAMPLE_LEGEND_MIN_RIGHT_MARGIN = 150;
 const SAMPLE_LEGEND_MAX_RIGHT_MARGIN = 420;
@@ -333,8 +340,13 @@ function populateColorControls() {
 
   const tableSource = document.getElementById('table-source');
   Object.entries(TABLE_SOURCES).forEach(([key, source]) => {
-    tableSource.add(new Option(source.label, key));
+    if (isTableSourceAvailable(source)) {
+      tableSource.add(new Option(source.label, key));
+    }
   });
+  if (!isTableSourceAvailable(TABLE_SOURCES[state.tableSource])) {
+    state.tableSource = tableSource.options[0]?.value ?? state.tableSource;
+  }
   tableSource.value = state.tableSource;
 
   repopulateColorPaletteOptions();
@@ -434,9 +446,9 @@ function bindEvents() {
 
   document.getElementById('table-source').addEventListener('change', (event) => {
     state.tableSource = event.target.value;
-    // Reset to the default (largest-first) sort so we never keep a column that
-    // the newly selected table doesn't have (e.g. Group on a sample table).
-    state.featureTableSort = { column: 'aggregate', direction: 'desc' };
+    // Reset so we never keep a sort column that the newly selected table
+    // doesn't have.
+    state.featureTableSort = getDefaultTableSort();
     renderDataTable();
   });
 
@@ -1352,86 +1364,172 @@ function getAllowedGroups(target) {
 }
 
 // ============================================================================
-// TOP FEATURES TABLE (SORT, RENDER, TOOLTIP, EXPORT)
+// PAYLOAD TABLES (SORT, RENDER, TOOLTIP, EXPORT)
 // ============================================================================
 
-// Column definitions for the currently selected table. Sample tables omit the
-// Group column; the value/aggregate labels track the selected dimensions.
+function isTableSourceAvailable(source) {
+  if (!source || (source.mfaOnly && !isMfa)) {
+    return false;
+  }
+  return getTableSourceRecords(source).length > 0;
+}
+
+function getTableSourceRecords(source) {
+  return payload[source.recordSet] ?? [];
+}
+
+function getDefaultTableSort() {
+  const source = TABLE_SOURCES[state.tableSource];
+  if (source?.entity === 'dimension') {
+    return { column: '_rank', direction: 'asc' };
+  }
+  return source?.aggregate
+    ? { column: 'aggregate', direction: 'desc' }
+    : { column: 'x', direction: 'desc' };
+}
+
+// Column definitions for the currently selected table. Entity tables show the
+// selected X/Y dimensions and, when meaningful, an aggregate metric.
 function getTableColumns() {
   const source = TABLE_SOURCES[state.tableSource];
-  const columns = [
-    {
-      key: 'name',
-      label: source.entity === 'feature' ? 'Feature' : 'Sample',
-      defaultDirection: 'asc',
-      type: 'text',
-    },
-  ];
-  if (source.entity === 'feature' && isMfa) {
-    columns.push({ key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' });
+  if (source.entity === 'dimension') {
+    return [
+      { key: 'label', label: 'Component', defaultDirection: 'asc', type: 'text' },
+      { key: 'eigenvalue', label: 'Eigenvalue', defaultDirection: 'desc', type: 'number' },
+      { key: 'variance_explained', label: 'Variance explained', defaultDirection: 'desc', type: 'number', format: 'percent' },
+      { key: 'cumulative_variance_explained', label: 'Cumulative variance', defaultDirection: 'desc', type: 'number', format: 'percent' },
+    ];
   }
-  columns.push(
-    { key: 'x', label: `${dimensionLabel(state.xDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number' },
-    { key: 'y', label: `${dimensionLabel(state.yDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number' },
-    { key: 'aggregate', label: source.aggregateLabel, defaultDirection: 'desc', type: 'number' }
-  );
+
+  const columns = [
+    ...getTableKeyColumns(source),
+    { key: 'x', label: `${dimensionLabel(state.xDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number', format: source.format },
+    { key: 'y', label: `${dimensionLabel(state.yDimension)} ${source.valueLabel}`, defaultDirection: 'desc', type: 'number', format: source.format },
+  ];
+  if (source.aggregate) {
+    columns.push({ key: 'aggregate', label: source.aggregateLabel, defaultDirection: 'desc', type: 'number', format: source.format });
+  }
   return columns;
 }
 
+function getTableKeyColumns(source) {
+  if (source.entity === 'sample') {
+    return [{ key: 'name', label: 'Sample', defaultDirection: 'asc', type: 'text' }];
+  }
+  if (source.entity === 'feature') {
+    const columns = [
+      { key: 'name', label: 'Feature', defaultDirection: 'asc', type: 'text' },
+    ];
+    if (source.entity === 'feature' && isMfa) {
+      columns.push({ key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' });
+    }
+    return columns;
+  }
+  if (source.entity === 'group') {
+    return [{ key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' }];
+  }
+  if (source.entity === 'partial_sample') {
+    return [
+      { key: 'sample_id', label: 'Sample', defaultDirection: 'asc', type: 'text' },
+      { key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' },
+    ];
+  }
+  if (source.entity === 'partial_axis') {
+    return [
+      { key: 'group', label: 'Group', defaultDirection: 'asc', type: 'text' },
+      { key: 'partial_component_label', label: 'Partial dim', defaultDirection: 'asc', type: 'text' },
+    ];
+  }
+  return [];
+}
+
 // Builds the rows for the selected table: reads the source field for both
-// displayed dimensions, computes the aggregate column, and applies the sort.
+// displayed dimensions, computes any aggregate column, and applies the sort.
 function getTableRows() {
   const source = TABLE_SOURCES[state.tableSource];
-  const isFeature = source.entity === 'feature';
-  const records = isFeature ? (payload.features ?? []) : samples;
+  const columns = getTableColumns();
+  const records = getTableSourceRecords(source);
+  const rows = source.entity === 'dimension'
+    ? records.map((record, index) => ({ ...record, rank: index }))
+    : records
+        .map((record, index) => {
+          const x = componentField(record, state.xDimension, source.field);
+          const y = componentField(record, state.yDimension, source.field);
+          const row = buildTableRow(source, record);
+          row.x = x;
+          row.y = y;
+          if (source.aggregate) {
+            row.aggregate = source.aggregate === 'magnitude' ? Math.hypot(x, y) : x + y;
+          }
+          row.rank = index;
+          return row;
+        })
+        .filter((row) => Number.isFinite(row.x) && Number.isFinite(row.y));
 
-  const rows = records
-    .map((record) => {
-      const x = componentField(record, state.xDimension, source.field);
-      const y = componentField(record, state.yDimension, source.field);
-      return {
-        name: isFeature ? shortenTaxonomyFeatureName(record.variable) : record.sample_id,
-        fullName: isFeature ? record.variable : record.sample_id,
-        group: isFeature && isMfa ? record.group : null,
-        x,
-        y,
-        aggregate: source.aggregate === 'magnitude' ? Math.hypot(x, y) : x + y,
-        // Kept so the name-cell hover can show the coordinate/contribution/cos2
-        // block regardless of which table field is currently displayed.
-        record,
-      };
-    })
-    .filter((row) => Number.isFinite(row.x) && Number.isFinite(row.y));
-
-  // Default largest-aggregate-first ordering doubles as the stable tiebreak.
-  rows.sort(
-    (a, b) =>
-      b.aggregate - a.aggregate ||
-      String(a.group).localeCompare(String(b.group)) ||
-      a.name.localeCompare(b.name)
-  );
-  rows.forEach((row, index) => {
-    row.rank = index;
-  });
+  const sortableColumns = new Set(columns.map((column) => column.key));
+  if (
+    state.featureTableSort.column !== '_rank' &&
+    !sortableColumns.has(state.featureTableSort.column)
+  ) {
+    state.featureTableSort = getDefaultTableSort();
+  }
 
   const { column, direction } = state.featureTableSort;
   return rows
     .slice()
     .sort((left, right) => compareTableRows(left, right, column, direction))
-    .slice(0, MAX_FEATURE_OVERLAY_COUNT);
+    .slice(0, source.entity === 'dimension' ? rows.length : MAX_FEATURE_OVERLAY_COUNT);
+}
+
+function buildTableRow(source, record) {
+  if (source.entity === 'dimension') {
+    return { ...record };
+  }
+
+  const row = {};
+  if (source.entity === 'sample') {
+    row.name = record.sample_id;
+    row.fullName = record.sample_id;
+  } else if (source.entity === 'feature') {
+    row.name = shortenTaxonomyFeatureName(record.variable);
+    row.fullName = record.variable;
+    row.group = isMfa ? record.group : null;
+  } else if (source.entity === 'group') {
+    row.group = record.group;
+  } else if (source.entity === 'partial_sample') {
+    row.sample_id = record.sample_id;
+    row.group = record.group;
+  } else if (source.entity === 'partial_axis') {
+    row.group = record.group;
+    row.partial_component = record.partial_component;
+    row.partial_component_label = `Partial dim ${record.partial_component + 1}`;
+  }
+
+  return row;
 }
 
 function compareTableRows(left, right, column, direction) {
-  const numeric = ['x', 'y', 'aggregate'].includes(column);
-  const comparison = numeric
-    ? left[column] - right[column]
-    : String(left[column]).localeCompare(String(right[column]));
+  const comparison = column === '_rank'
+    ? left.rank - right.rank
+    : compareTableCellValues(left[column], right[column]);
 
   if (comparison !== 0) {
     return direction === 'asc' ? comparison : -comparison;
   }
 
   return left.rank - right.rank;
+}
+
+function compareTableCellValues(left, right) {
+  const leftMissing = left === null || left === undefined;
+  const rightMissing = right === null || right === undefined;
+  if (leftMissing || rightMissing) {
+    return Number(leftMissing) - Number(rightMissing);
+  }
+  if (typeof left === 'number' && typeof right === 'number') {
+    return left - right;
+  }
+  return String(left).localeCompare(String(right));
 }
 
 function updateFeatureTableSort(button) {
@@ -1464,9 +1562,8 @@ function renderDataTable() {
   updateFeatureTableSortHeaders();
   empty.textContent = rows.length
     ? ''
-    : 'No finite rows for the selected table and dimensions.';
+    : 'No rows for the selected table.';
 
-  const formatCell = source.percent ? formatPercent : formatValue;
   const fragment = document.createDocumentFragment();
   rows.forEach((row) => {
     const tr = document.createElement('tr');
@@ -1478,14 +1575,29 @@ function renderDataTable() {
             : buildSampleNameCell(row)
         );
       } else if (column.type === 'number') {
-        tr.appendChild(buildFeatureTableCell(formatCell(row[column.key]), 'feature-table-number'));
+        tr.appendChild(
+          buildFeatureTableCell(formatTableCellValue(row[column.key], column), 'feature-table-number')
+        );
       } else {
-        tr.appendChild(buildFeatureTableCell(row[column.key]));
+        tr.appendChild(buildFeatureTableCell(formatTableCellValue(row[column.key], column)));
       }
     });
     fragment.appendChild(tr);
   });
   body.replaceChildren(fragment);
+}
+
+function formatTableCellValue(value, column) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (column.format === 'fractionPercent') {
+    return formatPercent(value);
+  }
+  if (column.format === 'percent') {
+    return `${formatValue(value)}%`;
+  }
+  return formatValue(value);
 }
 
 function renderTableHeader(head, columns) {
@@ -1738,7 +1850,7 @@ function downloadFeatureTableTsv() {
     // though still trimmed once at the Python export step).
     ...rows.map((row) =>
       columns
-        .map((column) => (column.key === 'name' ? row.fullName : row[column.key]))
+        .map((column) => rawTableCellValue(row, column))
         .map(escapeTsvValue)
         .join('\t')
     ),
@@ -1755,11 +1867,22 @@ function downloadFeatureTableTsv() {
   URL.revokeObjectURL(objectUrl);
 }
 
+function rawTableCellValue(row, column) {
+  if (column.key === 'name') {
+    return row.fullName ?? row.name;
+  }
+  return row[column.key] ?? '';
+}
+
 function escapeTsvValue(value) {
   return String(value).replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
 }
 
 function buildFeatureTableDownloadFilename() {
+  const source = TABLE_SOURCES[state.tableSource];
+  if (source?.entity === 'dimension') {
+    return `${analysisType}-${state.tableSource}.tsv`;
+  }
   const xLabel = dimensionFileLabel(state.xDimension);
   const yLabel = dimensionFileLabel(state.yDimension);
   return `${analysisType}-${state.tableSource}-${xLabel}-vs-${yLabel}.tsv`;

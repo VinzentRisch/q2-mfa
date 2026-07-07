@@ -1,9 +1,9 @@
-{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"group","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"variable","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"","extra":{}}
-{"group":"chemical","variable":"chem_a","component":0,"value":0.857465367}
-{"group":"chemical","variable":"chem_b","component":0,"value":-0.8838822011}
-{"group":"physical","variable":"phys_a","component":0,"value":0.2426202489}
-{"group":"physical","variable":"phys_b","component":0,"value":0.9336685266}
-{"group":"chemical","variable":"chem_a","component":1,"value":0.343608628}
-{"group":"chemical","variable":"chem_b","component":1,"value":-0.3837329206}
-{"group":"physical","variable":"phys_a","component":1,"value":-0.9659039489}
-{"group":"physical","variable":"phys_b","component":1,"value":-0.3288455382}
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"group","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"variable","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"Feature coordinates, also called feature loadings, on the component axes. Prince source: `column_coordinates_`.","extra":{}}
+{"group":"chemical","variable":"shared","component":0,"value":0.857465367}
+{"group":"chemical","variable":"unique","component":0,"value":-0.8838822011}
+{"group":"physical","variable":"shared","component":0,"value":0.2426202489}
+{"group":"physical","variable":"unique","component":0,"value":0.9336685266}
+{"group":"chemical","variable":"shared","component":1,"value":0.343608628}
+{"group":"chemical","variable":"unique","component":1,"value":-0.3837329206}
+{"group":"physical","variable":"shared","component":1,"value":-0.9659039489}
+{"group":"physical","variable":"unique","component":1,"value":-0.3288455382}

@@ -28,27 +28,133 @@ from ._result import ComponentAnalysis
 class _TableSpec:
     attr: str
     kind: str
+    description: str
     index: str | None = None
     required: bool = True
+    row_index: tuple[str, ...] | None = None
+    restored_index: tuple[str, ...] | None = None
 
 
 _TABLE_SPECS = (
-    _TableSpec("eigenvalues", "vector"),
-    _TableSpec("percentage_of_variance", "vector"),
-    _TableSpec("cumulative_percentage_of_variance", "vector"),
-    _TableSpec("sample_coordinates", "wide", index="sample_id"),
-    _TableSpec("sample_cosine_similarities", "wide", index="sample_id"),
-    _TableSpec("sample_contributions", "wide", index="sample_id"),
-    _TableSpec("feature_coordinates", "feature_wide", index="variable"),
-    _TableSpec("feature_correlations", "feature_wide", index="variable"),
-    _TableSpec("feature_contributions", "feature_wide", index="variable"),
-    _TableSpec("feature_cosine_similarities", "feature_wide", index="variable"),
-    _TableSpec("group_coordinates", "wide", index="group", required=False),
-    _TableSpec("group_contributions", "wide", index="group", required=False),
-    _TableSpec("group_cosine_similarities", "wide", index="group", required=False),
-    _TableSpec("partial_sample_coordinates", "multi_columns", required=False),
-    _TableSpec("partial_correlations", "multi_rows", required=False),
-    _TableSpec("partial_contributions", "multi_rows", required=False),
+    _TableSpec(
+        "eigenvalues",
+        "vector",
+        "Variance captured by each component. Prince source: `eigenvalues_`.",
+    ),
+    _TableSpec(
+        "percentage_of_variance",
+        "vector",
+        "Percent of total variance explained by each component. "
+        "Prince source: `percentage_of_variance_`.",
+    ),
+    _TableSpec(
+        "cumulative_percentage_of_variance",
+        "vector",
+        "Cumulative percent variance explained across components. "
+        "Prince source: `cumulative_percentage_of_variance_`.",
+    ),
+    _TableSpec(
+        "sample_coordinates",
+        "wide",
+        "Sample positions on the component axes. "
+        "Prince source: `row_coordinates(table)`.",
+        index="sample_id",
+    ),
+    _TableSpec(
+        "sample_cosine_similarities",
+        "wide",
+        "Quality of each sample's representation on each component. "
+        "Prince source: `row_cosine_similarities(table)`.",
+        index="sample_id",
+    ),
+    _TableSpec(
+        "sample_contributions",
+        "wide",
+        "Contribution of each sample to each component. "
+        "Prince source: `row_contributions_`.",
+        index="sample_id",
+    ),
+    _TableSpec(
+        "feature_coordinates",
+        "indexed_rows",
+        "Feature coordinates, also called feature loadings, on the component "
+        "axes. Prince source: `column_coordinates_`.",
+        index="variable",
+        row_index=("group", "variable"),
+    ),
+    _TableSpec(
+        "feature_correlations",
+        "indexed_rows",
+        "Correlation of each feature with each component. "
+        "Prince source: `column_correlations`.",
+        index="variable",
+        row_index=("group", "variable"),
+    ),
+    _TableSpec(
+        "feature_contributions",
+        "indexed_rows",
+        "Contribution of each feature to each component. "
+        "Prince source: `column_contributions_`.",
+        index="variable",
+        row_index=("group", "variable"),
+    ),
+    _TableSpec(
+        "feature_cosine_similarities",
+        "indexed_rows",
+        "Quality of each feature's representation on each component. "
+        "Prince source: `column_cosine_similarities_`.",
+        index="variable",
+        row_index=("group", "variable"),
+    ),
+    _TableSpec(
+        "group_coordinates",
+        "wide",
+        "Group positions on the component axes. "
+        "Prince source: `group_coordinates_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "group_contributions",
+        "wide",
+        "Contribution of each group to each component. "
+        "Prince source: `group_contributions_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "group_cosine_similarities",
+        "wide",
+        "Quality of each group's representation on each component. "
+        "Prince source: `group_cosine_similarities_`.",
+        index="group",
+        required=False,
+    ),
+    _TableSpec(
+        "partial_sample_coordinates",
+        "multi_columns",
+        "Sample positions by group and partial PCA component. "
+        "Prince source: `partial_row_coordinates(table)`.",
+        required=False,
+    ),
+    _TableSpec(
+        "partial_correlations",
+        "indexed_rows",
+        "Correlation between each group's partial PCA component and each "
+        "global MFA component. Prince source: `partial_correlations_`.",
+        required=False,
+        row_index=("group", "partial_component"),
+        restored_index=("group", "component"),
+    ),
+    _TableSpec(
+        "partial_contributions",
+        "indexed_rows",
+        "Contribution of each group's partial PCA component to each global "
+        "MFA component. Prince source: `partial_contributions_`.",
+        required=False,
+        row_index=("group", "partial_component"),
+        restored_index=("group", "component"),
+    ),
 )
 
 
@@ -145,15 +251,17 @@ def _write_result_table(
         records = _vector_to_long(table)
     elif spec.kind == "wide":
         records = _wide_to_long(table, spec.index)
-    elif spec.kind == "feature_wide":
-        records = _feature_wide_to_long(table)
+    elif spec.kind == "indexed_rows":
+        records = _indexed_rows_to_long(table, spec)
     elif spec.kind == "multi_columns":
         records = _multi_columns_to_long(table)
-    elif spec.kind == "multi_rows":
-        records = _multi_rows_to_long(table)
     else:  # pragma: no cover
         raise ValueError(f"Unknown table kind: {spec.kind}.")
-    jsonl = df_to_table_jsonl(records.reset_index(drop=True).convert_dtypes())
+    records = records.reset_index(drop=True).convert_dtypes()
+    records.attrs["description"] = spec.description
+    for column in records.columns:
+        records[column].attrs["description"] = ""
+    jsonl = df_to_table_jsonl(records)
     shutil.copyfile(str(jsonl), path)
 
 
@@ -173,12 +281,10 @@ def _read_result_table(path: Path, spec: _TableSpec) -> pd.DataFrame | np.ndarra
         return _read_vector(table)
     elif spec.kind == "wide":
         return _long_to_wide(table, spec)
-    elif spec.kind == "feature_wide":
-        return _long_to_feature_wide(table, spec)
+    elif spec.kind == "indexed_rows":
+        return _long_to_indexed_rows(table, spec)
     elif spec.kind == "multi_columns":
         return _long_to_multi_columns(table)
-    elif spec.kind == "multi_rows":
-        return _long_to_multi_rows(table)
     else:  # pragma: no cover
         raise ValueError(f"Unknown table kind: {spec.kind}.")
 
@@ -221,59 +327,6 @@ def _long_to_wide(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
     return wide_table
 
 
-def _feature_wide_to_long(table: pd.DataFrame) -> pd.DataFrame:
-    """
-    Converts a feature table to long component records.
-
-    Tuple-valued feature indexes from Prince MFA are split into explicit group
-    and variable columns. Flat PCA-style feature indexes keep the legacy
-    variable-only schema.
-
-    Args:
-        table (pd.DataFrame): The wide feature table.
-
-    Returns:
-        pd.DataFrame: Long records for JSONL storage.
-    """
-    if isinstance(table.index[0], tuple):
-        working = table.copy()
-        working.index = pd.MultiIndex.from_tuples(
-            working.index, names=["group", "variable"]
-        )
-        return working.reset_index().melt(
-            id_vars=["group", "variable"],
-            var_name="component",
-            value_name="value",
-        )
-    return _wide_to_long(table, "variable")
-
-
-def _long_to_feature_wide(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
-    """
-    Reconstructs a feature table from long component records.
-
-    Args:
-        table (pd.DataFrame): The long table records.
-        spec (_TableSpec): The table serialization specification.
-
-    Returns:
-        pd.DataFrame: The reconstructed feature table.
-    """
-    if {"group", "variable"}.issubset(table.columns):
-        wide_table = table.pivot(
-            index=["group", "variable"], columns="component", values="value"
-        )
-        labels = list(wide_table.index)
-        values = np.empty(len(labels), dtype=object)
-        values[:] = [tuple(label) for label in labels]
-        wide_table.index = pd.Index(values, name="variable")
-        wide_table.columns.name = "component"
-        wide_table.index = _restore_identifier_index(wide_table.index)
-        wide_table.columns = _restore_identifier_index(wide_table.columns)
-        return wide_table
-    return _long_to_wide(table, spec)
-
-
 def _multi_columns_to_long(table: pd.DataFrame) -> pd.DataFrame:
     """
     Converts partial sample coordinates with MultiIndex columns to long records.
@@ -308,42 +361,58 @@ def _long_to_multi_columns(table: pd.DataFrame) -> pd.DataFrame:
     return partial_table
 
 
-def _multi_rows_to_long(table: pd.DataFrame) -> pd.DataFrame:
+def _indexed_rows_to_long(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
     """
-    Converts partial-axis tables with MultiIndex rows to long records.
+    Converts a table with indexed rows to long component records.
+
+    Flat PCA feature tables fall back to wide serialization; MFA feature and
+    partial-axis tables serialize each MultiIndex row level as its own field.
 
     Args:
-        table (pd.DataFrame): A partial correlation or contribution table.
+        table (pd.DataFrame): The wide indexed-row table.
+        spec (_TableSpec): The table serialization specification.
 
     Returns:
         pd.DataFrame: Long records for JSONL storage.
     """
+    if not isinstance(table.index, pd.MultiIndex):
+        return _wide_to_long(table, spec.index)
+    index_columns = list(spec.row_index)
     working = table.copy()
-    working.index = working.index.set_names(["group", "partial_component"])
+    working.index = working.index.set_names(index_columns)
     return working.reset_index().melt(
-        id_vars=["group", "partial_component"],
+        id_vars=index_columns,
         var_name="component",
         value_name="value",
     )
 
 
-def _long_to_multi_rows(table: pd.DataFrame) -> pd.DataFrame:
+def _long_to_indexed_rows(table: pd.DataFrame, spec: _TableSpec) -> pd.DataFrame:
     """
-    Reconstructs a partial-axis table with MultiIndex rows.
+    Reconstructs an indexed-row table from long component records.
+
+    Flat PCA feature records fall back to wide reconstruction; MFA feature and
+    partial-axis records restore configured MultiIndex row levels.
 
     Args:
         table (pd.DataFrame): The long table records.
+        spec (_TableSpec): The table serialization specification.
+
     Returns:
-        pd.DataFrame: The reconstructed partial-axis table.
+        pd.DataFrame: The reconstructed indexed-row table.
     """
-    partial_table = table.pivot(
-        index=["group", "partial_component"], columns="component", values="value"
+    index_columns = list(spec.row_index)
+    if not set(index_columns).issubset(table.columns):
+        return _long_to_wide(table, spec)
+    index_names = list(spec.restored_index or spec.row_index)
+    indexed_table = table.pivot(
+        index=index_columns, columns="component", values="value"
     )
-    partial_table.index = partial_table.index.set_names(["group", "component"])
-    partial_table.columns.name = "component"
-    partial_table.index = _restore_identifier_index(partial_table.index)
-    partial_table.columns = _restore_identifier_index(partial_table.columns)
-    return partial_table
+    indexed_table.index = indexed_table.index.set_names(index_names)
+    indexed_table.columns.name = "component"
+    indexed_table.index = _restore_identifier_index(indexed_table.index)
+    indexed_table.columns = _restore_identifier_index(indexed_table.columns)
+    return indexed_table
 
 
 def _restore_identifier_index(index: pd.Index) -> pd.Index:

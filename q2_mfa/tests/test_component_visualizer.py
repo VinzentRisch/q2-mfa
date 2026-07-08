@@ -12,7 +12,7 @@ from pathlib import Path
 from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa._component_visualizer import component_visualizer
+from q2_mfa.component_visualizer import component_visualizer
 from q2_mfa.types import ComponentAnalysisDirFmt
 from q2_mfa.types._transformer import _dirfmt_to_component_analysis
 
@@ -83,7 +83,16 @@ class TestComponentVisualizer(TestPluginBase):
                     self.assertEqual(observed_value, expected_value)
 
     def test_plugin_registers_component_visualizer(self):
-        self.assertIn("component_visualizer", self.plugin.visualizers)
+        self.assertIn("_component_visualizer", self.plugin.visualizers)
+        self.assertNotIn("component_visualizer", self.plugin.visualizers)
+
+    def test_plugin_registers_public_pipelines_and_private_actions(self):
+        self.assertIn("_pca", self.plugin.methods)
+        self.assertIn("_mfa", self.plugin.methods)
+        self.assertIn("pca", self.plugin.pipelines)
+        self.assertIn("mfa", self.plugin.pipelines)
+        self.assertNotIn("pca", self.plugin.methods)
+        self.assertNotIn("mfa", self.plugin.methods)
 
     def test_component_visualizer_writes_assets_and_jsonl_payload(self):
         with tempfile.TemporaryDirectory() as output_dir:

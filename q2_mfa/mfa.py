@@ -61,13 +61,13 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
     return group_mapping
 
 
-def _validate_metadata_group_column_types(sample_metadata, group_mapping):
+def _validate_metadata_group_column_types(analysis_metadata, group_mapping):
     """
     Validates that each metadata group contains only one metadata column type.
 
     Args:
-        sample_metadata (Metadata): The sample metadata containing the grouped
-            columns.
+        analysis_metadata (Metadata): The sample metadata containing the
+            grouped columns for MFA analysis.
         group_mapping (dict): Metadata group names mapped to metadata column
             names.
 
@@ -75,7 +75,7 @@ def _validate_metadata_group_column_types(sample_metadata, group_mapping):
         ValueError: If any metadata group contains multiple metadata column
             types.
     """
-    metadata_columns = sample_metadata.columns
+    metadata_columns = analysis_metadata.columns
     for group_name, columns in group_mapping.items():
         column_types = {
             metadata_columns[column].type
@@ -89,9 +89,9 @@ def _validate_metadata_group_column_types(sample_metadata, group_mapping):
             )
 
 
-def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
+def _metadata_to_grouped_tables(analysis_metadata, metadata_groups):
     """
-    Converts sample metadata into per-group DataFrames for MFA.
+    Converts analysis metadata into per-group DataFrames for MFA.
 
     Converts a metadata object to a DataFrame and splits it into one
     DataFrame per requested metadata group. The function validates that all
@@ -99,22 +99,22 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
     more than one metadata group.
 
     Args:
-        sample_metadata (Metadata | None): The sample metadata to include in
-            the MFA input.
+        analysis_metadata (Metadata | None): The sample metadata to include in
+            the MFA input as analysis groups.
         metadata_groups (str | dict | None): The metadata group specification.
 
     Returns:
         dict: Metadata group names mapped to DataFrames containing the selected
             metadata columns.
     """
-    if sample_metadata is None:
+    if analysis_metadata is None:
         if metadata_groups is not None:
-            raise ValueError("metadata_groups requires sample_metadata.")
+            raise ValueError("metadata_groups requires analysis_metadata.")
         return {}
 
-    metadata = sample_metadata.to_dataframe().copy()
+    metadata = analysis_metadata.to_dataframe().copy()
     group_mapping = _parse_metadata_groups(metadata_groups, metadata.columns)
-    _validate_metadata_group_column_types(sample_metadata, group_mapping)
+    _validate_metadata_group_column_types(analysis_metadata, group_mapping)
     missing_columns = sorted(
         {
             column
@@ -152,7 +152,7 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
 
 def _build_prince_input(
     tables: dict = None,
-    sample_metadata=None,
+    analysis_metadata=None,
     metadata_groups=None,
     filter_zero_variance: bool = True,
 ) -> pd.DataFrame:
@@ -168,8 +168,8 @@ def _build_prince_input(
     Args:
         tables (dict | None): Feature table groups where keys are MFA group
             names and values are DataFrames.
-        sample_metadata (Metadata | None): Optional sample metadata to include
-            as MFA groups.
+        analysis_metadata (Metadata | None): Optional sample metadata to
+            include as MFA analysis groups.
         metadata_groups (str | dict | None): Optional metadata group specification.
         filter_zero_variance (bool): Whether to remove zero-variance columns
             before ordination.
@@ -179,7 +179,7 @@ def _build_prince_input(
     """
     tables = {} if tables is None else dict(getattr(tables, "collection", tables))
 
-    metadata_tables = _metadata_to_grouped_tables(sample_metadata, metadata_groups)
+    metadata_tables = _metadata_to_grouped_tables(analysis_metadata, metadata_groups)
 
     duplicate_groups = sorted(set(tables).intersection(metadata_tables))
     if duplicate_groups:
@@ -245,9 +245,9 @@ def _build_prince_input(
     return pd.concat(grouped_tables, axis=1)
 
 
-def mfa(
+def _mfa(
     tables: pd.DataFrame = None,
-    sample_metadata: Metadata = None,
+    analysis_metadata: Metadata = None,
     metadata_groups: dict = None,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
@@ -260,16 +260,16 @@ def mfa(
     """
     Runs Multiple Factor Analysis and returns all Prince-derived outputs.
 
-    Combines feature tables and optional sample metadata into Prince's MFA input
-    representation, fits ``prince.MFA``, and returns a component-analysis object
-    with MFA-specific coordinate, contribution, correlation, and
-    cosine-similarity tables.
+    Combines feature tables and optional analysis metadata into Prince's MFA
+    input representation, fits ``prince.MFA``, and returns a
+    component-analysis object with MFA-specific coordinate, contribution,
+    correlation, and cosine-similarity tables.
 
     Args:
         tables (pd.DataFrame | None): Feature table collection where each
             collection key is treated as an MFA group.
-        sample_metadata (Metadata | None): Optional sample metadata to include
-            as MFA groups.
+        analysis_metadata (Metadata | None): Optional sample metadata to
+            include as MFA groups.
         metadata_groups (dict | None): Optional metadata group mapping where
             keys are group names and values are comma-separated metadata column
             names.
@@ -292,16 +292,86 @@ def mfa(
 
     mfa_params = locals()
     mfa_params.pop("tables")
-    mfa_params.pop("sample_metadata")
+    mfa_params.pop("analysis_metadata")
     mfa_params.pop("metadata_groups")
     mfa_params.pop("filter_zero_variance")
 
     table = _build_prince_input(
         tables,
-        sample_metadata,
+        analysis_metadata,
         metadata_groups,
         filter_zero_variance=filter_zero_variance,
     )
 
     mfa_result = prince.MFA(**mfa_params).fit(table)
     return create_component_analysis_object(mfa_result, table)
+
+
+def mfa(
+    ctx,
+    tables=None,
+    analysis_metadata=None,
+    sample_metadata=None,
+    metadata_groups=None,
+    rescale_with_mean=True,
+    rescale_with_std=True,
+    n_components=2,
+    n_iter=3,
+    random_state=None,
+    engine="sklearn",
+    filter_zero_variance=True,
+):
+    """
+    Run MFA and generate its interactive component visualization.
+
+    Calls the underscored MFA method to create component-analysis results, then
+    passes those results to the underscored component visualizer.
+
+    Args:
+        ctx: The Rachis pipeline execution context.
+        tables (pd.DataFrame | None): Feature table collection where each
+            collection key is treated as an MFA group.
+        analysis_metadata (Metadata | None): Optional sample metadata to
+            include as MFA groups.
+        sample_metadata (Metadata | None): Optional sample metadata used only
+            in the visualization.
+        metadata_groups (dict | None): Optional metadata group mapping where
+            keys are group names and values are comma-separated metadata column
+            names.
+        rescale_with_mean (bool): Whether Prince should center features before
+            SVD.
+        rescale_with_std (bool): Whether Prince should standardize features
+            before SVD.
+        n_components (int): Number of principal components to compute.
+        n_iter (int): Number of iterations used by the randomized SVD engine.
+        random_state (CaptureHolder[int] | None): Random seed capture used for
+            reproducible randomized SVD.
+        engine (str): Prince SVD engine to use.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before ordination.
+
+    Returns:
+        tuple: The MFA component-analysis artifact and its visualization.
+    """
+    mfa_action = ctx.get_action("mfa", "_mfa")
+    component_visualizer = ctx.get_action("mfa", "_component_visualizer")
+
+    (mfa_results,) = mfa_action(
+        tables=tables,
+        analysis_metadata=analysis_metadata,
+        metadata_groups=metadata_groups,
+        rescale_with_mean=rescale_with_mean,
+        rescale_with_std=rescale_with_std,
+        n_components=n_components,
+        n_iter=n_iter,
+        random_state=random_state,
+        engine=engine,
+        filter_zero_variance=filter_zero_variance,
+    )
+    (visualization,) = component_visualizer(
+        component_analysis=mfa_results,
+        analysis_type="mfa",
+        sample_metadata=sample_metadata,
+    )
+
+    return mfa_results, visualization

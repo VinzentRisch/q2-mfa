@@ -20,7 +20,7 @@ from rachis import Metadata
 from q2_mfa.types import ComponentAnalysis
 
 
-def component_visualizer(
+def _component_visualizer(
     output_dir: str,
     component_analysis: ComponentAnalysis,
     analysis_type: str,
@@ -42,6 +42,9 @@ def component_visualizer(
     """
     payload = _build_payload(component_analysis, analysis_type, sample_metadata)
     _write_visualization(output_dir, payload)
+
+
+component_visualizer = _component_visualizer
 
 
 def _build_payload(

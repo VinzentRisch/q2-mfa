@@ -9,12 +9,12 @@ import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis.core.type import Bool, Choices, Collection, Float, Int, Range, Str
-from rachis.plugin import Citations, Metadata, Plugin
+from rachis.plugin import Citations, Metadata, Plugin, Visualization
 
 from q2_mfa import __version__, transform_clr
-from q2_mfa._component_visualizer import component_visualizer
-from q2_mfa.mfa import mfa
-from q2_mfa.pca import pca
+from q2_mfa.component_visualizer import _component_visualizer
+from q2_mfa.mfa import _mfa, mfa
+from q2_mfa.pca import _pca, pca
 from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisType
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -112,30 +112,41 @@ ordination_parameter_descriptions = {
     ),
 }
 
-mfa_parameters = {
-    **ordination_parameters,
+visualization_metadata_parameters = {
     "sample_metadata": Metadata,
+}
+
+visualization_metadata_parameter_descriptions = {
+    "sample_metadata": (
+        "Optional sample metadata used for live coloring and filtering in the "
+        "browser visualization."
+    ),
+}
+
+mfa_analysis_metadata_parameters = {
+    "analysis_metadata": Metadata,
     "metadata_groups": Collection[Str],
 }
 
-mfa_parameter_descriptions = {
-    **ordination_parameter_descriptions,
-    "sample_metadata": (
-        "Optional sample metadata to include as additional MFA groups."
+mfa_analysis_metadata_parameter_descriptions = {
+    "analysis_metadata": (
+        "Optional sample metadata to include as additional MFA groups for the "
+        "analysis."
     ),
     "metadata_groups": (
-        "Optional mapping from metadata group names to comma-separated metadata "
-        "column strings. Pass a collection/dict such as "
-        "{'group': 'column1,column2'} to define explicit groups. If only a "
-        "string is provided, all metadata columns are included in a group with "
-        "that string as the group name. If sample metadata is provided without "
-        "this parameter, all metadata columns are included in a group named "
-        "'metadata'. Groups must contain only numeric or only categorical columns."
+        "Optional mapping from analysis metadata group names to "
+        "comma-separated metadata column strings. Pass a collection/dict such "
+        "as {'group': 'column1,column2'} to define explicit groups. If only a "
+        "string is provided, all analysis metadata columns are included in a "
+        "group with that string as the group name. If analysis metadata is "
+        "provided without this parameter, all analysis metadata columns are "
+        "included in a group named 'metadata'. Groups must contain only "
+        "numeric or only categorical columns."
     ),
 }
 
 plugin.methods.register_function(
-    function=pca,
+    function=_pca,
     inputs={"table": FeatureTable[Unconstrained]},
     parameters=ordination_parameters,
     outputs=[("pca_results", ComponentAnalysisType)],
@@ -159,9 +170,12 @@ plugin.methods.register_function(
 )
 
 plugin.methods.register_function(
-    function=mfa,
+    function=_mfa,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters=mfa_parameters,
+    parameters={
+        **ordination_parameters,
+        **mfa_analysis_metadata_parameters,
+    },
     outputs=[("mfa_results", ComponentAnalysisType)],
     input_descriptions={
         "tables": (
@@ -170,7 +184,10 @@ plugin.methods.register_function(
             "groups."
         )
     },
-    parameter_descriptions=mfa_parameter_descriptions,
+    parameter_descriptions={
+        **ordination_parameter_descriptions,
+        **mfa_analysis_metadata_parameter_descriptions,
+    },
     output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",
     description=(
@@ -191,31 +208,97 @@ plugin.methods.register_function(
 )
 
 plugin.visualizers.register_function(
-    function=component_visualizer,
+    function=_component_visualizer,
     inputs={"component_analysis": ComponentAnalysisType},
     parameters={
         "analysis_type": Str % Choices("pca", "mfa"),
-        "sample_metadata": Metadata,
+        **visualization_metadata_parameters,
     },
     input_descriptions={
         "component_analysis": (
-            "The PCA or MFA results containing component-analysis support " "tables."
+            "The PCA or MFA results containing component-analysis support tables."
         )
     },
     parameter_descriptions={
         "analysis_type": "If the input is from MFA or PCA.",
-        "sample_metadata": (
-            "Sample metadata used for live coloring and filtering in the browser."
-        ),
+        **visualization_metadata_parameter_descriptions,
     },
     name="Component Visualizer",
     description=(
-        "Interactive PCA/MFA sample-score visualization with selectable "
-        "dimensions, metadata coloring, metadata filtering, and browser-based "
-        "zoom and pan."
+        "Interactive PCA/MFA visualization with selectable "
+        "dimensions, metadata coloring and metadata filtering."
     ),
     citations=[
         citations["escofier1994multiple"],
+    ],
+)
+
+plugin.pipelines.register_function(
+    function=pca,
+    inputs={"table": FeatureTable[Unconstrained]},
+    parameters={
+        **visualization_metadata_parameters,
+        **ordination_parameters,
+    },
+    outputs=[
+        ("pca_results", ComponentAnalysisType),
+        ("visualization", Visualization),
+    ],
+    input_descriptions={"table": "The frequency table."},
+    parameter_descriptions={
+        **visualization_metadata_parameter_descriptions,
+        **ordination_parameter_descriptions,
+    },
+    output_descriptions={
+        "pca_results": "The PCA results.",
+        "visualization": "Interactive PCA component visualization.",
+    },
+    name="PCA",
+    description=(
+        "Run principal component analysis, then generate an interactive "
+        "component visualization from the PCA results."
+    ),
+    citations=[
+        citations["Halford_Prince"],
+    ],
+)
+
+plugin.pipelines.register_function(
+    function=mfa,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters={
+        **ordination_parameters,
+        **mfa_analysis_metadata_parameters,
+        **visualization_metadata_parameters,
+    },
+    outputs=[
+        ("mfa_results", ComponentAnalysisType),
+        ("visualization", Visualization),
+    ],
+    input_descriptions={
+        "tables": (
+            "Optional feature tables to include as MFA groups. At least two "
+            "groups must be provided across feature tables and sample metadata "
+            "groups."
+        )
+    },
+    parameter_descriptions={
+        **ordination_parameter_descriptions,
+        **mfa_analysis_metadata_parameter_descriptions,
+        **visualization_metadata_parameter_descriptions,
+    },
+    output_descriptions={
+        "mfa_results": "MFA results.",
+        "visualization": "Interactive MFA component visualization.",
+    },
+    name="Multiple Factor Analysis (MFA)",
+    description=(
+        "Run Multiple Factor Analysis, then generate an interactive component "
+        "visualization from the MFA results."
+    ),
+    citations=[
+        citations["escofier1994multiple"],
+        citations["Halford_Prince"],
     ],
 )
 

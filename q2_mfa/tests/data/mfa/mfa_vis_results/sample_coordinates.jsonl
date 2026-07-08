@@ -1,0 +1,11 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"sample_id","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"Sample positions on the component axes. Prince source: `row_coordinates(table)`.","extra":{}}
+{"sample_id":"s1","component":0,"value":-0.4561011643}
+{"sample_id":"s2","component":0,"value":-0.7723852236}
+{"sample_id":"s3","component":0,"value":1.942573259}
+{"sample_id":"s4","component":0,"value":-1.4603815777}
+{"sample_id":"s5","component":0,"value":0.7462947065}
+{"sample_id":"s1","component":1,"value":0.1336687224}
+{"sample_id":"s2","component":1,"value":-1.1200936993}
+{"sample_id":"s3","component":1,"value":-0.772946463}
+{"sample_id":"s4","component":1,"value":0.2790086745}
+{"sample_id":"s5","component":1,"value":1.4803627654}

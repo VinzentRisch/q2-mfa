@@ -135,7 +135,7 @@ def create_component_analysis_object(
     )
 
 
-def pca(
+def _pca(
     table: pd.DataFrame,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
@@ -180,3 +180,61 @@ def pca(
 
     pca_result = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
     return create_component_analysis_object(pca_result, table)
+
+
+def pca(
+    ctx,
+    table,
+    sample_metadata=None,
+    rescale_with_mean=True,
+    rescale_with_std=True,
+    n_components=2,
+    n_iter=3,
+    random_state=None,
+    engine="sklearn",
+    filter_zero_variance=True,
+):
+    """
+    Run PCA and generate its interactive component visualization.
+
+    Calls the underscored PCA method to create component-analysis results, then
+    passes those results to the underscored component visualizer.
+
+    Args:
+        ctx: The Rachis pipeline execution context.
+        table: The input sample-by-feature table artifact.
+        sample_metadata: Optional sample metadata for the visualization.
+        rescale_with_mean (bool): Whether to center each column before SVD.
+        rescale_with_std (bool): Whether to scale each column to unit variance
+            before SVD.
+        n_components (int): The number of principal components to compute.
+        n_iter (int): The number of iterations used by the sklearn randomized
+            SVD engine.
+        random_state (CaptureHolder[int]): The optional random seed holder.
+        engine (str): The SVD engine used by prince.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before analysis.
+
+    Returns:
+        tuple: The PCA component-analysis artifact and its visualization.
+    """
+    pca_action = ctx.get_action("mfa", "_pca")
+    component_visualizer = ctx.get_action("mfa", "_component_visualizer")
+
+    (pca_results,) = pca_action(
+        table=table,
+        rescale_with_mean=rescale_with_mean,
+        rescale_with_std=rescale_with_std,
+        n_components=n_components,
+        n_iter=n_iter,
+        random_state=random_state,
+        engine=engine,
+        filter_zero_variance=filter_zero_variance,
+    )
+    (visualization,) = component_visualizer(
+        component_analysis=pca_results,
+        analysis_type="pca",
+        sample_metadata=sample_metadata,
+    )
+
+    return pca_results, visualization

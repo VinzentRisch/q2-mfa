@@ -20,6 +20,7 @@ from rachis.plugin.testing import TestPluginBase
 from q2_mfa.mfa import (
     _build_prince_input,
     _metadata_to_grouped_tables,
+    _mfa,
     _parse_metadata_groups,
     _validate_metadata_group_column_types,
     mfa,
@@ -83,7 +84,7 @@ class TestMFA(TestPluginBase):
         self.assertEqual(_metadata_to_grouped_tables(None, None), {})
 
     def test_metadata_to_grouped_tables_error_groups_without_metadata(self):
-        with self.assertRaisesRegex(ValueError, "requires sample_metadata"):
+        with self.assertRaisesRegex(ValueError, "requires analysis_metadata"):
             _metadata_to_grouped_tables(None, {"clinical": "age"})
 
     def test_metadata_to_grouped_tables_selects_groups(self):
@@ -173,7 +174,7 @@ class TestMFA(TestPluginBase):
 
     def test_build_prince_input_metadata(self):
         table = _build_prince_input(
-            sample_metadata=self.sample_metadata,
+            analysis_metadata=self.sample_metadata,
             metadata_groups={"clinical": "age", "body": "bmi"},
         )
 
@@ -286,7 +287,7 @@ class TestMFA(TestPluginBase):
 
     def test_build_prince_input_uses_two_metadata_groups(self):
         table = _build_prince_input(
-            sample_metadata=self.sample_metadata,
+            analysis_metadata=self.sample_metadata,
             metadata_groups={"clinical": "age,score", "body": "bmi"},
         )
 
@@ -300,7 +301,7 @@ class TestMFA(TestPluginBase):
     def test_build_prince_input_error_string_metadata_group_is_one_group(self):
         with self.assertRaisesRegex(ValueError, "at least two groups"):
             _build_prince_input(
-                sample_metadata=self.sample_metadata,
+                analysis_metadata=self.sample_metadata,
                 metadata_groups="clinical",
             )
 
@@ -334,7 +335,7 @@ class TestMFA(TestPluginBase):
 
     def test_build_prince_input_error_metadata_groups_without_metadata(self):
         with self.assertRaisesRegex(
-            ValueError, "metadata_groups requires sample_metadata"
+            ValueError, "metadata_groups requires analysis_metadata"
         ):
             _build_prince_input(
                 {"metabolome": self.table_a},
@@ -354,7 +355,7 @@ class TestMFA(TestPluginBase):
     def test_mfa_outputs_match_prince_regression_fixtures(self):
         tables = {"metabolome": self.table_a, "microbiome": self.table_b}
         expected_dir = self.get_data_path("mfa/prince-regression")
-        results = mfa(tables=tables, engine="scipy")
+        results = _mfa(tables=tables, engine="scipy")
 
         observed_vectors = {
             "eigenvalues": results.eigenvalues,
@@ -416,7 +417,7 @@ class TestMFA(TestPluginBase):
 
         with warnings.catch_warnings(record=True) as observed:
             warnings.simplefilter("always")
-            results = mfa(tables=tables, engine="scipy")
+            results = _mfa(tables=tables, engine="scipy")
 
         observed_messages = [str(warning.message) for warning in observed]
         self.assertIn(
@@ -437,3 +438,51 @@ class TestMFA(TestPluginBase):
                 ("microbiome", "feature-b2"),
             ],
         )
+
+    def test_mfa_pipeline_runs_action_then_visualizer(self):
+        call_order = []
+
+        def mfa_action(**kwargs):
+            call_order.append(("_mfa", kwargs))
+            return ("mfa-results",)
+
+        def visualizer_action(**kwargs):
+            call_order.append(("_component_visualizer", kwargs))
+            return ("visualization",)
+
+        test_case = self
+
+        class FakeContext:
+            def get_action(self, plugin, action):
+                test_case.assertEqual(plugin, "mfa")
+                return {
+                    "_mfa": mfa_action,
+                    "_component_visualizer": visualizer_action,
+                }[action]
+
+        tables = object()
+        analysis_metadata = object()
+        sample_metadata = object()
+        metadata_groups = object()
+
+        results = mfa(
+            FakeContext(),
+            tables=tables,
+            analysis_metadata=analysis_metadata,
+            sample_metadata=sample_metadata,
+            metadata_groups=metadata_groups,
+            engine="scipy",
+            n_components=3,
+        )
+
+        self.assertEqual(results, ("mfa-results", "visualization"))
+        self.assertEqual(call_order[0][0], "_mfa")
+        self.assertEqual(call_order[0][1]["tables"], tables)
+        self.assertEqual(call_order[0][1]["analysis_metadata"], analysis_metadata)
+        self.assertEqual(call_order[0][1]["metadata_groups"], metadata_groups)
+        self.assertEqual(call_order[0][1]["engine"], "scipy")
+        self.assertEqual(call_order[0][1]["n_components"], 3)
+        self.assertEqual(call_order[1][0], "_component_visualizer")
+        self.assertEqual(call_order[1][1]["component_analysis"], "mfa-results")
+        self.assertEqual(call_order[1][1]["analysis_type"], "mfa")
+        self.assertEqual(call_order[1][1]["sample_metadata"], sample_metadata)

@@ -17,6 +17,7 @@ from rachis.core.exceptions import RachisWarning
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa.pca import (
+    _pca,
     create_component_analysis_object,
     drop_columns_with_missing_values,
     drop_zero_variance_columns,
@@ -45,7 +46,7 @@ class TestPCA(TestPluginBase):
 
     def test_pca_outputs_match_prince_regression_fixtures(self):
         expected_dir = self.get_data_path("pca/prince-regression")
-        results = pca(self.table, engine="scipy", filter_zero_variance=False)
+        results = _pca(self.table, engine="scipy", filter_zero_variance=False)
 
         observed_vectors = {
             "eigenvalues": results.eigenvalues,
@@ -125,7 +126,7 @@ class TestPCA(TestPluginBase):
 
     def test_pca_filters_zero_variance_columns(self):
         with self.assertWarns(RachisWarning) as warning:
-            results = pca(self.zero_variance_columns_table, engine="scipy")
+            results = _pca(self.zero_variance_columns_table, engine="scipy")
 
         self.assertEqual(
             str(warning.warning),
@@ -149,3 +150,45 @@ class TestPCA(TestPluginBase):
         random_state = resolve_random_state(None, "scipy")
 
         self.assertIsNone(random_state)
+
+    def test_pca_pipeline_runs_action_then_visualizer(self):
+        call_order = []
+
+        def pca_action(**kwargs):
+            call_order.append(("_pca", kwargs))
+            return ("pca-results",)
+
+        def visualizer_action(**kwargs):
+            call_order.append(("_component_visualizer", kwargs))
+            return ("visualization",)
+
+        test_case = self
+
+        class FakeContext:
+            def get_action(self, plugin, action):
+                test_case.assertEqual(plugin, "mfa")
+                return {
+                    "_pca": pca_action,
+                    "_component_visualizer": visualizer_action,
+                }[action]
+
+        table = object()
+        metadata = object()
+
+        results = pca(
+            FakeContext(),
+            table=table,
+            sample_metadata=metadata,
+            engine="scipy",
+            n_components=3,
+        )
+
+        self.assertEqual(results, ("pca-results", "visualization"))
+        self.assertEqual(call_order[0][0], "_pca")
+        self.assertEqual(call_order[0][1]["table"], table)
+        self.assertEqual(call_order[0][1]["engine"], "scipy")
+        self.assertEqual(call_order[0][1]["n_components"], 3)
+        self.assertEqual(call_order[1][0], "_component_visualizer")
+        self.assertEqual(call_order[1][1]["component_analysis"], "pca-results")
+        self.assertEqual(call_order[1][1]["analysis_type"], "pca")
+        self.assertEqual(call_order[1][1]["sample_metadata"], metadata)

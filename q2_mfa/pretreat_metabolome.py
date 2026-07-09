@@ -212,12 +212,7 @@ def impute_table(
         estimator = RandomForestRegressor(
             n_estimators=rf_n_estimators, random_state=rf_random_state
         )
-        imp = IterativeImputer(
-            estimator=estimator,
-            random_state=rf_random_state,
-            max_iter=10,
-            initial_strategy="mean",
-        )
+        imp = IterativeImputer(estimator=estimator, random_state=rf_random_state)
         table_imp = pd.DataFrame(
             imp.fit_transform(table), index=table.index, columns=table.columns
         )

@@ -5,12 +5,44 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import warnings
+
 import numpy as np
 import pandas as pd
 import rachis
+from rachis.core.exceptions import RachisWarning
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer, KNNImputer
+
+
+def normalize_tic(table: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies total ion current (TIC) normalization to a feature table.
+
+    TIC normalization scales each sample by its total signal, so each row sums
+    to one. This is also known as total-area or sum normalization.
+
+    Args:
+        table (pd.DataFrame): Feature table (samples x features) with
+            non-negative values.
+
+    Returns:
+        pd.DataFrame: TIC-normalized table with the same index and columns.
+
+    Raises:
+        ValueError: If input contains negative values or any sample has zero
+            total signal.
+    """
+    if (table < 0).any().any():
+        raise ValueError("TIC normalization requires non-negative intensities.")
+
+    sample_sums = table.sum(axis=1)
+
+    if (sample_sums == 0).any():
+        raise ValueError("TIC normalization failed: zero sample sum detected.")
+
+    return table.div(sample_sums, axis=0)
 
 
 def normalize_pqn(
@@ -28,7 +60,11 @@ def normalize_pqn(
         2. Computing per-sample quotients to the reference.
         3. Dividing each sample by its median quotient.
 
-    Parameters:
+    The original PQN paper includes total-area/TIC normalization before the
+    quotient step. This helper implements PQN without TIC so callers can choose
+    whether to run TIC first.
+
+    Args:
         table (pd.DataFrame):
             Feature table (samples x features) with non-negative values.
         method (str):
@@ -50,31 +86,38 @@ def normalize_pqn(
     if (table < 0).any().any():
         raise ValueError("PQN requires non-negative intensities.")
 
-    X = table.astype(float).copy()
+    if (ref_samples is None) != (ref_label is None):
+        raise ValueError(
+            "PQN reference metadata and reference label must be provided together."
+        )
 
     # Filter reference samples if metadata provided
-    if ref_samples is not None and ref_label is not None:
+    if ref_samples is not None:
         ref_series = ref_samples.to_series()
         ref_sample_indices = ref_series[ref_series == ref_label].index.tolist()
         if not ref_sample_indices:
             raise ValueError(
                 f"Reference label '{ref_label}' not found in metadata column."
             )
-        X_ref = X.loc[ref_sample_indices]
+        table_ref = table.loc[ref_sample_indices]
     else:
-        X_ref = X
+        table_ref = table
 
     # Reference spectrum (per feature)
-    ref = X_ref.median(axis=0) if method == "median" else X_ref.mean(axis=0)
+    ref = table_ref.median(axis=0) if method == "median" else table_ref.mean(axis=0)
 
     # Avoid division by zero in reference
     ref_safe = ref.replace(0.0, np.nan)
 
     # Compute quotients per sample
-    quotients = X.div(ref_safe, axis=1)
+    quotients = table.div(ref_safe, axis=1)
 
     # Median quotient per sample = dilution factor
-    factors = quotients.apply(lambda row: np.nanmedian(row.to_numpy()), axis=1)
+    valid_quotients = quotients.notna().any(axis=1)
+    factors = pd.Series(np.nan, index=quotients.index)
+    factors.loc[valid_quotients] = quotients.loc[valid_quotients].median(
+        axis=1, skipna=True
+    )
 
     if factors.isna().any():
         raise ValueError(
@@ -86,9 +129,9 @@ def normalize_pqn(
         raise ValueError("PQN failed: non-positive dilution factor detected.")
 
     # Normalize samples
-    X = X.div(factors, axis=0)
+    table = table.div(factors, axis=0)
 
-    return X
+    return table
 
 
 def impute_table(
@@ -99,15 +142,19 @@ def impute_table(
     rf_random_state: int | None = 0,
 ) -> pd.DataFrame:
     """
-    Helper to perform missing-value imputation on a numeric dataframe with.
+    Helper to perform missing-value imputation on a numeric dataframe.
 
     Supports:
         - "knn": sklearn.impute.KNNImputer
         - "rf": IterativeImputer with RandomForestRegressor
 
-    Parameters:
+    Zero values are treated as missing during imputation, so zeros and NaNs are
+    imputed in the same way.
+
+    Args:
         table (pd.DataFrame):
-            Numeric data frame (samples x features) to impute; missing values as NaN.
+            Numeric data frame (samples x features) to impute; missing values
+            represented as zero or NaN.
         impute (str | None):
             Imputation method: "knn", "rf", or None to skip imputation.
         knn_neighbors (int):
@@ -165,14 +212,15 @@ def transform_table(
         - "log10": base-10 logarithm
         - "sqrt": square root
 
-    Parameters:
+    Args:
         table (pd.DataFrame):
             Feature table (samples x features).
         transform (str):
             Transformation type: "log", "log10", "sqrt".
         pseudocount (float | None):
-            Offset added before log/log10 transform. If None, uses the minimum
-            non-zero value in the table. Must be > 0.
+            Offset added before log/log10 transform only when the table contains
+            zero values. If None and zero values are present, uses half the
+            minimum non-zero value in the table. Must be > 0 when provided.
 
     Returns:
         pd.DataFrame:
@@ -186,9 +234,23 @@ def transform_table(
         raise ValueError("Transformation requires all values to be non negative.")
 
     if transform in ("log", "log10"):
-        if pseudocount is None:
+        has_zero = (table == 0).any().any()
+        if has_zero and pseudocount is None:
             min_nonzero = table.where(table > 0).min().min()
-            pseudocount = float(min_nonzero)
+            if pd.isna(min_nonzero):
+                raise ValueError(
+                    "Log transformation requires at least one positive value "
+                    "to infer a pseudocount."
+                )
+            pseudocount = float(min_nonzero) / 2
+        elif not has_zero:
+            if pseudocount is not None:
+                warnings.warn(
+                    "Pseudocount was provided, but no zero values were found; "
+                    "the pseudocount was not applied.",
+                    RachisWarning,
+                )
+            pseudocount = 0.0
         if transform == "log":
             table = np.log(table + pseudocount)
         elif transform == "log10":
@@ -212,7 +274,7 @@ def scale_table(
         - "pareto": mean-center and divide by square root of standard deviation
         - "range": mean-center and divide by max-min range
 
-    Parameters:
+    Args:
         table (pd.DataFrame):
             Feature table (samples x features).
         scale (str | None):
@@ -276,16 +338,18 @@ def pretreat_metabolome(
 
     Steps (in order):
         0) Optional imputation (knn or rf)
-        1) Sample normalization: PQN
+        1) Sample normalization: tic, pqn, or tic_pqn
         2) Transform (log, log10, sqrt, or none)
         3) Centering (per feature / column)
         4) Scaling (per feature / column): auto, pareto, or range
 
-    Parameters:
+    Args:
         table (pd.DataFrame):
             Feature table (samples x features). Values should be numeric.
         sample_normalization (str):
-            "none" or "pqn" (Probabilistic Quotient Normalization).
+            "tic", "pqn" (Probabilistic Quotient Normalization), "tic_pqn",
+            or "none". The original PQN paper includes TIC as part of PQN;
+            use "tic_pqn" for that workflow, or "pqn" to run PQN without TIC.
         pqn_method (str):
             How to build the PQN reference spectrum: "median" or "mean".
         pqn_ref_samples (rachis.CategoricalMetadataColumn):
@@ -297,8 +361,9 @@ def pretreat_metabolome(
         transform (str):
             Transformation to apply: "log", "log10", "sqrt", or "none".
         pseudocount (float | None):
-            Offset added before log transform. If None and transform starts with "log",
-            uses the minimum non-zero value in the table. Must be > 0.
+            Offset added before log/log10 transform only when the table contains
+            zero values. If None and zero values are present, uses half the
+            minimum non-zero value in the table. Must be > 0 when provided.
         center (bool):
             If True, mean-center each feature (column).
         scale (str):
@@ -306,6 +371,7 @@ def pretreat_metabolome(
             (divide by sqrt(std)), or "range" (divide by max-min).
         impute (str | None):
             Missing-value imputation method. Supported: "knn", "rf", or None.
+            Zero values and NaNs are treated as missing values.
         knn_neighbors (int):
             Number of neighbors for KNN imputation.
         rf_n_estimators (int):
@@ -322,41 +388,42 @@ def pretreat_metabolome(
             If inputs are invalid or options are unknown.
     """
 
-    X = table.astype(float).copy()
-
-    # 0) Optional imputation (before normalization/transform)
+    # 1: Imputation
     if impute is not None:
-        X = impute_table(
-            X,
+        table = impute_table(
+            table,
             impute=impute,
             knn_neighbors=knn_neighbors,
             rf_n_estimators=rf_n_estimators,
             rf_random_state=rf_random_state,
         )
 
-    # 1) Sample normalization (PQN)
-    if sample_normalization == "pqn":
-        X = normalize_pqn(
-            table=X,
+    # 2: Sample normalization
+    if sample_normalization in ("tic", "tic_pqn"):
+        table = normalize_tic(table)
+
+    if sample_normalization in ("pqn", "tic_pqn"):
+        table = normalize_pqn(
+            table=table,
             method=pqn_method,
             ref_samples=pqn_ref_samples,
             ref_label=pqn_ref_label,
         )
 
-    # 2) Transform
+    # 3: Transformation
     if transform is not None and transform != "none":
-        X = transform_table(
-            X,
+        table = transform_table(
+            table,
             transform=transform,
             pseudocount=pseudocount,
         )
 
-    # 3) Center per feature (column)
+    # 4: Center per feature (column)
     if center:
-        X = X - X.mean(axis=0)
+        table = table - table.mean(axis=0)
 
-    # 4) Scale per feature (column)
+    # 5: Scale per feature (column)
     if scale is not None:
-        X = scale_table(X, scale=scale)
+        table = scale_table(table, scale=scale)
 
-    return pd.DataFrame(X, index=table.index, columns=table.columns)
+    return table

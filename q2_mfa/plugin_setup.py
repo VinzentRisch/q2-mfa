@@ -6,9 +6,9 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from rachis import Citations, MetadataColumn
+from rachis import Citations
 from rachis.core.type import Choices, Float, Range, Str
-from rachis.plugin import Bool, Categorical, Int, Plugin
+from rachis.plugin import Bool, Categorical, Int, MetadataColumn, Plugin
 
 from q2_mfa import __version__, pretreat_metabolome, transform_clr
 
@@ -74,7 +74,7 @@ plugin.methods.register_function(
     function=pretreat_metabolome,
     inputs={"table": FeatureTable[Unconstrained]},
     parameters={
-        "sample_normalization": Str % Choices(["pqn"]),
+        "sample_normalization": Str % Choices(["tic_pqn", "pqn", "tic"]),
         "pqn_method": Str % Choices(["median", "mean"]),
         "pqn_ref_samples": MetadataColumn[Categorical],
         "pqn_ref_label": Str,
@@ -91,8 +91,11 @@ plugin.methods.register_function(
     input_descriptions={"table": "Metabolomics feature table."},
     parameter_descriptions={
         "sample_normalization": (
-            "Sample-level normalization to apply: 'pqn' "
-            "(Probabilistic Quotient Normalization)."
+            "Sample-level normalization to apply: 'tic' (total ion current / "
+            "total-area normalization), 'pqn' (Probabilistic Quotient "
+            "Normalization without TIC), or 'tic_pqn' (TIC followed by PQN). "
+            "The original PQN paper includes TIC as part of PQN; both PQN "
+            "with and without TIC are exposed here."
         ),
         "pqn_method": (
             "How to construct the PQN reference spectrum: 'median' or 'mean'."
@@ -107,8 +110,10 @@ plugin.methods.register_function(
         ),
         "transform": "Transformation applied to the data ('log', 'log10', 'sqrt').",
         "pseudocount": (
-            "Offset added before log transform. If omitted/None and transform='log', "
-            "it is inferred as the minimum non-zero value."
+            "Offset added before log/log10 transform only when zero values are "
+            "present. If omitted/None and zeros are present, it is inferred as "
+            "half the minimum non-zero value. If provided but no zeros are "
+            "present, it is not applied."
         ),
         "center": "If True, mean-center each feature",
         "scale": (
@@ -118,7 +123,8 @@ plugin.methods.register_function(
         ),
         "impute": (
             "Missing-value imputation method. K-Nearest Neighbors imputation, or "
-            "Random Forest imputation."
+            "Random Forest imputation. Zero values and NaNs are treated as missing "
+            "values during imputation."
         ),
         "knn_neighbors": "Number of neighbors for KNN imputation.",
         "rf_n_estimators": "Number of trees for RandomForest imputation.",
@@ -135,5 +141,5 @@ plugin.methods.register_function(
         "Applies metabolomics-friendly pretreatment in order: imputation,  sample "
         "normalization, transformation, centering, and feature scaling."
     ),
-    citations=[],
+    citations=[citations["dieterle2006probabilistic"], citations["scikit-learn"]],
 )

@@ -6,30 +6,29 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import unittest
+import warnings
 
 import numpy as np
 import pandas as pd
 import pandas.testing as pdt
 from numpy.testing import assert_allclose
-from pandas._testing import assert_frame_equal
 from rachis import CategoricalMetadataColumn
-from rachis.plugin.testing import TestPluginBase
+from rachis.core.exceptions import RachisWarning
 
 from q2_mfa.pretreat_metabolome import (
     impute_table,
     normalize_pqn,
+    normalize_tic,
     pretreat_metabolome,
     scale_table,
     transform_table,
 )
 
 
-class TestPretreatMetabolome(TestPluginBase):
-    package = "q2_mfa"
-
-    def setUp(self):
-        super().setUp()
-        self.df_nonneg = pd.DataFrame(
+class TestPretreatMetabolome(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.table = pd.DataFrame(
             {
                 "F1": [0.0, 1.0, 2.0],
                 "F2": [3.0, 0.0, 4.0],
@@ -38,50 +37,48 @@ class TestPretreatMetabolome(TestPluginBase):
             index=["S1", "S2", "S3"],
         )
 
-    def test_centering(self):
-        out = pretreat_metabolome(
-            self.df_nonneg,
-            sample_normalization=None,
-            transform=None,
-            center=True,
-            scale=None,
-        )
-
-        expected = self.df_nonneg - self.df_nonneg.mean(axis=0)
-        assert_frame_equal(out, expected)
-
-    def test_preserves_shape_index_columns(self):
-        out = pretreat_metabolome(
-            self.df_nonneg,
-            sample_normalization="pqn",
-            impute="knn",
-            transform="log",
-            pseudocount=1e-6,
-            center=False,
-            scale="auto",
-        )
-        self.assertIsInstance(out, pd.DataFrame)
-        self.assertEqual(out.shape, self.df_nonneg.shape)
-        self.assertListEqual(list(out.index), list(self.df_nonneg.index))
-        self.assertListEqual(list(out.columns), list(self.df_nonneg.columns))
-
-
-class TestScaleTable(TestPluginBase):
-    package = "q2_mfa"
-
-    def setUp(self):
-        super().setUp()
-
-        self.df_nonneg = pd.DataFrame(
+        cls.negative_table = pd.DataFrame(
             {
-                "F1": [0.0, 1.0, 2.0],
-                "F2": [3.0, 0.0, 4.0],
-                "F3": [5.0, 6.0, 0.0],
+                "F1": [0.0, -1.0, 2.0],
+                "F2": [3.0, 4.0, 5.0],
             },
             index=["S1", "S2", "S3"],
         )
 
-        self.df_no_variance = pd.DataFrame(
+        cls.no_zero_table = pd.DataFrame(
+            {
+                "F1": [1.0, 2.0, 3.0],
+                "F2": [4.0, 5.0, 6.0],
+                "F3": [7.0, 8.0, 9.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
+
+        cls.zero_sum_table = pd.DataFrame(
+            {
+                "F1": [0.0, 0.0],
+                "F2": [0.0, 0.0],
+            },
+            index=["S1", "S2"],
+        )
+
+        cls.nan_sum_table = pd.DataFrame(
+            {
+                "F1": [np.nan, 1.0],
+                "F2": [np.nan, 2.0],
+            },
+            index=["S1", "S2"],
+        )
+
+        cls.zero_factor_table = pd.DataFrame(
+            {
+                "F1": [0.0, 10.0, 10.0],
+                "F2": [0.0, 20.0, 20.0],
+            },
+            index=["S0", "S1", "S2"],
+        )
+
+        cls.no_variance_table = pd.DataFrame(
             {
                 "F1": [7.0, 7.0, 7.0],
                 "F2": [1.0, 2.0, 3.0],
@@ -90,222 +87,248 @@ class TestScaleTable(TestPluginBase):
             index=["S1", "S2", "S3"],
         )
 
-    def test_autoscale(self):
-        out = scale_table(self.df_nonneg, scale="auto")
-
-        X = self.df_nonneg
-        sd = X.std(axis=0, ddof=0)
-        expected = (X - X.mean(axis=0)) / sd
-
-        assert_frame_equal(out, expected)
-
-    def test_pareto_scaling(self):
-        out = scale_table(self.df_nonneg, scale="pareto")
-
-        X = self.df_nonneg
-        sd = X.std(axis=0, ddof=0)
-        expected = (X - X.mean(axis=0)) / np.sqrt(sd)
-
-        assert_frame_equal(out, expected)
-
-    def test_range_scaling(self):
-        out = scale_table(self.df_nonneg, scale="range")
-
-        # Expected manual computation
-        X = self.df_nonneg
-        rng = X.max(axis=0) - X.min(axis=0)
-        expected = (X - X.mean(axis=0)) / rng
-
-        assert_frame_equal(out, expected)
-
-    def test_autoscale_raises(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            r"Autoscaling not possible: at least one feature has zero variance\.",
-        ):
-            scale_table(self.df_no_variance, scale="auto")
-
-    def test_pareto_raises(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            r"Pareto scaling not possible: at least one feature has zero variance\.",
-        ):
-            scale_table(self.df_no_variance, scale="pareto")
-
-    def test_range_raises(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            r"Range scaling not possible: at least one feature has zero range\.",
-        ):
-            scale_table(self.df_no_variance, scale="range")
-
-
-class TestTransformTable(TestPluginBase):
-    package = "q2_mfa"
-
-    def setUp(self):
-        super().setUp()
-        self.df_has_negative = pd.DataFrame(
-            {
-                "F1": [0.0, -1.0, 2.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-        self.df_small = pd.DataFrame(
-            {
-                "F1": [0.0, 1.0],
-                "F2": [3.0, 7.0],
-            },
-            index=["S1", "S2"],
-        )
-
-    def test_transform_log_fixed_pseudocount(self):
-        out = transform_table(
-            self.df_small,
-            transform="log",
-            pseudocount=0.5,
-        )
-
-        expected = np.log(self.df_small + 0.5)
-        assert_allclose(out.to_numpy(), expected)
-
-    def test_transform_log10_fixed_pseudocount(self):
-        out = transform_table(
-            self.df_small,
-            transform="log10",
-            pseudocount=0.5,
-        )
-
-        expected = np.log10(self.df_small + 0.5)
-        assert_allclose(out.to_numpy(), expected)
-
-    def test_transform_sqrt_fixed_pseudocount(self):
-        out = transform_table(
-            self.df_small,
-            transform="sqrt",
-        )
-
-        expected = np.sqrt(self.df_small)
-        assert_allclose(out.to_numpy(), expected)
-
-    def test_transform_log_none_pseudocount(self):
-        out = transform_table(
-            self.df_small,
-            transform="log",
-            pseudocount=None,
-        )
-
-        expected = np.log(self.df_small + 1.0)
-        assert_allclose(out.to_numpy(), expected)
-
-    def test_log_raises_on_negative_values(self):
-        with self.assertRaisesRegex(
-            ValueError, "Transformation requires all values to be non negative."
-        ):
-            transform_table(
-                self.df_has_negative,
-                transform="log",
-                pseudocount=1e-6,
-            )
-
-    def test_transform_sqrt_exact(self):
-        out = transform_table(
-            self.df_small,
-            transform="sqrt",
-        )
-
-        expected = np.sqrt(self.df_small.to_numpy())
-        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
-
-
-class TestPQN(TestPluginBase):
-    package = "q2_mfa"
-
-    def setUp(self):
-        super().setUp()
-        self.df = pd.DataFrame(
-            {
-                "F1": [8.0, 4.0, 2.0],
-                "F2": [16.0, 8.0, 3.0],
-                "F3": [24.0, 12.0, 6.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
-
-        self.df_negative = pd.DataFrame(
-            {"F1": [1, -1], "F2": [2, 3]},
-            index=["S1", "S2"],
-        )
-
-        self.df_all_zeros = pd.DataFrame(
-            {"F1": [0, 0], "F2": [0, 0]},
-            index=["S1", "S2"],
-        )
-
-        self.df_one_zero_sample = pd.DataFrame(
-            {"F1": [0, 10, 10], "F2": [0, 20, 20]},
-            index=["S0", "S1", "S2"],
-        )
-
-        self.ref_metadata = CategoricalMetadataColumn(
+        cls.ref_metadata = CategoricalMetadataColumn(
             pd.Series(
                 {"S1": "control", "S2": "control", "S3": "treatment"},
                 name="group",
             ).rename_axis("id")
         )
 
-    def test_raises_on_negative_values(self):
+    def test_centering(self):
+        out = pretreat_metabolome(
+            self.table,
+            sample_normalization=None,
+            transform=None,
+            center=True,
+            scale=None,
+        )
+
+        expected = self.table - self.table.mean(axis=0)
+        pdt.assert_frame_equal(out, expected)
+
+    def test_preserves_shape_index_columns(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = pretreat_metabolome(
+                self.table,
+                sample_normalization="pqn",
+                impute="knn",
+                transform="log",
+                pseudocount=1e-6,
+                center=False,
+                scale="auto",
+            )
+
+        self.assert_table_shape_index_columns(out, self.table)
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, RachisWarning)
+        self.assertEqual(
+            str(caught[0].message),
+            "Pseudocount was provided, but no zero values were found; "
+            "the pseudocount was not applied.",
+        )
+
+    def test_autoscale(self):
+        out = scale_table(self.table, scale="auto")
+
+        X = self.table
+        sd = X.std(axis=0, ddof=0)
+        expected = (X - X.mean(axis=0)) / sd
+
+        self.assert_table_shape_index_columns(out, self.table)
+        pdt.assert_frame_equal(out, expected)
+
+    def test_pareto_scaling(self):
+        out = scale_table(self.table, scale="pareto")
+
+        X = self.table
+        sd = X.std(axis=0, ddof=0)
+        expected = (X - X.mean(axis=0)) / np.sqrt(sd)
+
+        pdt.assert_frame_equal(out, expected)
+
+    def test_range_scaling(self):
+        out = scale_table(self.table, scale="range")
+
+        X = self.table
+        rng = X.max(axis=0) - X.min(axis=0)
+        expected = (X - X.mean(axis=0)) / rng
+
+        pdt.assert_frame_equal(out, expected)
+
+    def test_autoscale_raises(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Autoscaling not possible: at least one feature has zero variance\.",
+        ):
+            scale_table(self.no_variance_table, scale="auto")
+
+    def test_pareto_raises(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Pareto scaling not possible: at least one feature has zero variance\.",
+        ):
+            scale_table(self.no_variance_table, scale="pareto")
+
+    def test_range_raises(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Range scaling not possible: at least one feature has zero range\.",
+        ):
+            scale_table(self.no_variance_table, scale="range")
+
+    def test_transform_log_fixed_pseudocount(self):
+        out = transform_table(
+            self.table,
+            transform="log",
+            pseudocount=0.5,
+        )
+
+        expected = np.log(self.table + 0.5)
+        self.assert_table_shape_index_columns(out, self.table)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_log10_fixed_pseudocount(self):
+        out = transform_table(
+            self.table,
+            transform="log10",
+            pseudocount=0.5,
+        )
+
+        expected = np.log10(self.table + 0.5)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_sqrt_fixed_pseudocount(self):
+        out = transform_table(
+            self.table,
+            transform="sqrt",
+        )
+
+        expected = np.sqrt(self.table)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_log_none_pseudocount(self):
+        out = transform_table(
+            self.table,
+            transform="log",
+            pseudocount=None,
+        )
+
+        expected = np.log(self.table + 0.5)
+        assert_allclose(out.to_numpy(), expected)
+
+    def test_transform_log_does_not_apply_pseudocount_without_zeros(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = transform_table(
+                self.no_zero_table,
+                transform="log",
+                pseudocount=0.5,
+            )
+
+        expected = np.log(self.no_zero_table)
+        assert_allclose(out.to_numpy(), expected)
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, RachisWarning)
+        self.assertEqual(
+            str(caught[0].message),
+            "Pseudocount was provided, but no zero values were found; "
+            "the pseudocount was not applied.",
+        )
+
+    def test_log_raises_on_negative_values(self):
+        with self.assertRaisesRegex(
+            ValueError, "Transformation requires all values to be non negative."
+        ):
+            transform_table(
+                self.negative_table,
+                transform="log",
+                pseudocount=1e-6,
+            )
+
+    def test_transform_sqrt_exact(self):
+        out = transform_table(
+            self.table,
+            transform="sqrt",
+        )
+
+        expected = np.sqrt(self.table.to_numpy())
+        assert_allclose(out.to_numpy(), expected, rtol=0, atol=1e-12)
+
+    def test_tic_normalization(self):
+        out = normalize_tic(self.table)
+
+        expected = self.table.div(self.table.sum(axis=1), axis=0)
+        self.assert_table_shape_index_columns(out, self.table)
+        pdt.assert_frame_equal(out, expected)
+
+    def test_tic_raises_on_negative_values(self):
         with self.assertRaisesRegex(ValueError, r"non-negative intensities"):
-            normalize_pqn(self.df_negative, method="median")
+            normalize_tic(self.negative_table)
 
-    def test_raises_on_nan_factor_all_zeros(self):
+    def test_tic_raises_on_zero_sample_sum(self):
+        with self.assertRaisesRegex(ValueError, r"zero sample sum"):
+            normalize_tic(self.zero_sum_table)
+
+    def test_tic_raises_on_all_nan_sample_sum(self):
+        with self.assertRaisesRegex(ValueError, r"zero sample sum"):
+            normalize_tic(self.nan_sum_table)
+
+    def test_pqn_raises_on_negative_values(self):
+        with self.assertRaisesRegex(ValueError, r"non-negative intensities"):
+            normalize_pqn(self.negative_table, method="median")
+
+    def test_pqn_raises_on_nan_factor_all_zeros(self):
         with self.assertRaisesRegex(ValueError, r"could not compute dilution factor"):
-            normalize_pqn(self.df_all_zeros, method="median")
+            normalize_pqn(self.zero_sum_table, method="median")
 
-    def test_raises_on_non_positive_factor(self):
+    def test_pqn_raises_on_non_positive_factor(self):
         with self.assertRaisesRegex(ValueError, r"non-positive dilution factor"):
-            normalize_pqn(self.df_one_zero_sample, method="median")
+            normalize_pqn(self.zero_factor_table, method="median")
 
     def test_pqn_median(self):
-        out = normalize_pqn(self.df, method="median")
+        out = normalize_pqn(self.table, method="median")
 
-        exp = pd.DataFrame(
+        expected = pd.DataFrame(
             {
-                "F1": [4.0, 4.0, 4.0],
-                "F2": [8.0, 8.0, 6.0],
-                "F3": [12.0, 12.0, 12.0],
+                "F1": [0.0, 1.0, 1.5],
+                "F2": [3.0, 0.0, 3.0],
+                "F3": [5.0, 6.0, 0.0],
             },
             index=["S1", "S2", "S3"],
         )
-        pdt.assert_frame_equal(out, exp)
+        self.assert_table_shape_index_columns(out, self.table)
+        pdt.assert_frame_equal(out, expected)
 
     def test_pqn_mean(self):
-        out = normalize_pqn(self.df, method="mean")
+        out = normalize_pqn(self.table, method="mean")
 
-        exp = pd.DataFrame(
+        expected = pd.DataFrame(
             {
-                "F1": [14 / 3, 14 / 3, 14 / 3],
-                "F2": [28 / 3, 28 / 3, 7.0],
-                "F3": [14.0, 14.0, 14.0],
+                "F1": [0.0, 1.0, 7 / 6],
+                "F2": [7 / 3, 0.0, 7 / 3],
+                "F3": [35 / 9, 6.0, 0.0],
             },
             index=["S1", "S2", "S3"],
         )
-        pdt.assert_frame_equal(out, exp)
+        pdt.assert_frame_equal(out, expected)
 
     def test_pqn_metadata(self):
         out = normalize_pqn(
-            self.df,
+            self.table,
             method="median",
             ref_samples=self.ref_metadata,
             ref_label="control",
         )
-        # Reference should be computed only from S1 and S2
-        ref_expected = self.df.loc[["S1", "S2"]].median(axis=0)
 
-        # Manually compute expected PQN normalization using the filtered reference
-        ratios = self.df.div(ref_expected, axis=1)
-        dilution_factors = ratios.median(axis=1)
-        expected = self.df.div(dilution_factors, axis=0)
+        expected = pd.DataFrame(
+            {
+                "F1": [0.0, 11 / 12, 3 / 4],
+                "F2": [33 / 10, 0.0, 3 / 2],
+                "F3": [11 / 2, 11 / 2, 0.0],
+            },
+            index=["S1", "S2", "S3"],
+        )
 
         pdt.assert_frame_equal(out, expected)
 
@@ -314,41 +337,45 @@ class TestPQN(TestPluginBase):
             ValueError, r"Reference label 'qc' not found in metadata column"
         ):
             normalize_pqn(
-                self.df,
+                self.table,
                 method="median",
                 ref_samples=self.ref_metadata,
                 ref_label="qc",
             )
 
-
-class TestImputeTable(TestPluginBase):
-    package = "q2_mfa"
-
-    def setUp(self):
-        super().setUp()
-        self.df = pd.DataFrame(
-            {
-                "F1": [0.0, 1.0, 2.0],
-                "F2": [3.0, 0.0, 4.0],
-            },
-            index=["S1", "S2", "S3"],
-        )
+    def test_pqn_metadata_requires_label(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"PQN reference metadata and reference label must be provided together",
+        ):
+            normalize_pqn(
+                self.table,
+                method="median",
+                ref_samples=self.ref_metadata,
+                ref_label=None,
+            )
 
     def test_impute_preserves_shape_index_columns(self):
-        out = impute_table(self.df, impute="knn", knn_neighbors=2)
+        out = impute_table(self.table, impute="knn", knn_neighbors=2)
 
-        self.assertEqual(out.shape, self.df.shape)
+        self.assert_table_shape_index_columns(out, self.table)
         self.assertFalse((out.to_numpy() == 0.0).any())
-        self.assertListEqual(list(out.index), list(self.df.index))
-        self.assertListEqual(list(out.columns), list(self.df.columns))
 
     def test_impute_replaces_zeros(self):
-        out = impute_table(self.df, impute="rf", rf_n_estimators=10, rf_random_state=42)
+        out = impute_table(
+            self.table,
+            impute="rf",
+            rf_n_estimators=10,
+            rf_random_state=42,
+        )
 
-        self.assertEqual(out.shape, self.df.shape)
         self.assertFalse((out.to_numpy() == 0.0).any())
-        self.assertListEqual(list(out.index), list(self.df.index))
-        self.assertListEqual(list(out.columns), list(self.df.columns))
+
+    def assert_table_shape_index_columns(self, observed, expected):
+        self.assertIsInstance(observed, pd.DataFrame)
+        self.assertEqual(observed.shape, expected.shape)
+        self.assertListEqual(list(observed.index), list(expected.index))
+        self.assertListEqual(list(observed.columns), list(expected.columns))
 
 
 if __name__ == "__main__":

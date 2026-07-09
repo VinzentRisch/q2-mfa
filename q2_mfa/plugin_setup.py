@@ -120,9 +120,10 @@ plugin.methods.register_function(
             "sqrt(std)), or 'range' (mean-center and divide by max-min)."
         ),
         "impute": (
-            "Missing-value imputation method. K-Nearest Neighbors imputation, or "
-            "Random Forest imputation. Zero values and NaNs are treated as missing "
-            "values during imputation."
+            "Missing-value imputation method. 'knn' uses "
+            "sklearn.impute.KNNImputer. 'rf' uses sklearn.impute.IterativeImputer "
+            "with sklearn.ensemble.RandomForestRegressor. Zero values and NaNs "
+            "are treated as missing values during imputation."
         ),
         "knn_neighbors": "Number of neighbors for KNN imputation.",
         "rf_n_estimators": "Number of trees for RandomForest imputation.",

@@ -99,11 +99,21 @@ class TestPretreatMetabolome(unittest.TestCase):
             self.table,
             sample_normalization=None,
             transform=None,
-            center=True,
-            scale=None,
+            scale="center",
         )
 
         expected = self.table - self.table.mean(axis=0)
+        pdt.assert_frame_equal(out, expected)
+
+    def test_tic_sample_normalization(self):
+        out = pretreat_metabolome(
+            self.table,
+            sample_normalization="tic",
+            transform=None,
+            scale=None,
+        )
+
+        expected = self.table.div(self.table.sum(axis=1), axis=0)
         pdt.assert_frame_equal(out, expected)
 
     def test_preserves_shape_index_columns(self):
@@ -115,7 +125,6 @@ class TestPretreatMetabolome(unittest.TestCase):
                 impute="knn",
                 transform="log",
                 pseudocount=1e-6,
-                center=False,
                 scale="auto",
             )
 
@@ -244,6 +253,18 @@ class TestPretreatMetabolome(unittest.TestCase):
                 self.negative_table,
                 transform="log",
                 pseudocount=1e-6,
+            )
+
+    def test_log_raises_when_pseudocount_cannot_be_inferred(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Log transformation requires at least one positive value "
+            "to infer a pseudocount.",
+        ):
+            transform_table(
+                self.zero_sum_table,
+                transform="log",
+                pseudocount=None,
             )
 
     def test_transform_sqrt_exact(self):

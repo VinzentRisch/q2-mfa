@@ -270,7 +270,8 @@ def scale_table(
     Applies scaling to a feature table.
 
     Supported scaling methods:
-        - "autoscale": mean-center and divide by standard deviation (unit variance)
+        - "center": mean-center each feature
+        - "auto": mean-center and divide by standard deviation (unit variance)
         - "pareto": mean-center and divide by square root of standard deviation
         - "range": mean-center and divide by max-min range
 
@@ -278,7 +279,7 @@ def scale_table(
         table (pd.DataFrame):
             Feature table (samples x features).
         scale (str | None):
-            Scaling method: "auto", "pareto", or "range".
+            Scaling method: "center", "auto", "pareto", or "range".
 
     Returns:
         pd.DataFrame:
@@ -326,7 +327,6 @@ def pretreat_metabolome(
     pqn_ref_label: str | None = None,
     transform: str | None = None,
     pseudocount: float | None = None,
-    center: bool = False,
     scale: str | None = None,
     impute: str | None = None,
     knn_neighbors: int = 5,
@@ -340,8 +340,7 @@ def pretreat_metabolome(
         0) Optional imputation (knn or rf)
         1) Sample normalization: tic, pqn, or tic_pqn
         2) Transform (log, log10, sqrt, or none)
-        3) Centering (per feature / column)
-        4) Scaling (per feature / column): auto, pareto, or range
+        3) Scaling (per feature / column): center, auto, pareto, or range
 
     Args:
         table (pd.DataFrame):
@@ -364,11 +363,10 @@ def pretreat_metabolome(
             Offset added before log/log10 transform only when the table contains
             zero values. If None and zero values are present, uses half the
             minimum non-zero value in the table. Must be > 0 when provided.
-        center (bool):
-            If True, mean-center each feature (column).
         scale (str):
-            Scaling method: "none", "auto" (unit variance), "pareto"
-            (divide by sqrt(std)), or "range" (divide by max-min).
+            Scaling method: "none", "center" (mean-center only), "auto" (unit
+            variance), "pareto" (divide by sqrt(std)), or "range" (divide by
+            max-min). Scaling methods are applied after mean-centering.
         impute (str | None):
             Missing-value imputation method. Supported: "knn", "rf", or None.
             Zero values and NaNs are treated as missing values.
@@ -418,11 +416,7 @@ def pretreat_metabolome(
             pseudocount=pseudocount,
         )
 
-    # 4: Center per feature (column)
-    if center:
-        table = table - table.mean(axis=0)
-
-    # 5: Scale per feature (column)
+    # 4: Scale per feature (column)
     if scale is not None:
         table = scale_table(table, scale=scale)
 

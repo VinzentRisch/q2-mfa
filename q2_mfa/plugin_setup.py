@@ -8,7 +8,7 @@
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis import Citations
 from rachis.core.type import Choices, Float, Range, Str
-from rachis.plugin import Bool, Categorical, Int, MetadataColumn, Plugin
+from rachis.plugin import Categorical, Int, MetadataColumn, Plugin
 
 from q2_mfa import __version__, pretreat_metabolome, transform_clr
 
@@ -80,8 +80,7 @@ plugin.methods.register_function(
         "pqn_ref_label": Str,
         "transform": Str % Choices(["log", "log10", "sqrt"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
-        "center": Bool,
-        "scale": Str % Choices(["auto", "pareto", "range"]),
+        "scale": Str % Choices(["center", "auto", "pareto", "range"]),
         "impute": Str % Choices(["knn", "rf"]),
         "knn_neighbors": Int % Range(1, None),
         "rf_n_estimators": Int % Range(1, None),
@@ -115,11 +114,10 @@ plugin.methods.register_function(
             "half the minimum non-zero value. If provided but no zeros are "
             "present, it is not applied."
         ),
-        "center": "If True, mean-center each feature",
         "scale": (
-            "Feature scaling method applied: 'auto' (mean-center and divide by std), "
-            "'pareto' (mean-center and divide by sqrt(std)), or 'range' (mean-center "
-            "and divide by max-min)."
+            "Feature scaling method applied: 'center' (mean-center only), 'auto' "
+            "(mean-center and divide by std), 'pareto' (mean-center and divide by "
+            "sqrt(std)), or 'range' (mean-center and divide by max-min)."
         ),
         "impute": (
             "Missing-value imputation method. K-Nearest Neighbors imputation, or "
@@ -133,13 +131,13 @@ plugin.methods.register_function(
     output_descriptions={
         "pretreated_table": (
             "Pretreated table after optional imputation, normalization, "
-            "transformation, centering, and scaling."
+            "transformation, and scaling."
         )
     },
     name="Metabolomics pretreatment",
     description=(
         "Applies metabolomics-friendly pretreatment in order: imputation,  sample "
-        "normalization, transformation, centering, and feature scaling."
+        "normalization, transformation, and feature scaling."
     ),
     citations=[citations["dieterle2006probabilistic"], citations["scikit-learn"]],
 )

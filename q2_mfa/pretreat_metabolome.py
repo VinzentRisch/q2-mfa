@@ -5,12 +5,14 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import secrets
 import warnings
 
 import numpy as np
 import pandas as pd
 import rachis
 from rachis.core.exceptions import RachisWarning
+from rachis.core.type import CaptureHolder
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer, KNNImputer
@@ -134,12 +136,36 @@ def normalize_pqn(
     return table
 
 
+def resolve_capture_holder(
+    capture_holder: CaptureHolder[int] | int | None,
+    random: bool,
+) -> int | None:
+    """
+    Resolves a capture-holder seed parameter.
+
+    Args:
+        capture_holder (CaptureHolder[int] | int | None):
+            Capture holder or explicit seed value.
+        random (bool):
+            If True, resolve the capture holder to a generated random seed.
+            If False, resolve it to None.
+
+    Returns:
+        int | None:
+            Captured/generated seed, explicit seed value, or None.
+    """
+    if random:
+        return CaptureHolder.get_or_set(capture_holder, lambda: secrets.randbits(32))
+
+    return CaptureHolder.get_or_set(capture_holder, lambda: None)
+
+
 def impute_table(
     table: pd.DataFrame,
     impute: str = "knn",
     knn_neighbors: int = 10,
     rf_n_estimators: int = 100,
-    rf_random_state: int | None = 0,
+    rf_random_state: int | None = None,
 ) -> pd.DataFrame:
     """
     Helper to perform missing-value imputation on a numeric dataframe.
@@ -331,7 +357,7 @@ def pretreat_metabolome(
     impute: str | None = None,
     knn_neighbors: int = 5,
     rf_n_estimators: int = 100,
-    rf_random_state: int | None = 0,
+    rf_random_state: CaptureHolder[int] = None,
 ) -> pd.DataFrame:
     """
     Applies metabolomics-friendly preprocessing to a feature table.
@@ -374,8 +400,10 @@ def pretreat_metabolome(
             Number of neighbors for KNN imputation.
         rf_n_estimators (int):
             Number of trees for RandomForest used in iterative imputation.
-        rf_random_state (int | None):
+        rf_random_state (CaptureHolder[int]):
             Random state for RandomForest / IterativeImputer reproducibility.
+            If RF imputation is used and this is omitted, a random seed is
+            generated and captured in provenance.
 
     Returns:
         pd.DataFrame:
@@ -385,6 +413,7 @@ def pretreat_metabolome(
         ValueError:
             If inputs are invalid or options are unknown.
     """
+    rf_random_state = resolve_capture_holder(rf_random_state, random=impute == "rf")
 
     # 1: Imputation
     if impute is not None:

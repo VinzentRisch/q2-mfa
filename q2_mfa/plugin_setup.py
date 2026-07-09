@@ -127,7 +127,11 @@ plugin.methods.register_function(
         ),
         "knn_neighbors": "Number of neighbors for KNN imputation.",
         "rf_n_estimators": "Number of trees for RandomForest imputation.",
-        "rf_random_state": "Random state for RandomForest reproducibility.",
+        "rf_random_state": (
+            "Random state for RandomForest reproducibility. If RF imputation "
+            "is used and this is omitted, a random seed is generated and "
+            "captured in provenance."
+        ),
     },
     output_descriptions={
         "pretreated_table": (

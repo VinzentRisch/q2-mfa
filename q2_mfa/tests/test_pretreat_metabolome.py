@@ -20,6 +20,7 @@ from q2_mfa.pretreat_metabolome import (
     normalize_pqn,
     normalize_tic,
     pretreat_metabolome,
+    resolve_capture_holder,
     scale_table,
     transform_table,
 )
@@ -391,6 +392,26 @@ class TestPretreatMetabolome(unittest.TestCase):
         )
 
         self.assertFalse((out.to_numpy() == 0.0).any())
+
+    def test_pretreat_metabolome_rf_imputation(self):
+        out = pretreat_metabolome(
+            self.table,
+            sample_normalization=None,
+            transform=None,
+            scale=None,
+            impute="rf",
+            rf_n_estimators=10,
+            rf_random_state=42,
+        )
+
+        self.assert_table_shape_index_columns(out, self.table)
+        self.assertFalse((out.to_numpy() == 0.0).any())
+
+    def test_resolve_capture_holder_returns_none(self):
+        self.assertIsNone(resolve_capture_holder(None, random=False))
+
+    def test_resolve_capture_holder_preserves_explicit_seed(self):
+        self.assertEqual(resolve_capture_holder(42, random=True), 42)
 
     def assert_table_shape_index_columns(self, observed, expected):
         self.assertIsInstance(observed, pd.DataFrame)

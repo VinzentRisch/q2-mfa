@@ -339,7 +339,7 @@ def pretreat_metabolome(
     Steps (in order):
         0) Optional imputation (knn or rf)
         1) Sample normalization: tic, pqn, or tic_pqn
-        2) Transform (log, log10, sqrt, or none)
+        2) Transform (log, log10, sqrt, or None)
         3) Scaling (per feature / column): center, auto, pareto, or range
 
     Args:
@@ -347,7 +347,7 @@ def pretreat_metabolome(
             Feature table (samples x features). Values should be numeric.
         sample_normalization (str):
             "tic", "pqn" (Probabilistic Quotient Normalization), "tic_pqn",
-            or "none". The original PQN paper includes TIC as part of PQN;
+            or None. The original PQN paper includes TIC as part of PQN;
             use "tic_pqn" for that workflow, or "pqn" to run PQN without TIC.
         pqn_method (str):
             How to build the PQN reference spectrum: "median" or "mean".
@@ -358,13 +358,13 @@ def pretreat_metabolome(
             Label value in `pqn_ref_samples` indicating which samples to use for the
             PQN reference. Required when `pqn_ref_samples` is provided.
         transform (str):
-            Transformation to apply: "log", "log10", "sqrt", or "none".
+            Transformation to apply: "log", "log10", "sqrt", or None.
         pseudocount (float | None):
             Offset added before log/log10 transform only when the table contains
             zero values. If None and zero values are present, uses half the
             minimum non-zero value in the table. Must be > 0 when provided.
         scale (str):
-            Scaling method: "none", "center" (mean-center only), "auto" (unit
+            Scaling method: None, "center" (mean-center only), "auto" (unit
             variance), "pareto" (divide by sqrt(std)), or "range" (divide by
             max-min). Scaling methods are applied after mean-centering.
         impute (str | None):
@@ -409,7 +409,7 @@ def pretreat_metabolome(
         )
 
     # 3: Transformation
-    if transform is not None and transform != "none":
+    if transform is not None:
         table = transform_table(
             table,
             transform=transform,

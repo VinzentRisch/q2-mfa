@@ -15,7 +15,9 @@ from rachis.core.exceptions import RachisWarning
 from rachis.core.type import CaptureHolder
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
-from sklearn.impute import IterativeImputer, KNNImputer
+from sklearn.impute import IterativeImputer
+
+from q2_mfa.utils import run_r_table_script
 
 
 def normalize_tic(table: pd.DataFrame) -> pd.DataFrame:
@@ -171,8 +173,10 @@ def impute_table(
     Helper to perform missing-value imputation on a numeric dataframe.
 
     Supports:
-        - "knn": sklearn.impute.KNNImputer
+        - "knn": imputeLCMD::impute.wrapper.KNN through Rscript
         - "rf": IterativeImputer with RandomForestRegressor
+        - "qrilc": imputeLCMD::impute.QRILC through Rscript. The table is
+          log2-transformed before calling R and transformed back afterward.
 
     Zero values are treated as missing during imputation, so zeros and NaNs are
     imputed in the same way.
@@ -182,7 +186,8 @@ def impute_table(
             Numeric data frame (samples x features) to impute; missing values
             represented as zero or NaN.
         impute (str | None):
-            Imputation method: "knn", "rf", or None to skip imputation.
+            Imputation method: "knn", "rf", "qrilc", or None to skip
+            imputation.
         knn_neighbors (int):
             Number of neighbors for KNN imputation (used when impute == "knn").
         rf_n_estimators (int):
@@ -200,12 +205,21 @@ def impute_table(
     """
     table = table.replace(0, np.nan)
 
-    if impute == "knn":
+    if impute in {"knn", "qrilc"}:
+        if impute == "qrilc":
+            # QRILC runs on log-scaled data.
+            table = np.log2(table)
 
-        imputer = KNNImputer(n_neighbors=knn_neighbors)
-        table_imp = pd.DataFrame(
-            imputer.fit_transform(table), index=table.index, columns=table.columns
-        )
+        # imputeLCMD expects features x samples, unlike the QIIME DataFrame.
+        table_imp = run_r_table_script(
+            table=table.T,
+            script_name="impute_imputelcmd",
+            parameters={"method": impute, "knn_neighbors": knn_neighbors},
+            package_name="imputeLCMD",
+        ).T
+
+        if impute == "qrilc":
+            table_imp = np.exp2(table_imp)
 
     elif impute == "rf":
 
@@ -358,7 +372,8 @@ def pretreat_metabolome(
     Applies metabolomics-friendly preprocessing to a feature table.
 
     Steps (in order):
-        0) Optional imputation (knn or rf)
+        0) Optional imputation (knn, rf, or qrilc). QRILC imputes in log2
+           space and returns the result to the original scale.
         1) Sample normalization: tic, pqn, or tic_pqn
         2) Transform (log, log10, sqrt, or None)
         3) Scaling (per feature / column): center, auto, pareto, or range
@@ -389,8 +404,10 @@ def pretreat_metabolome(
             variance), "pareto" (divide by sqrt(std)), or "range" (divide by
             max-min). Scaling methods are applied after mean-centering.
         impute (str | None):
-            Missing-value imputation method. Supported: "knn", "rf", or None.
-            Zero values and NaNs are treated as missing values.
+            Missing-value imputation method. Supported: "knn", "rf", "qrilc",
+            or None. Zero values and NaNs are treated as missing values. QRILC
+            uses log2-transformed values during imputation and returns values on
+            the original scale.
         knn_neighbors (int):
             Number of neighbors for KNN imputation.
         rf_n_estimators (int):

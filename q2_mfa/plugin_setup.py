@@ -81,7 +81,7 @@ plugin.methods.register_function(
         "transform": Str % Choices(["log", "log10", "sqrt"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
         "scale": Str % Choices(["center", "auto", "pareto", "range"]),
-        "impute": Str % Choices(["knn", "rf"]),
+        "impute": Str % Choices(["knn", "rf", "qrilc"]),
         "knn_neighbors": Int % Range(1, None),
         "rf_n_estimators": Int % Range(1, None),
         "rf_random_state": Int,
@@ -121,8 +121,11 @@ plugin.methods.register_function(
         ),
         "impute": (
             "Missing-value imputation method. 'knn' uses "
-            "sklearn.impute.KNNImputer. 'rf' uses sklearn.impute.IterativeImputer "
-            "with sklearn.ensemble.RandomForestRegressor. Zero values and NaNs "
+            "imputeLCMD::impute.wrapper.KNN through R. 'rf' uses "
+            "sklearn.impute.IterativeImputer with "
+            "sklearn.ensemble.RandomForestRegressor. 'qrilc' uses "
+            "imputeLCMD::impute.QRILC through R on log2-transformed values, "
+            "then returns results to the original scale. Zero values and NaNs "
             "are treated as missing values during imputation."
         ),
         "knn_neighbors": "Number of neighbors for KNN imputation.",
@@ -144,5 +147,9 @@ plugin.methods.register_function(
         "Applies metabolomics-friendly pretreatment in order: imputation,  sample "
         "normalization, transformation, and feature scaling."
     ),
-    citations=[citations["dieterle2006probabilistic"], citations["scikit-learn"]],
+    citations=[
+        citations["dieterle2006probabilistic"],
+        citations["lazar2022imputelcmd"],
+        citations["scikit-learn"],
+    ],
 )

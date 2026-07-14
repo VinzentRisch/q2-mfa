@@ -5,8 +5,10 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import time
 import unittest
 import warnings
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -118,6 +120,7 @@ class TestPretreatMetabolome(unittest.TestCase):
         pdt.assert_frame_equal(out, expected)
 
     def test_preserves_shape_index_columns(self):
+        start = time.perf_counter()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             out = pretreat_metabolome(
@@ -128,6 +131,8 @@ class TestPretreatMetabolome(unittest.TestCase):
                 pseudocount=1e-6,
                 scale="auto",
             )
+        duration = time.perf_counter() - start
+        print(f"KNN pretreatment R script duration: {duration:.3f}s")
 
         self.assert_table_shape_index_columns(out, self.table)
         self.assertEqual(len(caught), 1)
@@ -377,21 +382,39 @@ class TestPretreatMetabolome(unittest.TestCase):
                 ref_label=None,
             )
 
-    def test_impute_preserves_shape_index_columns(self):
+    def test_knn_impute(self):
         out = impute_table(self.table, impute="knn", knn_neighbors=2)
 
         self.assert_table_shape_index_columns(out, self.table)
+        self.assertFalse(out.isna().to_numpy().any())
         self.assertFalse((out.to_numpy() == 0.0).any())
 
-    def test_impute_replaces_zeros(self):
-        out = impute_table(
-            self.table,
-            impute="rf",
-            rf_n_estimators=10,
-            rf_random_state=42,
+    def test_qrilc_impute(self):
+        out = impute_table(self.table, impute="qrilc")
+
+        self.assert_table_shape_index_columns(out, self.table)
+        self.assertFalse(out.isna().to_numpy().any())
+        self.assertFalse((out.to_numpy() == 0.0).any())
+
+    def test_rf_impute(self):
+        out = impute_table(self.table, impute="rf")
+
+        self.assert_table_shape_index_columns(out, self.table)
+        self.assertFalse(out.isna().to_numpy().any())
+        self.assertFalse((out.to_numpy() == 0.0).any())
+
+    @patch("q2_mfa.pretreat_metabolome.run_r_table_script")
+    def test_qrilc_imputes_in_log2_space_and_returns_original_scale(self, mock_run):
+        expected_log2_table = np.log2(self.table.replace(0, np.nan))
+        mock_run.return_value = expected_log2_table.T
+
+        out = impute_table(self.table, impute="qrilc")
+
+        mock_run.assert_called_once()
+        pdt.assert_frame_equal(
+            mock_run.call_args.kwargs["table"], expected_log2_table.T
         )
-
-        self.assertFalse((out.to_numpy() == 0.0).any())
+        pdt.assert_frame_equal(self.table.replace(0, np.nan), out)
 
     def test_pretreat_metabolome_rf_imputation(self):
         out = pretreat_metabolome(
@@ -400,11 +423,10 @@ class TestPretreatMetabolome(unittest.TestCase):
             transform=None,
             scale=None,
             impute="rf",
-            rf_n_estimators=10,
-            rf_random_state=42,
         )
 
         self.assert_table_shape_index_columns(out, self.table)
+        self.assertFalse(out.isna().to_numpy().any())
         self.assertFalse((out.to_numpy() == 0.0).any())
 
     def test_resolve_capture_holder_returns_none(self):

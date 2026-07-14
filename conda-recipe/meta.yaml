@@ -22,8 +22,8 @@ requirements:
 
   run:
     - scikit-bio
-    - scikit-learn
     - r-imputelcmd
+    - r-missforest
     - r-optparse
     - qiime2 >={{ qiime2 }}
     - q2-types >={{ q2_types }}

@@ -22,6 +22,7 @@ from q2_mfa.pretreat_metabolome import (
     normalize_pqn,
     normalize_tic,
     pretreat_metabolome,
+    remove_missing_features,
     resolve_capture_holder,
     scale_table,
     transform_table,
@@ -39,6 +40,8 @@ class TestPretreatMetabolome(unittest.TestCase):
             },
             index=["S1", "S2", "S3"],
         )
+
+        cls.table_with_missing_feature = cls.table.assign(F4=np.nan)
 
         cls.negative_table = pd.DataFrame(
             {
@@ -396,12 +399,30 @@ class TestPretreatMetabolome(unittest.TestCase):
         self.assertFalse(out.isna().to_numpy().any())
         self.assertFalse((out.to_numpy() == 0.0).any())
 
-    def test_rf_impute(self):
-        out = impute_table(self.table, impute="rf")
+    def test_miss_forest_impute(self):
+        with self.assertWarnsRegex(
+            RachisWarning,
+            "Removed 1 features with no observed values.",
+        ):
+            out = impute_table(
+                self.table_with_missing_feature,
+                impute="miss_forest",
+                mf_ntree=2,
+                mf_random_state=42,
+            )
 
         self.assert_table_shape_index_columns(out, self.table)
         self.assertFalse(out.isna().to_numpy().any())
         self.assertFalse((out.to_numpy() == 0.0).any())
+
+    def test_remove_missing_features(self):
+        with self.assertWarnsRegex(
+            RachisWarning,
+            "Removed 1 features with no observed values.",
+        ):
+            out = remove_missing_features(self.table_with_missing_feature)
+
+        pdt.assert_frame_equal(out, self.table)
 
     @patch("q2_mfa.pretreat_metabolome.run_r_table_script")
     def test_qrilc_imputes_in_log2_space_and_returns_original_scale(self, mock_run):
@@ -416,13 +437,13 @@ class TestPretreatMetabolome(unittest.TestCase):
         )
         pdt.assert_frame_equal(self.table.replace(0, np.nan), out)
 
-    def test_pretreat_metabolome_rf_imputation(self):
+    def test_pretreat_metabolome_miss_forest_imputation(self):
         out = pretreat_metabolome(
             self.table,
             sample_normalization=None,
             transform=None,
             scale=None,
-            impute="rf",
+            impute="miss_forest",
         )
 
         self.assert_table_shape_index_columns(out, self.table)

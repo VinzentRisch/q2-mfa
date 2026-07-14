@@ -81,10 +81,11 @@ plugin.methods.register_function(
         "transform": Str % Choices(["log", "log10", "sqrt"]),
         "pseudocount": Float % Range(0, None, inclusive_start=False),
         "scale": Str % Choices(["center", "auto", "pareto", "range"]),
-        "impute": Str % Choices(["knn", "rf", "qrilc"]),
+        "impute": Str % Choices(["knn", "miss_forest", "qrilc"]),
         "knn_neighbors": Int % Range(1, None),
-        "rf_n_estimators": Int % Range(1, None),
-        "rf_random_state": Int,
+        "mf_ntree": Int % Range(1, None),
+        "mf_threads": Int % Range(1, None),
+        "mf_random_state": Int % Range(0, 2**31 - 1),
     },
     outputs=[("pretreated_table", FeatureTable[Unconstrained])],
     input_descriptions={"table": "Metabolomics feature table."},
@@ -121,17 +122,17 @@ plugin.methods.register_function(
         ),
         "impute": (
             "Missing-value imputation method. 'knn' uses "
-            "imputeLCMD::impute.wrapper.KNN through R. 'rf' uses "
-            "sklearn.impute.IterativeImputer with "
-            "sklearn.ensemble.RandomForestRegressor. 'qrilc' uses "
+            "imputeLCMD::impute.wrapper.KNN through R. 'miss_forest' uses "
+            "missForest::missForest through R. 'qrilc' uses "
             "imputeLCMD::impute.QRILC through R on log2-transformed values, "
             "then returns results to the original scale. Zero values and NaNs "
             "are treated as missing values during imputation."
         ),
         "knn_neighbors": "Number of neighbors for KNN imputation.",
-        "rf_n_estimators": "Number of trees for RandomForest imputation.",
-        "rf_random_state": (
-            "Random state for RandomForest reproducibility. If RF imputation "
+        "mf_ntree": "Number of trees for missForest imputation.",
+        "mf_threads": ("Number of threads used by missForest's ranger backend."),
+        "mf_random_state": (
+            "Random seed for missForest reproducibility. If missForest imputation "
             "is used and this is omitted, a random seed is generated and "
             "captured in provenance."
         ),
@@ -150,6 +151,6 @@ plugin.methods.register_function(
     citations=[
         citations["dieterle2006probabilistic"],
         citations["lazar2022imputelcmd"],
-        citations["scikit-learn"],
+        citations["stekhoven2012missforest"],
     ],
 )

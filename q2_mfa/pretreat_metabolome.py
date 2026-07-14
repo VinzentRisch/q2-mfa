@@ -13,9 +13,6 @@ import pandas as pd
 import rachis
 from rachis.core.exceptions import RachisWarning
 from rachis.core.type import CaptureHolder
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.experimental import enable_iterative_imputer  # noqa: F401
-from sklearn.impute import IterativeImputer
 
 from q2_mfa.utils import run_r_table_script
 
@@ -157,24 +154,53 @@ def resolve_capture_holder(
             Captured/generated seed, explicit seed value, or None.
     """
     if random:
-        return CaptureHolder.get_or_set(capture_holder, lambda: secrets.randbits(32))
+        return CaptureHolder.get_or_set(
+            capture_holder, lambda: secrets.randbelow(2**31)
+        )
 
     return CaptureHolder.get_or_set(capture_holder, lambda: None)
+
+
+def remove_missing_features(table: pd.DataFrame) -> pd.DataFrame:
+    """
+    Removes features that have no observed values before missForest imputation.
+
+    Args:
+        table (pd.DataFrame): Numeric feature table with missing values encoded
+            as NaN.
+
+    Returns:
+        pd.DataFrame: Table without features that contain only missing values.
+
+    Warns:
+        RachisWarning: If one or more features are removed because they cannot
+            be imputed by missForest.
+    """
+    missing_features = table.columns[table.isna().all(axis=0)]
+    if len(missing_features) > 0:
+        warnings.warn(
+            f"Removed {len(missing_features)} features with no observed values.",
+            RachisWarning,
+        )
+        table = table.drop(columns=missing_features)
+
+    return table
 
 
 def impute_table(
     table: pd.DataFrame,
     impute: str = "knn",
     knn_neighbors: int = 10,
-    rf_n_estimators: int = 100,
-    rf_random_state: int | None = None,
+    mf_ntree: int = 100,
+    mf_threads: int = 1,
+    mf_random_state: int | None = None,
 ) -> pd.DataFrame:
     """
     Helper to perform missing-value imputation on a numeric dataframe.
 
     Supports:
         - "knn": imputeLCMD::impute.wrapper.KNN through Rscript
-        - "rf": IterativeImputer with RandomForestRegressor
+        - "miss_forest": missForest::missForest through Rscript
         - "qrilc": imputeLCMD::impute.QRILC through Rscript. The table is
           log2-transformed before calling R and transformed back afterward.
 
@@ -186,18 +212,21 @@ def impute_table(
             Numeric data frame (samples x features) to impute; missing values
             represented as zero or NaN.
         impute (str | None):
-            Imputation method: "knn", "rf", "qrilc", or None to skip
+            Imputation method: "knn", "miss_forest", "qrilc", or None to skip
             imputation.
         knn_neighbors (int):
             Number of neighbors for KNN imputation (used when impute == "knn").
-        rf_n_estimators (int):
-            Number of trees for RandomForestRegressor (used when impute == "rf").
-        rf_random_state (int | None):
-            Random state for RandomForest and IterativeImputer reproducibility.
+        mf_ntree (int):
+            Number of trees for missForest (used when impute == "miss_forest").
+        mf_threads (int):
+            Number of threads for missForest (used when impute == "miss_forest").
+        mf_random_state (int | None):
+            Seed for R's random-number generator before missForest runs.
 
     Returns:
         pd.DataFrame:
-            New DataFrame with imputed values, preserving index and columns.
+            New DataFrame with imputed values. For missForest, features with
+            no observed values are removed because they cannot be imputed.
 
     Raises:
         ValueError:
@@ -221,14 +250,18 @@ def impute_table(
         if impute == "qrilc":
             table_imp = np.exp2(table_imp)
 
-    elif impute == "rf":
+    elif impute == "miss_forest":
+        table = remove_missing_features(table)
 
-        estimator = RandomForestRegressor(
-            n_estimators=rf_n_estimators, random_state=rf_random_state
-        )
-        imp = IterativeImputer(estimator=estimator, random_state=rf_random_state)
-        table_imp = pd.DataFrame(
-            imp.fit_transform(table), index=table.index, columns=table.columns
+        table_imp = run_r_table_script(
+            table=table,
+            script_name="impute_missforest",
+            parameters={
+                "ntree": mf_ntree,
+                "threads": mf_threads,
+                "random_state": mf_random_state,
+            },
+            package_name="missForest",
         )
 
     return table_imp
@@ -365,14 +398,15 @@ def pretreat_metabolome(
     scale: str | None = None,
     impute: str | None = None,
     knn_neighbors: int = 5,
-    rf_n_estimators: int = 100,
-    rf_random_state: CaptureHolder[int] = None,
+    mf_ntree: int = 100,
+    mf_threads: int = 1,
+    mf_random_state: CaptureHolder[int] = None,
 ) -> pd.DataFrame:
     """
     Applies metabolomics-friendly preprocessing to a feature table.
 
     Steps (in order):
-        0) Optional imputation (knn, rf, or qrilc). QRILC imputes in log2
+        0) Optional imputation (knn, miss_forest, or qrilc). QRILC imputes in log2
            space and returns the result to the original scale.
         1) Sample normalization: tic, pqn, or tic_pqn
         2) Transform (log, log10, sqrt, or None)
@@ -404,17 +438,20 @@ def pretreat_metabolome(
             variance), "pareto" (divide by sqrt(std)), or "range" (divide by
             max-min). Scaling methods are applied after mean-centering.
         impute (str | None):
-            Missing-value imputation method. Supported: "knn", "rf", "qrilc",
+            Missing-value imputation method. Supported: "knn", "miss_forest",
+            "qrilc",
             or None. Zero values and NaNs are treated as missing values. QRILC
             uses log2-transformed values during imputation and returns values on
             the original scale.
         knn_neighbors (int):
             Number of neighbors for KNN imputation.
-        rf_n_estimators (int):
-            Number of trees for RandomForest used in iterative imputation.
-        rf_random_state (CaptureHolder[int]):
-            Random state for RandomForest / IterativeImputer reproducibility.
-            If RF imputation is used and this is omitted, a random seed is
+        mf_ntree (int):
+            Number of trees used by missForest.
+        mf_threads (int):
+            Number of threads used by missForest.
+        mf_random_state (CaptureHolder[int]):
+            Random seed for missForest reproducibility.
+            If missForest imputation is used and this is omitted, a random seed is
             generated and captured in provenance.
 
     Returns:
@@ -425,7 +462,9 @@ def pretreat_metabolome(
         ValueError:
             If inputs are invalid or options are unknown.
     """
-    rf_random_state = resolve_capture_holder(rf_random_state, random=impute == "rf")
+    mf_random_state = resolve_capture_holder(
+        mf_random_state, random=impute == "miss_forest"
+    )
 
     # 1: Imputation
     if impute is not None:
@@ -433,8 +472,9 @@ def pretreat_metabolome(
             table,
             impute=impute,
             knn_neighbors=knn_neighbors,
-            rf_n_estimators=rf_n_estimators,
-            rf_random_state=rf_random_state,
+            mf_ntree=mf_ntree,
+            mf_threads=mf_threads,
+            mf_random_state=mf_random_state,
         )
 
     # 2: Sample normalization

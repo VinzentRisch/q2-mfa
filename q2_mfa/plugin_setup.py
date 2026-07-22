@@ -5,12 +5,15 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import importlib
+
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis import Citations
 from rachis.core.type import Choices, Float, Range, Str
 from rachis.plugin import Plugin
 
 from q2_mfa import __version__, transform_clr
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -24,6 +27,7 @@ plugin = Plugin(
     short_description="PCA and MFA analysis",
     citations=[],
 )
+
 
 plugin.methods.register_function(
     function=transform_clr,
@@ -69,3 +73,18 @@ plugin.methods.register_function(
         citations["aton2025scikit"],
     ],
 )
+
+plugin.register_formats(
+    ComponentAnalysisDirFmt,
+)
+plugin.register_semantic_types(ComponentAnalysis)
+plugin.register_artifact_class(
+    ComponentAnalysis,
+    directory_format=ComponentAnalysisDirFmt,
+    description=(
+        "Represents the output for PCA and MFA actions implemented with the Prince "
+        "package."
+    ),
+)
+
+importlib.import_module("q2_mfa.types._transformer")

@@ -15,7 +15,7 @@ from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
 from rachis.plugin.testing import TestPluginBase
 from skbio import OrdinationResults
 
-from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisResult
 from q2_mfa.types._transformer import _TABLE_SPECS, _TableSpec
 
 _FEATURE_TABLE_ATTRS = (
@@ -45,8 +45,8 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
         cls.mfa_result = _load_component_analysis(cls.mfa_tables)
 
     def test_pca_component_analysis_to_dirfmt_transformer(self):
-        """Tests PCA ComponentAnalysis serialization against JSONL fixtures."""
-        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+        """Tests PCA ComponentAnalysisResult serialization against JSONL fixtures."""
+        to_fmt = self.get_transformer(ComponentAnalysisResult, ComponentAnalysisDirFmt)
 
         observed = to_fmt(self.pca_result)
         observed.validate()
@@ -54,8 +54,8 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
         self._assert_jsonl_dirs_equal(observed.path, self.pca_jsonl)
 
     def test_mfa_component_analysis_to_dirfmt_transformer(self):
-        """Tests MFA ComponentAnalysis serialization against JSONL fixtures."""
-        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+        """Tests MFA ComponentAnalysisResult serialization against JSONL fixtures."""
+        to_fmt = self.get_transformer(ComponentAnalysisResult, ComponentAnalysisDirFmt)
 
         observed = to_fmt(self.mfa_result)
         observed.validate()
@@ -64,7 +64,9 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
 
     def test_pca_jsonl_dirfmt_to_component_analysis_transformer(self):
         """Tests PCA JSONL directory-format deserialization."""
-        to_result = self.get_transformer(ComponentAnalysisDirFmt, ComponentAnalysis)
+        to_result = self.get_transformer(
+            ComponentAnalysisDirFmt, ComponentAnalysisResult
+        )
         fmt = ComponentAnalysisDirFmt(self.pca_jsonl, mode="r")
 
         observed = to_result(fmt)
@@ -74,7 +76,9 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
 
     def test_mfa_jsonl_dirfmt_to_component_analysis_transformer(self):
         """Tests MFA JSONL directory-format deserialization."""
-        to_result = self.get_transformer(ComponentAnalysisDirFmt, ComponentAnalysis)
+        to_result = self.get_transformer(
+            ComponentAnalysisDirFmt, ComponentAnalysisResult
+        )
         fmt = ComponentAnalysisDirFmt(self.mfa_jsonl, mode="r")
 
         observed = to_result(fmt)
@@ -138,7 +142,7 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
         """Tests that missing required tables fail with a clear error."""
         result = _load_component_analysis(self.pca_tables)
         result.sample_cosine_similarities = None
-        to_fmt = self.get_transformer(ComponentAnalysis, ComponentAnalysisDirFmt)
+        to_fmt = self.get_transformer(ComponentAnalysisResult, ComponentAnalysisDirFmt)
 
         with self.assertRaisesRegex(
             ValueError, "Missing required table: sample_cosine_similarities."
@@ -147,15 +151,15 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
 
     def _assert_component_analysis_equal(
         self,
-        observed: ComponentAnalysis,
-        expected: ComponentAnalysis,
+        observed: ComponentAnalysisResult,
+        expected: ComponentAnalysisResult,
     ) -> None:
         """
-        Asserts equality for every ComponentAnalysis output table.
+        Asserts equality for every ComponentAnalysisResult output table.
 
         Args:
-            observed (ComponentAnalysis): The observed result.
-            expected (ComponentAnalysis): The expected result.
+            observed (ComponentAnalysisResult): The observed result.
+            expected (ComponentAnalysisResult): The expected result.
 
         Returns:
             None
@@ -211,15 +215,15 @@ class TestComponentAnalysisFormatRegression(TestPluginBase):
             )
 
 
-def _load_component_analysis(directory: Path) -> ComponentAnalysis:
+def _load_component_analysis(directory: Path) -> ComponentAnalysisResult:
     """
-    Loads a ComponentAnalysis object from Prince-table fixture TSVs.
+    Loads a ComponentAnalysisResult object from Prince-table fixture TSVs.
 
     Args:
         directory (Path): The Prince-table fixture directory.
 
     Returns:
-        ComponentAnalysis: The loaded component-analysis result.
+        ComponentAnalysisResult: The loaded component-analysis result.
     """
     kwargs = {}
     for spec in _TABLE_SPECS:
@@ -237,7 +241,7 @@ def _load_component_analysis(directory: Path) -> ComponentAnalysis:
             kwargs[spec.attr] = _read_multi_columns_table(path)
         else:
             raise ValueError(f"Unknown table kind: {spec.kind}.")
-    return ComponentAnalysis(**kwargs)
+    return ComponentAnalysisResult(**kwargs)
 
 
 def _read_wide_table(path: Path, index: str) -> pd.DataFrame:

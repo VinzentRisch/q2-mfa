@@ -7,4 +7,4 @@
 # ----------------------------------------------------------------------------
 from rachis.core.type import SemanticType
 
-ComponentAnalysisType = SemanticType("ComponentAnalysis")
+ComponentAnalysis = SemanticType("ComponentAnalysis")

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 
-class ComponentAnalysis:
+class ComponentAnalysisResult:
     """
     This is a lookalike object for the prince PCA and MFA objects.
 

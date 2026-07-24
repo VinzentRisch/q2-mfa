@@ -13,7 +13,7 @@ from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
 from q2_mfa.pca import pca
-from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisType
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -85,7 +85,7 @@ plugin.methods.register_function(
         "engine": Str % Choices(["sklearn", "scipy"]),
         "filter_zero_variance": Bool,
     },
-    outputs=[("pca_results", ComponentAnalysisType)],
+    outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "n_components": "Number of principal components to compute.",
@@ -134,9 +134,9 @@ plugin.methods.register_function(
 plugin.register_formats(
     ComponentAnalysisDirFmt,
 )
-plugin.register_semantic_types(ComponentAnalysisType)
+plugin.register_semantic_types(ComponentAnalysis)
 plugin.register_artifact_class(
-    ComponentAnalysisType,
+    ComponentAnalysis,
     directory_format=ComponentAnalysisDirFmt,
     description=(
         "Represents the output for PCA and MFA actions implemented with the Prince "

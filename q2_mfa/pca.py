@@ -13,7 +13,7 @@ import prince
 from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
 
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.types import ComponentAnalysisResult
 
 
 def resolve_random_state(random_state: CaptureHolder[int], engine: str):
@@ -92,18 +92,18 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
 
 def create_component_analysis_object(
     pca_result: prince.PCA, table: pd.DataFrame
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
-    Convert a fitted Prince PCA result into a ComponentAnalysis object.
+    Convert a fitted Prince PCA result into a ComponentAnalysisResult object.
 
     Args:
         pca_result (prince.PCA): The fitted Prince PCA model.
         table (pd.DataFrame): The input table used to fit the PCA model.
 
     Returns:
-        ComponentAnalysis: The PCA result in component-analysis form.
+        ComponentAnalysisResult: The PCA result in component-analysis form.
     """
-    return ComponentAnalysis(
+    return ComponentAnalysisResult(
         eigenvalues=pca_result.eigenvalues_,
         percentage_of_variance=pca_result.percentage_of_variance_,
         cumulative_percentage_of_variance=(
@@ -128,7 +128,7 @@ def pca(
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
     filter_zero_variance: bool = True,
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
     Perform principal component analysis with prince.
 
@@ -150,7 +150,7 @@ def pca(
             before analysis.
 
     Returns:
-        ComponentAnalysis: The PCA result in component-analysis form.
+        ComponentAnalysisResult: The PCA result in component-analysis form.
     """
     table = drop_columns_with_missing_values(table)
     if filter_zero_variance:

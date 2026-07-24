@@ -23,7 +23,7 @@ from q2_mfa.pca import (
     pca,
     resolve_random_state,
 )
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.types import ComponentAnalysisResult
 
 
 class TestPCA(TestPluginBase):
@@ -68,7 +68,7 @@ class TestPCA(TestPluginBase):
             ),
         }
 
-        self.assertIsInstance(results, ComponentAnalysis)
+        self.assertIsInstance(results, ComponentAnalysisResult)
         self.assertTrue(results.is_pca)
         for output_name, observed in observed_vectors.items():
             expected = np.loadtxt(os.path.join(expected_dir, f"{output_name}.tsv"))
@@ -86,7 +86,7 @@ class TestPCA(TestPluginBase):
 
         observed = create_component_analysis_object(prince_result, self.table)
 
-        self.assertIsInstance(observed, ComponentAnalysis)
+        self.assertIsInstance(observed, ComponentAnalysisResult)
         self.assertTrue(observed.is_pca)
 
     def test_drop_columns_with_missing_values_filters_and_warns(self):

@@ -51,12 +51,9 @@ def drop_columns_with_missing_values(table: pd.DataFrame) -> pd.DataFrame:
     """
     missing_value_columns = table.columns[table.isna().any()]
     if len(missing_value_columns) > 0:
+        dropped_columns = ", ".join(map(str, missing_value_columns.to_flat_index()))
         warnings.warn(
-            (
-                "Dropped columns with missing values: "
-                f"{', '.join(str(column) for column in
-                             missing_value_columns.to_flat_index())}"
-            ),
+            f"Dropped columns with missing values: {dropped_columns}",
             RachisWarning,
             stacklevel=2,
         )
@@ -79,12 +76,9 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
     """
     zero_variance_columns = table.columns[table.nunique(dropna=False) <= 1]
     if len(zero_variance_columns) > 0:
+        dropped_columns = ", ".join(map(str, zero_variance_columns.to_flat_index()))
         warnings.warn(
-            (
-                "Dropped columns with zero variance: "
-                f"{', '.join(str(column) for column in
-                             zero_variance_columns.to_flat_index())}"
-            ),
+            f"Dropped columns with zero variance: {dropped_columns}",
             RachisWarning,
             stacklevel=2,
         )

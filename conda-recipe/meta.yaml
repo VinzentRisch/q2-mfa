@@ -12,7 +12,6 @@ requirements:
   host:
     - pip
     - python {{ python }}
-    - pip
     - setuptools
     - versioningit
     - wheel
@@ -25,6 +24,7 @@ requirements:
 
   run:
     - pandas
+    - prince-factor-analysis
     - scikit-bio
     - qiime2 >={{ qiime2 }}
     - q2-types >={{ q2_types }}
@@ -32,10 +32,7 @@ requirements:
 test:
   requires:
     - parameterized
-    - pip
   commands:
-    - python -m pip install prince
-    - python -c "import q2_mfa; import qiime2.plugins.mfa"
     - pytest --pyargs q2_mfa
 
 about:

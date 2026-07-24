@@ -17,7 +17,7 @@ from rachis.core.exceptions import RachisWarning
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa.pca import (
-    create_component_analysis_object,
+    create_result_object,
     drop_columns_with_missing_values,
     drop_zero_variance_columns,
     pca,
@@ -81,10 +81,10 @@ class TestPCA(TestPluginBase):
             ).to_numpy()
             npt.assert_allclose(observed, expected)
 
-    def test_create_component_analysis_object(self):
+    def test_create_result_object(self):
         prince_result = prince.PCA(engine="scipy").fit(self.table)
 
-        observed = create_component_analysis_object(prince_result, self.table)
+        observed = create_result_object(prince_result, self.table)
 
         self.assertIsInstance(observed, ComponentAnalysisResult)
         self.assertTrue(observed.is_pca)

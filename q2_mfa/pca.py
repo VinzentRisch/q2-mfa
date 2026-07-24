@@ -90,7 +90,7 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
-def create_component_analysis_object(
+def create_result_object(
     pca_result: prince.PCA, table: pd.DataFrame
 ) -> ComponentAnalysisResult:
     """
@@ -163,4 +163,4 @@ def pca(
     pca_params.pop("filter_zero_variance")
 
     pca_result = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
-    return create_component_analysis_object(pca_result, table)
+    return create_result_object(pca_result, table)

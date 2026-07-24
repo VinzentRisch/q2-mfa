@@ -15,12 +15,12 @@ from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
 
 from q2_mfa.pca import (
-    create_component_analysis_object,
+    create_result_object,
     drop_columns_with_missing_values,
     drop_zero_variance_columns,
     resolve_random_state,
 )
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.types import ComponentAnalysisResult
 
 
 def _parse_metadata_groups(metadata_groups, metadata_columns):
@@ -256,7 +256,7 @@ def mfa(
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
     filter_zero_variance: bool = True,
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
     Runs Multiple Factor Analysis and returns all Prince-derived outputs.
 
@@ -286,7 +286,7 @@ def mfa(
             before ordination.
 
     Returns:
-        ComponentAnalysis: The MFA result in component-analysis form.
+        ComponentAnalysisResult: The MFA result in component-analysis form.
     """
     random_state = resolve_random_state(random_state, engine)
 
@@ -304,4 +304,4 @@ def mfa(
     )
 
     mfa_result = prince.MFA(**mfa_params).fit(table)
-    return create_component_analysis_object(mfa_result, table)
+    return create_result_object(mfa_result, table)

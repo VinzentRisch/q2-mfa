@@ -13,7 +13,7 @@ import prince
 from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
 
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.types import ComponentAnalysisResult
 
 
 def resolve_random_state(random_state: CaptureHolder[int], engine: str):
@@ -92,11 +92,11 @@ def drop_zero_variance_columns(table: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
-def create_component_analysis_object(
+def create_result_object(
     prince_result: prince.PCA | prince.MFA, table: pd.DataFrame
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
-    Convert a fitted Prince PCA or MFA result into a ComponentAnalysis object.
+    Convert a fitted Prince PCA result into a ComponentAnalysisResult object.
 
     Args:
         prince_result (prince.PCA | prince.MFA): The fitted Prince model.
@@ -118,7 +118,7 @@ def create_component_analysis_object(
             "partial_contributions": prince_result.partial_contributions_,
         }
 
-    return ComponentAnalysis(
+    return ComponentAnalysisResult(
         eigenvalues=prince_result.eigenvalues_,
         percentage_of_variance=prince_result.percentage_of_variance_,
         cumulative_percentage_of_variance=(
@@ -144,7 +144,7 @@ def pca(
     random_state: CaptureHolder[int] = None,
     engine: str = "sklearn",
     filter_zero_variance: bool = True,
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
     Perform principal component analysis with prince.
 
@@ -166,7 +166,7 @@ def pca(
             before analysis.
 
     Returns:
-        ComponentAnalysis: The PCA result in component-analysis form.
+        ComponentAnalysisResult: The PCA result in component-analysis form.
     """
     table = drop_columns_with_missing_values(table)
     if filter_zero_variance:
@@ -179,4 +179,4 @@ def pca(
     pca_params.pop("filter_zero_variance")
 
     pca_result = prince.PCA(copy=True, check_input=True, **pca_params).fit(table)
-    return create_component_analysis_object(pca_result, table)
+    return create_result_object(pca_result, table)

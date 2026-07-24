@@ -14,7 +14,7 @@ from rachis.plugin import Citations, Plugin
 from q2_mfa import __version__, transform_clr
 from q2_mfa.mfa import mfa
 from q2_mfa.pca import pca
-from q2_mfa.types import ComponentAnalysisDirFmt, ComponentAnalysisType
+from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -137,7 +137,7 @@ plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
     parameters=ordination_parameters,
-    outputs=[("pca_results", ComponentAnalysisType)],
+    outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"pca_results": "The PCA results."},
@@ -161,7 +161,7 @@ plugin.methods.register_function(
     function=mfa,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=mfa_parameters,
-    outputs=[("mfa_results", ComponentAnalysisType)],
+    outputs=[("mfa_results", ComponentAnalysis)],
     input_descriptions={
         "tables": (
             "Optional feature tables to include as MFA groups. At least two "
@@ -192,9 +192,9 @@ plugin.methods.register_function(
 plugin.register_formats(
     ComponentAnalysisDirFmt,
 )
-plugin.register_semantic_types(ComponentAnalysisType)
+plugin.register_semantic_types(ComponentAnalysis)
 plugin.register_artifact_class(
-    ComponentAnalysisType,
+    ComponentAnalysis,
     directory_format=ComponentAnalysisDirFmt,
     description=(
         "Represents the output for PCA and MFA actions implemented with the Prince "

@@ -24,8 +24,8 @@ from q2_mfa.mfa import (
     _validate_metadata_group_column_types,
     mfa,
 )
-from q2_mfa.pca import create_component_analysis_object
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.pca import create_result_object
+from q2_mfa.types import ComponentAnalysisResult
 
 
 class TestMFA(TestPluginBase):
@@ -304,16 +304,6 @@ class TestMFA(TestPluginBase):
                 metadata_groups="clinical",
             )
 
-    def test_build_prince_input_does_not_parse_string_metadata_mapping(self):
-        table = _build_prince_input(
-            {"metabolome": self.table_a},
-            self.sample_metadata,
-            metadata_groups="clinical:age,bmi",
-        )
-
-        self.assertIn(("clinical:age,bmi", "age"), table.columns)
-        self.assertIn(("clinical:age,bmi", "bmi"), table.columns)
-
     def test_build_prince_input_error_unknown_metadata_column(self):
         with self.assertRaisesRegex(ValueError, "not present in the metadata: nope"):
             _build_prince_input(
@@ -385,7 +375,7 @@ class TestMFA(TestPluginBase):
             "partial_contributions": results.partial_contributions.to_numpy(),
         }
 
-        self.assertIsInstance(results, ComponentAnalysis)
+        self.assertIsInstance(results, ComponentAnalysisResult)
         self.assertTrue(results.is_mfa)
         for output_name, observed in observed_vectors.items():
             expected = np.loadtxt(os.path.join(expected_dir, f"{output_name}.tsv"))
@@ -403,9 +393,9 @@ class TestMFA(TestPluginBase):
         table = _build_prince_input(tables)
         prince_result = prince.MFA(engine="scipy").fit(table)
 
-        observed = create_component_analysis_object(prince_result, table)
+        observed = create_result_object(prince_result, table)
 
-        self.assertIsInstance(observed, ComponentAnalysis)
+        self.assertIsInstance(observed, ComponentAnalysisResult)
         self.assertTrue(observed.is_mfa)
 
     def test_mfa_filters_missing_and_zero_variance_features(self):

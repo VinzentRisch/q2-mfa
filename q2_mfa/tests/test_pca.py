@@ -17,13 +17,13 @@ from rachis.core.exceptions import RachisWarning
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa.pca import (
-    create_component_analysis_object,
+    create_result_object,
     drop_columns_with_missing_values,
     drop_zero_variance_columns,
     pca,
     resolve_random_state,
 )
-from q2_mfa.types import ComponentAnalysis
+from q2_mfa.types import ComponentAnalysisResult
 
 
 class TestPCA(TestPluginBase):
@@ -68,7 +68,7 @@ class TestPCA(TestPluginBase):
             ),
         }
 
-        self.assertIsInstance(results, ComponentAnalysis)
+        self.assertIsInstance(results, ComponentAnalysisResult)
         self.assertTrue(results.is_pca)
         for output_name, observed in observed_vectors.items():
             expected = np.loadtxt(os.path.join(expected_dir, f"{output_name}.tsv"))
@@ -81,12 +81,12 @@ class TestPCA(TestPluginBase):
             ).to_numpy()
             npt.assert_allclose(observed, expected)
 
-    def test_create_component_analysis_object(self):
+    def test_create_result_object(self):
         prince_result = prince.PCA(engine="scipy").fit(self.table)
 
-        observed = create_component_analysis_object(prince_result, self.table)
+        observed = create_result_object(prince_result, self.table)
 
-        self.assertIsInstance(observed, ComponentAnalysis)
+        self.assertIsInstance(observed, ComponentAnalysisResult)
         self.assertTrue(observed.is_pca)
 
     def test_drop_columns_with_missing_values_filters_and_warns(self):

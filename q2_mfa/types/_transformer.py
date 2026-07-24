@@ -21,7 +21,7 @@ from skbio import OrdinationResults
 from q2_mfa.plugin_setup import plugin
 
 from ._format import ComponentAnalysisDirFmt
-from ._result import ComponentAnalysis
+from ._result import ComponentAnalysisResult
 
 
 @dataclass(frozen=True)
@@ -160,13 +160,13 @@ _TABLE_SPECS = (
 
 @plugin.register_transformer
 def _component_analysis_to_dirfmt(
-    result: ComponentAnalysis,
+    result: ComponentAnalysisResult,
 ) -> ComponentAnalysisDirFmt:
     """
-    Converts a ComponentAnalysis result to a ComponentAnalysisDirFmt.
+    Converts a ComponentAnalysisResult to a ComponentAnalysisDirFmt.
 
     Args:
-        result (ComponentAnalysis): The PCA or MFA result object.
+        result (ComponentAnalysisResult): The PCA or MFA result object.
 
     Returns:
         ComponentAnalysisDirFmt: The JSONL-backed directory format.
@@ -185,15 +185,15 @@ def _component_analysis_to_dirfmt(
 @plugin.register_transformer
 def _dirfmt_to_component_analysis(
     ff: ComponentAnalysisDirFmt,
-) -> ComponentAnalysis:
+) -> ComponentAnalysisResult:
     """
-    Converts ComponentAnalysisDirFmt to a ComponentAnalysis object.
+    Converts ComponentAnalysisDirFmt to a ComponentAnalysisResult object.
 
     Args:
         ff (ComponentAnalysisDirFmt): The JSONL-backed directory format.
 
     Returns:
-        ComponentAnalysis: The reconstructed result.
+        ComponentAnalysisResult: The reconstructed result.
     """
     kwargs = {}
     for spec in _TABLE_SPECS:
@@ -202,7 +202,7 @@ def _dirfmt_to_component_analysis(
             kwargs[spec.attr] = None
             continue
         kwargs[spec.attr] = _read_result_table(path, spec)
-    return ComponentAnalysis(**kwargs)
+    return ComponentAnalysisResult(**kwargs)
 
 
 @plugin.register_transformer

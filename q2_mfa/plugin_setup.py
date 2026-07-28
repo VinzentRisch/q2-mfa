@@ -12,8 +12,9 @@ from rachis import Citations
 from rachis.core.type import Choices, Float, Range, Str
 from rachis.plugin import Plugin
 
-from q2_mfa import __version__, transform_clr
-from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa import __version__
+from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
@@ -87,4 +88,4 @@ plugin.register_artifact_class(
     ),
 )
 
-importlib.import_module("q2_mfa.types._transformer")
+importlib.import_module("q2_mfa.component_analysis.types._transformer")

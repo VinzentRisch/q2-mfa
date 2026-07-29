@@ -1,3 +1,0 @@
-{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"row_id","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"comp1","type":"number","missing":false,"title":"","description":"","extra":{}},{"name":"comp2","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"","extra":{}}
-{"row_id":"C14.0","comp1":-0.04,"comp2":-0.08}
-{"row_id":"C16.0","comp1":0.11,"comp2":-0.06}

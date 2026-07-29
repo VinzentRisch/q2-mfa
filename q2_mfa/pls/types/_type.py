@@ -5,6 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .types import PLSAnalysis, PLSAnalysisDirFmt
+from rachis.core.type import SemanticType
 
-__all__ = ["PLSAnalysis", "PLSAnalysisDirFmt"]
+PLSAnalysis = SemanticType("PLSAnalysis")

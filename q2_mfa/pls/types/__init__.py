@@ -5,6 +5,7 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .types import PLSAnalysis, PLSAnalysisDirFmt
+from ._format import PLSAnalysisDirFmt
+from ._type import PLSAnalysis
 
 __all__ = ["PLSAnalysis", "PLSAnalysisDirFmt"]

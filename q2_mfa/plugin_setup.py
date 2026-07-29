@@ -8,15 +8,14 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from rachis import Citations
-from rachis.core.type import Choices, Float, Range, Str
-from rachis.plugin import Plugin
+from rachis.core.type import Bool, Choices, Float, Int, Range, Str
+from rachis.plugin import Citations, Plugin
 
 from q2_mfa import __version__, transform_clr
+from q2_mfa.pca import pca
 from q2_mfa.types import ComponentAnalysis, ComponentAnalysisDirFmt
 
 citations = Citations.load("citations.bib", package="q2_mfa")
-
 
 plugin = Plugin(
     name="mfa",
@@ -71,6 +70,64 @@ plugin.methods.register_function(
         citations["martin2003dealing"],
         citations["aitchison1982statistical"],
         citations["aton2025scikit"],
+    ],
+)
+
+plugin.methods.register_function(
+    function=pca,
+    inputs={"table": FeatureTable[Unconstrained]},
+    parameters={
+        "rescale_with_mean": Bool,
+        "rescale_with_std": Bool,
+        "n_components": Int % Range(1, None),
+        "n_iter": Int % Range(0, None),
+        "random_state": Int,
+        "engine": Str % Choices(["sklearn", "scipy"]),
+        "filter_zero_variance": Bool,
+    },
+    outputs=[("pca_results", ComponentAnalysis)],
+    input_descriptions={"table": "The frequency table."},
+    parameter_descriptions={
+        "n_components": "Number of principal components to compute.",
+        "rescale_with_mean": (
+            "Whether to center each feature by subtracting its mean before "
+            "performing SVD."
+        ),
+        "rescale_with_std": (
+            "Whether to standardize each feature to unit variance before "
+            "performing SVD."
+        ),
+        "n_iter": (
+            "Number of iterations used by the 'sklearn' randomized SVD "
+            "engine. This parameter is ignored by the 'scipy' engine."
+        ),
+        "engine": (
+            "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy' "
+            "uses SciPy SVD."
+        ),
+        "random_state": (
+            "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+            "reproducible results across multiple function calls. This "
+            "parameter is ignored by the 'scipy' engine."
+        ),
+        "filter_zero_variance": (
+            "Whether to remove columns with zero variance before analysis."
+        ),
+    },
+    output_descriptions={"pca_results": "The PCA results."},
+    name="PCA",
+    description=(
+        "Principal component analysis implementation with the prince package. "
+        "The output is a component-analysis result containing eigenvalues, "
+        "sample coordinates, feature coordinates, variance percentages, and "
+        "supporting PCA tables from prince. The result can also be viewed as an "
+        "ordination result through the registered transformer. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package docs for more information:"
+        "https://maxhalford.github.io/prince/pca/"
+    ),
+    citations=[
+        citations["Halford_Prince"],
     ],
 )
 

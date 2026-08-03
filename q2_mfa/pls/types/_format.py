@@ -32,7 +32,9 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
     prop_expl_var = model.FileCollection(
         r"prop_expl_var/[^/]+\.jsonl", format=TableJSONLFileFormat
     )
-    vip = model.FileCollection(r"vip/[^/]+\.jsonl", format=TableJSONLFileFormat)
+    vip = model.FileCollection(
+        r"vip/[^/]+\.jsonl", format=TableJSONLFileFormat, optional=True
+    )
     ave = model.FileCollection(
         r"ave/[^/]+\.jsonl", format=TableJSONLFileFormat, optional=True
     )

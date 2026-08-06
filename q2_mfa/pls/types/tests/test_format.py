@@ -50,6 +50,7 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
             "variates.jsonl",
             "prop_expl_var.jsonl",
             "auc.jsonl",
+            "weighted_vote_error_rate.jsonl",
         ):
             with (
                 self.subTest(table_name=table_name),

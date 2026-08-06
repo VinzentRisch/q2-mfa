@@ -33,6 +33,7 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
     ncomp_selection_weighted_vote_error_rate = model.File(
         "ncomp_selection_weighted_vote_error_rate.jsonl",
         format=TableJSONLFileFormat,
+        optional=True,
     )
     final_model_weighted_vote_error_rate = model.File(
         "final_model_weighted_vote_error_rate.jsonl",
@@ -41,4 +42,5 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
     feature_selection_error_rate = model.File(
         "feature_selection_error_rate.jsonl",
         format=TableJSONLFileFormat,
+        optional=True,
     )

@@ -52,6 +52,7 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
             "auc.jsonl",
             "ncomp_selection_weighted_vote_error_rate.jsonl",
             "final_model_weighted_vote_error_rate.jsonl",
+            "feature_selection_error_rate.jsonl",
         ):
             with (
                 self.subTest(table_name=table_name),

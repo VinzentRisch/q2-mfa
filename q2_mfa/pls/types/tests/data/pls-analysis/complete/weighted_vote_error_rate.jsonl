@@ -1,0 +1,5 @@
+{"doctype":{"name":"table.jsonl","format":"application/x-json-lines","version":"1.0"},"direction":"row","style":"key:value","fields":[{"name":"distance","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"class","type":"string","missing":false,"title":"","description":"","extra":{}},{"name":"component","type":"integer","missing":false,"title":"","description":"","extra":{}},{"name":"value","type":"number","missing":false,"title":"","description":"","extra":{}}],"index":[],"title":"","description":"","extra":{}}
+{"distance":"max.dist","class":"Gastrectomy","component":0,"value":0.19}
+{"distance":"max.dist","class":"Overall.BER","component":0,"value":0.22}
+{"distance":"centroids.dist","class":"Overall.BER","component":0,"value":0.21}
+{"distance":"mahalanobis.dist","class":"Overall.BER","component":0,"value":0.20}

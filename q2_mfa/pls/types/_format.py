@@ -30,3 +30,6 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
+    weighted_vote_error_rate = model.File(
+        "weighted_vote_error_rate.jsonl", format=TableJSONLFileFormat
+    )

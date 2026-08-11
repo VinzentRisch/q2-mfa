@@ -9,8 +9,8 @@ import rachis.plugin.model as model
 from q2_types.tabular import TableJSONLFileFormat
 
 
-class PLSAnalysisDirFmt(model.DirectoryFormat):
-    """Stores consolidated long-form PLS and DIABLO result tables.
+class PLSFitDirFmt(model.DirectoryFormat):
+    """Stores consolidated long-form fitted PLS and DIABLO result tables.
 
     Each output category is represented by one JSONL table. Block-specific
     rows use an explicit ``block`` field, which keeps PLS and MFA result
@@ -30,17 +30,25 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
+    final_model_weighted_vote_error_rate = model.File(
+        "final_model_weighted_vote_error_rate.jsonl",
+        format=TableJSONLFileFormat,
+    )
+
+
+class PLSTuneDirFmt(model.DirectoryFormat):
+    """Stores PLS component and feature-selection tuning result tables."""
+
     ncomp_selection_weighted_vote_error_rate = model.File(
         "ncomp_selection_weighted_vote_error_rate.jsonl",
         format=TableJSONLFileFormat,
         optional=True,
     )
-    final_model_weighted_vote_error_rate = model.File(
-        "final_model_weighted_vote_error_rate.jsonl",
-        format=TableJSONLFileFormat,
-    )
     feature_selection_error_rate = model.File(
         "feature_selection_error_rate.jsonl",
         format=TableJSONLFileFormat,
-        optional=True,
+    )
+    selected_features = model.File(
+        "selected_features.jsonl",
+        format=TableJSONLFileFormat,
     )

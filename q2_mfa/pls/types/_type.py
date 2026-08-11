@@ -7,4 +7,5 @@
 # ----------------------------------------------------------------------------
 from rachis.core.type import SemanticType
 
-PLSAnalysis = SemanticType("PLSAnalysis")
+PLSFit = SemanticType("PLSFit")
+PLSTune = SemanticType("PLSTune")

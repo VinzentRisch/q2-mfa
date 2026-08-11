@@ -5,6 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .types import PLSAnalysis, PLSAnalysisDirFmt
+from .types import PLSFit, PLSFitDirFmt, PLSTune, PLSTuneDirFmt
 
-__all__ = ["PLSAnalysis", "PLSAnalysisDirFmt"]
+__all__ = ["PLSFit", "PLSFitDirFmt", "PLSTune", "PLSTuneDirFmt"]

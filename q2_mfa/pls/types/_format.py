@@ -36,19 +36,14 @@ class PLSFitDirFmt(model.DirectoryFormat):
     )
 
 
-class PLSTuneDirFmt(model.DirectoryFormat):
-    """Stores PLS component and feature-selection tuning result tables."""
+PLSTuneComponentsDirFmt = model.SingleFileDirectoryFormat(
+    "PLSTuneComponentsDirFmt",
+    "ncomp_selection_weighted_vote_error_rate.jsonl",
+    TableJSONLFileFormat,
+)
 
-    ncomp_selection_weighted_vote_error_rate = model.File(
-        "ncomp_selection_weighted_vote_error_rate.jsonl",
-        format=TableJSONLFileFormat,
-        optional=True,
-    )
-    feature_selection_error_rate = model.File(
-        "feature_selection_error_rate.jsonl",
-        format=TableJSONLFileFormat,
-    )
-    selected_features = model.File(
-        "selected_features.jsonl",
-        format=TableJSONLFileFormat,
-    )
+PLSTuneFeaturesDirFmt = model.SingleFileDirectoryFormat(
+    "PLSTuneFeaturesDirFmt",
+    "feature_selection_error_rate.jsonl",
+    TableJSONLFileFormat,
+)

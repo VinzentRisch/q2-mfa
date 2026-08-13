@@ -5,6 +5,20 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .types import PLSFit, PLSFitDirFmt, PLSTune, PLSTuneDirFmt
+from .types import (
+    PLSFit,
+    PLSFitDirFmt,
+    PLSTuneComponents,
+    PLSTuneComponentsDirFmt,
+    PLSTuneFeatures,
+    PLSTuneFeaturesDirFmt,
+)
 
-__all__ = ["PLSFit", "PLSFitDirFmt", "PLSTune", "PLSTuneDirFmt"]
+__all__ = [
+    "PLSFit",
+    "PLSFitDirFmt",
+    "PLSTuneComponents",
+    "PLSTuneComponentsDirFmt",
+    "PLSTuneFeatures",
+    "PLSTuneFeaturesDirFmt",
+]

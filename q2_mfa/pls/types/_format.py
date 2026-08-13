@@ -39,14 +39,15 @@ class PLSFitDirFmt(model.DirectoryFormat):
 class PLSTuneComponentsDirFmt(model.DirectoryFormat):
     """Stores DIABLO component-selection diagnostics."""
 
-    ncomp_selection_weighted_vote_error_rate = model.File(
-        "ncomp_selection_weighted_vote_error_rate.jsonl",
+    ncomp_selection_vote_error_rate = model.File(
+        "ncomp_selection_vote_error_rate.jsonl",
         format=TableJSONLFileFormat,
     )
     ncomp_selection_choice_matrix = model.File(
         "ncomp_selection_choice_matrix.jsonl",
         format=TableJSONLFileFormat,
     )
+
 
 PLSTuneFeaturesDirFmt = model.SingleFileDirectoryFormat(
     "PLSTuneFeaturesDirFmt",

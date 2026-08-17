@@ -51,8 +51,8 @@ class PLSTuneComponentsDirFmt(model.DirectoryFormat):
         "error_rate.jsonl",
         format=TableJSONLFileFormat,
     )
-    ncomp_selection_choice_matrix = model.File(
-        "ncomp_selection_choice_matrix.jsonl",
+    choice_matrix = model.File(
+        "choice_matrix.jsonl",
         format=TableJSONLFileFormat,
     )
 

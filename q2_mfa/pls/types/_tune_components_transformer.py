@@ -26,8 +26,8 @@ def _tune_components_to_dirfmt(
         result.error_rate,
     )
     _write_table(
-        directory_format.ncomp_selection_choice_matrix.path_maker(),
-        result.ncomp_selection_choice_matrix,
+        directory_format.choice_matrix.path_maker(),
+        result.choice_matrix,
     )
     return directory_format
 

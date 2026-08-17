@@ -98,7 +98,7 @@ def tune_components_block_splsda(
             ],
             ignore_index=True,
         ),
-        ncomp_selection_choice_matrix=choice_matrix,
+        choice_matrix=choice_matrix,
     )
 
 

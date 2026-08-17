@@ -77,7 +77,7 @@ class TestPLSTuneComponentsDirFmt(TestPluginBase):
     def test_required_tables_must_exist(self):
         for table_name in (
             "error_rate.jsonl",
-            "ncomp_selection_choice_matrix.jsonl",
+            "choice_matrix.jsonl",
         ):
             with (
                 self.subTest(table_name=table_name),

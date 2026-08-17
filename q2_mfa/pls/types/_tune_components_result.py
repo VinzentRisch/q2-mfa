@@ -15,4 +15,4 @@ class _PLSTuneComponentsResult:
     """Holds DIABLO component-selection results before serialization."""
 
     error_rate: pd.DataFrame
-    ncomp_selection_choice_matrix: pd.DataFrame
+    choice_matrix: pd.DataFrame

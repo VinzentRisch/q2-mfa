@@ -99,7 +99,7 @@ def test_tune_components_runs_perf_and_returns_error_rates(monkeypatch, capsys):
         result.error_rate,
         pd.concat([expected, expected.assign(vote="majority")], ignore_index=True),
     )
-    assert result.ncomp_selection_choice_matrix.to_dict("records") == [
+    assert result.choice_matrix.to_dict("records") == [
         {
             "vote": "weighted",
             "measure": "Overall.BER",

@@ -47,7 +47,9 @@ class TestPLSFitDirFmt(TestPluginBase):
             "variates.jsonl",
             "prop_expl_var.jsonl",
             "auc.jsonl",
-            "final_model_weighted_vote_error_rate.jsonl",
+            "error_rate.jsonl",
+            "feature_component_correlation.jsonl",
+            "feature_similarity.jsonl",
         ):
             with (
                 self.subTest(table_name=table_name),
@@ -74,7 +76,7 @@ class TestPLSTuneComponentsDirFmt(TestPluginBase):
 
     def test_required_tables_must_exist(self):
         for table_name in (
-            "ncomp_selection_vote_error_rate.jsonl",
+            "error_rate.jsonl",
             "ncomp_selection_choice_matrix.jsonl",
         ):
             with (
@@ -104,7 +106,7 @@ class TestPLSTuneFeaturesDirFmt(TestPluginBase):
         with tempfile.TemporaryDirectory() as temp_dir:
             fixture_dir = Path(temp_dir) / "fixture"
             shutil.copytree(self.fixture_dir, fixture_dir)
-            (fixture_dir / "feature_selection_error_rate.jsonl").unlink()
+            (fixture_dir / "error_rate.jsonl").unlink()
 
             with self.assertRaises(ValidationError):
                 PLSTuneFeaturesDirFmt(fixture_dir, mode="r").validate()
@@ -114,7 +116,7 @@ class TestPLSTuneFeaturesDirFmt(TestPluginBase):
             fixture_dir = Path(temp_dir) / "fixture"
             shutil.copytree(self.fixture_dir, fixture_dir)
             shutil.copy(
-                fixture_dir / "feature_selection_error_rate.jsonl",
+                fixture_dir / "error_rate.jsonl",
                 fixture_dir / "extra.jsonl",
             )
 

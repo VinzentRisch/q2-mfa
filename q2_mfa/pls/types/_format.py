@@ -30,8 +30,16 @@ class PLSFitDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
-    final_model_weighted_vote_error_rate = model.File(
-        "final_model_weighted_vote_error_rate.jsonl",
+    error_rate = model.File(
+        "error_rate.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    feature_component_correlation = model.File(
+        "feature_component_correlation.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    feature_similarity = model.File(
+        "feature_similarity.jsonl",
         format=TableJSONLFileFormat,
     )
 
@@ -39,8 +47,8 @@ class PLSFitDirFmt(model.DirectoryFormat):
 class PLSTuneComponentsDirFmt(model.DirectoryFormat):
     """Stores DIABLO component-selection diagnostics."""
 
-    ncomp_selection_vote_error_rate = model.File(
-        "ncomp_selection_vote_error_rate.jsonl",
+    error_rate = model.File(
+        "error_rate.jsonl",
         format=TableJSONLFileFormat,
     )
     ncomp_selection_choice_matrix = model.File(
@@ -51,6 +59,6 @@ class PLSTuneComponentsDirFmt(model.DirectoryFormat):
 
 PLSTuneFeaturesDirFmt = model.SingleFileDirectoryFormat(
     "PLSTuneFeaturesDirFmt",
-    "feature_selection_error_rate.jsonl",
+    "error_rate.jsonl",
     TableJSONLFileFormat,
 )

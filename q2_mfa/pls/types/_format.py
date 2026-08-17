@@ -9,8 +9,8 @@ import rachis.plugin.model as model
 from q2_types.tabular import TableJSONLFileFormat
 
 
-class PLSAnalysisDirFmt(model.DirectoryFormat):
-    """Stores consolidated long-form PLS and DIABLO result tables.
+class PLSFitDirFmt(model.DirectoryFormat):
+    """Stores consolidated long-form fitted PLS and DIABLO result tables.
 
     Each output category is represented by one JSONL table. Block-specific
     rows use an explicit ``block`` field, which keeps PLS and MFA result
@@ -30,17 +30,39 @@ class PLSAnalysisDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
-    ncomp_selection_weighted_vote_error_rate = model.File(
-        "ncomp_selection_weighted_vote_error_rate.jsonl",
-        format=TableJSONLFileFormat,
-        optional=True,
-    )
-    final_model_weighted_vote_error_rate = model.File(
-        "final_model_weighted_vote_error_rate.jsonl",
+    error_rate = model.File(
+        "error_rate.jsonl",
         format=TableJSONLFileFormat,
     )
-    feature_selection_error_rate = model.File(
-        "feature_selection_error_rate.jsonl",
+    feature_component_correlation = model.File(
+        "feature_component_correlation.jsonl", format=TableJSONLFileFormat
+    )
+    feature_similarity = model.File(
+        "feature_similarity.jsonl", format=TableJSONLFileFormat
+    )
+
+
+class PLSTuneComponentsDirFmt(model.DirectoryFormat):
+    """Stores DIABLO component-selection diagnostics."""
+
+    error_rate = model.File(
+        "error_rate.jsonl",
         format=TableJSONLFileFormat,
-        optional=True,
+    )
+    ncomp_selection_choice_matrix = model.File(
+        "ncomp_selection_choice_matrix.jsonl",
+        format=TableJSONLFileFormat,
+    )
+
+
+class PLSFeatureSelectionDirFmt(model.DirectoryFormat):
+    """Stores DIABLO feature-selection diagnostics and selected keepX values."""
+
+    error_rate = model.File(
+        "error_rate.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    selected_features = model.File(
+        "selected_features.jsonl",
+        format=TableJSONLFileFormat,
     )

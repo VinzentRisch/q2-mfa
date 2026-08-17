@@ -7,14 +7,37 @@
 # ----------------------------------------------------------------------------
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import PLSAnalysis, PLSAnalysisDirFmt
+from q2_mfa.pls import (
+    PLSFeatureSelection,
+    PLSFeatureSelectionDirFmt,
+    PLSFit,
+    PLSFitDirFmt,
+    PLSTuneComponents,
+    PLSTuneComponentsDirFmt,
+)
 
 
 class TestPLSTypes(TestPluginBase):
     package = "q2_mfa.pls.types.tests"
 
-    def test_pls_analysis_semantic_type_registration(self):
-        self.assertRegisteredSemanticType(PLSAnalysis)
+    def test_pls_fit_semantic_type_registration(self):
+        self.assertRegisteredSemanticType(PLSFit)
 
-    def test_pls_analysis_semantic_type_to_format_registration(self):
-        self.assertSemanticTypeRegisteredToFormat(PLSAnalysis, PLSAnalysisDirFmt)
+    def test_pls_fit_semantic_type_to_format_registration(self):
+        self.assertSemanticTypeRegisteredToFormat(PLSFit, PLSFitDirFmt)
+
+    def test_pls_tune_components_semantic_type_registration(self):
+        self.assertRegisteredSemanticType(PLSTuneComponents)
+
+    def test_pls_tune_components_semantic_type_to_format_registration(self):
+        self.assertSemanticTypeRegisteredToFormat(
+            PLSTuneComponents, PLSTuneComponentsDirFmt
+        )
+
+    def test_pls_feature_selection_semantic_type_registration(self):
+        self.assertRegisteredSemanticType(PLSFeatureSelection)
+
+    def test_pls_feature_selection_semantic_type_to_format_registration(self):
+        self.assertSemanticTypeRegisteredToFormat(
+            PLSFeatureSelection, PLSFeatureSelectionDirFmt
+        )

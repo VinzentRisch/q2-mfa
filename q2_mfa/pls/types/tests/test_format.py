@@ -12,10 +12,10 @@ from pathlib import Path
 from rachis.plugin.model import ValidationError
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import PLSAnalysisDirFmt
+from q2_mfa.pls import PLSFeatureSelectionDirFmt, PLSFitDirFmt, PLSTuneComponentsDirFmt
 
 
-class TestPLSAnalysisDirFmt(TestPluginBase):
+class TestPLSFitDirFmt(TestPluginBase):
     package = "q2_mfa.pls.types.tests"
 
     @classmethod
@@ -24,9 +24,7 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
         cls.fixture_dir = Path(helper.get_data_path("pls-analysis/complete"))
 
     def test_complete_fixture_validates(self):
-        fmt = PLSAnalysisDirFmt(self.fixture_dir, mode="r")
-
-        fmt.validate()
+        PLSFitDirFmt(self.fixture_dir, mode="r").validate()
 
     def test_optional_tables_are_optional(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -38,13 +36,10 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
                 "ave.jsonl",
                 "criterion.jsonl",
                 "feature_stability.jsonl",
-                "ncomp_selection_weighted_vote_error_rate.jsonl",
-                "feature_selection_error_rate.jsonl",
             ):
-                path = fixture_dir / table_name
-                path.unlink()
+                (fixture_dir / table_name).unlink()
 
-            PLSAnalysisDirFmt(fixture_dir, mode="r").validate()
+            PLSFitDirFmt(fixture_dir, mode="r").validate()
 
     def test_required_tables_must_exist(self):
         for table_name in (
@@ -52,7 +47,9 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
             "variates.jsonl",
             "prop_expl_var.jsonl",
             "auc.jsonl",
-            "final_model_weighted_vote_error_rate.jsonl",
+            "error_rate.jsonl",
+            "feature_component_correlation.jsonl",
+            "feature_similarity.jsonl",
         ):
             with (
                 self.subTest(table_name=table_name),
@@ -63,4 +60,60 @@ class TestPLSAnalysisDirFmt(TestPluginBase):
                 (fixture_dir / table_name).unlink()
 
                 with self.assertRaises(ValidationError):
-                    PLSAnalysisDirFmt(fixture_dir, mode="r").validate()
+                    PLSFitDirFmt(fixture_dir, mode="r").validate()
+
+
+class TestPLSTuneComponentsDirFmt(TestPluginBase):
+    package = "q2_mfa.pls.types.tests"
+
+    @classmethod
+    def setUpClass(cls):
+        helper = cls()
+        cls.fixture_dir = Path(helper.get_data_path("pls-tune-components/complete"))
+
+    def test_complete_fixture_validates(self):
+        PLSTuneComponentsDirFmt(self.fixture_dir, mode="r").validate()
+
+    def test_required_tables_must_exist(self):
+        for table_name in (
+            "error_rate.jsonl",
+            "ncomp_selection_choice_matrix.jsonl",
+        ):
+            with (
+                self.subTest(table_name=table_name),
+                tempfile.TemporaryDirectory() as temp_dir,
+            ):
+                fixture_dir = Path(temp_dir) / "fixture"
+                shutil.copytree(self.fixture_dir, fixture_dir)
+                (fixture_dir / table_name).unlink()
+
+                with self.assertRaises(ValidationError):
+                    PLSTuneComponentsDirFmt(fixture_dir, mode="r").validate()
+
+
+class TestPLSFeatureSelectionDirFmt(TestPluginBase):
+    package = "q2_mfa.pls.types.tests"
+
+    @classmethod
+    def setUpClass(cls):
+        helper = cls()
+        cls.fixture_dir = Path(helper.get_data_path("pls-feature-selection/complete"))
+
+    def test_complete_fixture_validates(self):
+        PLSFeatureSelectionDirFmt(self.fixture_dir, mode="r").validate()
+
+    def test_required_tables_must_exist(self):
+        for table_name in (
+            "error_rate.jsonl",
+            "selected_features.jsonl",
+        ):
+            with (
+                self.subTest(table_name=table_name),
+                tempfile.TemporaryDirectory() as temp_dir,
+            ):
+                fixture_dir = Path(temp_dir) / "fixture"
+                shutil.copytree(self.fixture_dir, fixture_dir)
+                (fixture_dir / table_name).unlink()
+
+                with self.assertRaises(ValidationError):
+                    PLSFeatureSelectionDirFmt(fixture_dir, mode="r").validate()

@@ -75,62 +75,60 @@ plugin.methods.register_function(
 )
 
 ordination_parameters = {
+    "n_components": Int % Range(2, None),
     "rescale_with_mean": Bool,
     "rescale_with_std": Bool,
-    "n_components": Int % Range(2, None),
+    "filter_zero_variance": Bool,
+    "engine": Str % Choices(["sklearn", "scipy"]),
     "n_iter": Int % Range(0, None),
     "random_state": Int,
-    "engine": Str % Choices(["sklearn", "scipy"]),
-    "filter_zero_variance": Bool,
 }
-
 ordination_parameter_descriptions = {
     "n_components": "Number of principal components to compute.",
     "rescale_with_mean": (
-        "Whether to center each feature by subtracting its mean before "
-        "performing SVD. "
+        "Whether to center each feature by subtracting its mean before SVD (Singular "
+        "Value Decomposition)."
     ),
     "rescale_with_std": (
-        "Whether to standardize each feature to unit variance before " "performing SVD."
+        "Whether to standardize each feature to unit variance before SVD."
+    ),
+    "filter_zero_variance": (
+        "Whether to remove columns with zero variance before SVD."
+    ),
+    "engine": (
+        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "uses deterministic SciPy SVD."
     ),
     "n_iter": (
         "Number of iterations used by the 'sklearn' randomized SVD "
-        "engine. This parameter is ignored by the 'scipy' engine.  "
-    ),
-    "engine": (
-        "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy'"
-        " uses SciPy SVD."
+        "engine. This parameter is ignored by the 'scipy' engine."
     ),
     "random_state": (
-        "Random seedused by the 'sklearn' SVD engine. Pass an int for "
-        "reproducible results across multiple function calls.This "
+        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "reproducible results across multiple function calls. This "
         "parameter is ignored by the 'scipy' engine."
-    ),
-    "filter_zero_variance": (
-        "Whether to remove columns with zero variance before ordination."
     ),
 }
 
 mfa_parameters = {
-    **ordination_parameters,
     "sample_metadata": Metadata,
     "metadata_groups": Collection[Str],
+    **ordination_parameters,
 }
-
 mfa_parameter_descriptions = {
-    **ordination_parameter_descriptions,
     "sample_metadata": (
         "Optional sample metadata to include as additional MFA groups."
     ),
     "metadata_groups": (
         "Optional mapping from metadata group names to comma-separated metadata "
         "column strings. Pass a collection/dict such as "
-        "{'group': 'column1,column2'} to define explicit groups. If only a "
+        "{'group': 'column1,column2'} to define explicit groups. If a single "
         "string is provided, all metadata columns are included in a group with "
         "that string as the group name. If sample metadata is provided without "
         "this parameter, all metadata columns are included in a group named "
         "'metadata'. Groups must contain only numeric or only categorical columns."
     ),
+    **ordination_parameter_descriptions,
 }
 
 plugin.methods.register_function(
@@ -173,14 +171,10 @@ plugin.methods.register_function(
     output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",
     description=(
-        "Multiple Factor Analysis (MFA) from multiple feature tables. Each "
-        "table is treated as a separate group, and the analysis is performed "
-        "with the prince python package."
-        "The output is an ordination result: eigenvalues correspond to prince "
-        "eigenvalues, sites correspond to sample coordinates, species correspond to "
-        "feature coordinates, and proportion explained corresponds to prince "
-        "percentage of variance. All other outputs come directly from the prince "
-        "package. Please check the prince package docs for more information:"
+        "Multiple Factor Analysis (MFA). Each table is treated as a separate group, "
+        "and the analysis is performed with the prince python package. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package documentation for more information: "
         "https://maxhalford.github.io/prince/mfa/"
     ),
     citations=[

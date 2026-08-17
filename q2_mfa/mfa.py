@@ -6,6 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
+from collections.abc import Iterable, Mapping
 from functools import reduce
 
 import pandas as pd
@@ -23,7 +24,10 @@ from q2_mfa.pca import (
 from q2_mfa.types import ComponentAnalysisResult
 
 
-def _parse_metadata_groups(metadata_groups, metadata_columns):
+def _parse_metadata_groups(
+    metadata_groups: str | Mapping[str, str] | None,
+    metadata_columns: Iterable[str],
+) -> dict[str, list[str]]:
     """
     Resolves metadata group specifications into group-to-column mappings.
 
@@ -61,7 +65,10 @@ def _parse_metadata_groups(metadata_groups, metadata_columns):
     return group_mapping
 
 
-def _validate_metadata_group_column_types(sample_metadata, group_mapping):
+def _validate_metadata_group_column_types(
+    sample_metadata: Metadata,
+    group_mapping: Mapping[str, Iterable[str]],
+) -> None:
     """
     Validates that each metadata group contains only one metadata column type.
 
@@ -89,7 +96,10 @@ def _validate_metadata_group_column_types(sample_metadata, group_mapping):
             )
 
 
-def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
+def _metadata_to_grouped_tables(
+    sample_metadata: Metadata | None,
+    metadata_groups: str | Mapping[str, str] | None,
+) -> dict[str, pd.DataFrame]:
     """
     Converts sample metadata into per-group DataFrames for MFA.
 
@@ -151,9 +161,9 @@ def _metadata_to_grouped_tables(sample_metadata, metadata_groups):
 
 
 def _build_prince_input(
-    tables: dict = None,
-    sample_metadata=None,
-    metadata_groups=None,
+    tables: Mapping[str, pd.DataFrame] | None = None,
+    sample_metadata: Metadata | None = None,
+    metadata_groups: str | Mapping[str, str] | None = None,
     filter_zero_variance: bool = True,
 ) -> pd.DataFrame:
     """
@@ -247,15 +257,15 @@ def _build_prince_input(
 
 def mfa(
     tables: pd.DataFrame = None,
-    sample_metadata: Metadata = None,
-    metadata_groups: dict = None,
+    sample_metadata: Metadata | None = None,
+    metadata_groups: dict | None = None,
+    n_components: int = 2,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
-    n_components: int = 2,
-    n_iter: int = 3,
-    random_state: CaptureHolder[int] = None,
-    engine: str = "sklearn",
     filter_zero_variance: bool = True,
+    engine: str = "sklearn",
+    n_iter: int = 3,
+    random_state: CaptureHolder[int] | None = None,
 ) -> ComponentAnalysisResult:
     """
     Runs Multiple Factor Analysis and returns all Prince-derived outputs.
@@ -273,17 +283,17 @@ def mfa(
         metadata_groups (dict | None): Optional metadata group mapping where
             keys are group names and values are comma-separated metadata column
             names.
+        n_components (int): Number of principal components to compute.
         rescale_with_mean (bool): Whether Prince should center features before
             SVD.
         rescale_with_std (bool): Whether Prince should standardize features
             before SVD.
-        n_components (int): Number of principal components to compute.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before SVD.
+        engine (str): Prince SVD engine to use.
         n_iter (int): Number of iterations used by the randomized SVD engine.
         random_state (CaptureHolder[int] | None): Random seed capture used for
             reproducible randomized SVD.
-        engine (str): Prince SVD engine to use.
-        filter_zero_variance (bool): Whether to remove zero-variance columns
-            before ordination.
 
     Returns:
         ComponentAnalysisResult: The MFA result in component-analysis form.

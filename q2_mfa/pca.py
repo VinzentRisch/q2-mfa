@@ -16,7 +16,7 @@ from rachis.plugin import CaptureHolder
 from q2_mfa.types import ComponentAnalysisResult
 
 
-def resolve_random_state(random_state: CaptureHolder[int], engine: str):
+def resolve_random_state(random_state: CaptureHolder[int] | None, engine: str):
     """
     Resolve the random seed used by the selected PCA engine.
 
@@ -131,13 +131,13 @@ def create_result_object(
 
 def pca(
     table: pd.DataFrame,
+    n_components: int = 2,
     rescale_with_mean: bool = True,
     rescale_with_std: bool = True,
-    n_components: int = 2,
-    n_iter: int = 3,
-    random_state: CaptureHolder[int] = None,
-    engine: str = "sklearn",
     filter_zero_variance: bool = True,
+    engine: str = "sklearn",
+    n_iter: int = 3,
+    random_state: CaptureHolder[int] | None = None,
 ) -> ComponentAnalysisResult:
     """
     Perform principal component analysis with prince.
@@ -148,16 +148,17 @@ def pca(
 
     Args:
         table (pd.DataFrame): The input sample-by-feature table.
+        n_components (int): The number of principal components to compute.
         rescale_with_mean (bool): Whether to center each column before SVD.
         rescale_with_std (bool): Whether to scale each column to unit variance
             before SVD.
-        n_components (int): The number of principal components to compute.
+        filter_zero_variance (bool): Whether to remove zero-variance columns
+            before SVD.
+        engine (str): The SVD engine used by prince.
         n_iter (int): The number of iterations used by the sklearn randomized
             SVD engine.
-        random_state (CaptureHolder[int]): The optional random seed holder.
-        engine (str): The SVD engine used by prince.
-        filter_zero_variance (bool): Whether to remove zero-variance columns
-            before analysis.
+        random_state (CaptureHolder[int] | None): The optional random seed
+            holder.
 
     Returns:
         ComponentAnalysisResult: The PCA result in component-analysis form.

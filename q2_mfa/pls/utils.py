@@ -50,9 +50,7 @@ def _ncomp_from_tuned_components(tuned_components, weighted, measure, distance) 
     if tuned_components is None:
         raise ValueError("Provide ncomp or a tuned-components artifact.")
     matrix = table_jsonl_to_df(
-        TableJSONLFileFormat(
-            tuned_components.ncomp_selection_choice_matrix.path_maker(), mode="r"
-        )
+        TableJSONLFileFormat(tuned_components.choice_matrix.path_maker(), mode="r")
     )
     vote = "weighted" if weighted else "majority"
     requested_measure = "Overall.BER" if measure == "BER" else "Overall.ER"

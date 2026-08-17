@@ -106,7 +106,7 @@ def test_resolve_ncomp_uses_matching_component_choice(monkeypatch):
     )
 
     class ComponentTuning:
-        class ncomp_selection_choice_matrix:
+        class choice_matrix:
             @staticmethod
             def path_maker():
                 return "choice.jsonl"

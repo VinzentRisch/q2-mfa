@@ -9,8 +9,19 @@ import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis import Citations
-from rachis.core.type import Choices, Float, Range, Str
-from rachis.plugin import Plugin
+from rachis.core.type import (
+    Bool,
+    Categorical,
+    Choices,
+    Collection,
+    Float,
+    Int,
+    Metadata,
+    MetadataColumn,
+    Range,
+    Str,
+)
+from rachis.plugin import Plugin, Threads
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
@@ -21,6 +32,7 @@ from q2_mfa.pls import (
     PLSTuneComponentsDirFmt,
     PLSTuneFeatures,
     PLSTuneFeaturesDirFmt,
+    tune_components_block_splsda,
 )
 from q2_mfa.preprocessing import transform_clr
 
@@ -83,6 +95,56 @@ plugin.methods.register_function(
     ],
 )
 
+plugin.methods.register_function(
+    function=tune_components_block_splsda,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters={
+        "y": MetadataColumn[Categorical],
+        "design_matrix": Metadata,
+        "design_weight": Float % Range(0, 1),
+        "ncomp": Int % Range(2, None),
+        "scale": Bool,
+        "tol": Float % Range(0, None, inclusive_start=False),
+        "max_iter": Int % Range(1, None),
+        "near_zero_var": Bool,
+        "validation": Str % Choices("Mfold", "loo"),
+        "folds": Int % Range(2, None),
+        "nrepeat": Int % Range(3, None),
+        "signif_threshold": Float % Range(0, 1),
+        "seed": Int % Range(0, 2**31 - 1),
+        "threads": Threads,
+    },
+    outputs=[("tuning", PLSTuneComponents)],
+    input_descriptions={"tables": "Named feature tables used as DIABLO blocks."},
+    parameter_descriptions={
+        "y": "Categorical class labels for the input samples.",
+        "design_matrix": "Optional DIABLO block-design matrix metadata.",
+        "design_weight": "Optional scalar DIABLO block-design weight.",
+        "ncomp": "Maximum number of components to evaluate.",
+        "scale": "Whether to scale features within each block.",
+        "tol": "Convergence tolerance for the dense DIABLO fit.",
+        "max_iter": "Maximum number of iterations for the dense DIABLO fit.",
+        "near_zero_var": "Whether mixOmics removes near-zero variance features.",
+        "validation": "Cross-validation strategy used by mixOmics perf.",
+        "folds": "Number of folds for M-fold cross-validation.",
+        "nrepeat": "Number of cross-validation repeats.",
+        "signif_threshold": "Minimum component improvement required by perf.",
+        "seed": "Random seed for mixOmics cross-validation.",
+        "threads": (
+            "Number of BiocParallel workers. Use 0 or 'auto' to use "
+            "BiocParallel's default."
+        ),
+    },
+    output_descriptions={
+        "tuning": "DIABLO weighted and majority-vote component-tuning tables."
+    },
+    name="Tune DIABLO block PLS-DA components",
+    description=(
+        "Fits DIABLO models across component counts and reports cross-validated "
+        "weighted-vote error rates."
+    ),
+)
+
 plugin.register_formats(
     ComponentAnalysisDirFmt,
     PLSFitDirFmt,
@@ -120,3 +182,4 @@ plugin.register_artifact_class(
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")
+importlib.import_module("q2_mfa.pls.types._tune_components_transformer")

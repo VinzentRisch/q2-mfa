@@ -5,6 +5,22 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .types import PLSFit, PLSFitDirFmt, PLSTune, PLSTuneDirFmt
+from .feature_selection_block_splsda import feature_selection_block_splsda
+from .types import (
+    PLSFeatureSelection,
+    PLSFeatureSelectionDirFmt,
+    PLSFit,
+    PLSFitDirFmt,
+    PLSTuneComponents,
+    PLSTuneComponentsDirFmt,
+)
 
-__all__ = ["PLSFit", "PLSFitDirFmt", "PLSTune", "PLSTuneDirFmt"]
+__all__ = [
+    "PLSFit",
+    "PLSFitDirFmt",
+    "PLSTuneComponents",
+    "PLSTuneComponentsDirFmt",
+    "PLSFeatureSelection",
+    "PLSFeatureSelectionDirFmt",
+    "feature_selection_block_splsda",
+]

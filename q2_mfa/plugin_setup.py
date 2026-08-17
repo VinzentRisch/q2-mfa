@@ -9,12 +9,31 @@ import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
 from rachis import Citations
-from rachis.core.type import Choices, Float, Range, Str
-from rachis.plugin import Plugin
+from rachis.core.type import (
+    Bool,
+    Categorical,
+    Choices,
+    Collection,
+    Float,
+    Int,
+    Metadata,
+    MetadataColumn,
+    Range,
+    Str,
+)
+from rachis.plugin import Plugin, Threads
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
-from q2_mfa.pls import PLSFit, PLSFitDirFmt, PLSTune, PLSTuneDirFmt
+from q2_mfa.pls import (
+    PLSFeatureSelection,
+    PLSFeatureSelectionDirFmt,
+    PLSFit,
+    PLSFitDirFmt,
+    PLSTuneComponents,
+    PLSTuneComponentsDirFmt,
+    feature_selection_block_splsda,
+)
 from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -76,12 +95,74 @@ plugin.methods.register_function(
     ],
 )
 
+plugin.methods.register_function(
+    function=feature_selection_block_splsda,
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "tuned_components": PLSTuneComponents,
+    },
+    parameters={
+        "y": MetadataColumn[Categorical],
+        "design_matrix": Metadata,
+        "design_weight": Float % Range(0, 1),
+        "ncomp": Int % Range(1, None),
+        "keepx": Collection[Str],
+        "auto_keepx": Bool,
+        "min_keepx": Int % Range(1, None),
+        "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
+        "grid_size": Int % Range(3, None),
+        "refinement_factor": Float % Range(1, None, inclusive_start=False),
+        "selection_rule": Str % Choices("one_se", "absolute_margin"),
+        "ber_margin": Float % Range(0, None),
+        "se_multiplier": Float % Range(1, None),
+        "scale": Bool,
+        "tol": Float % Range(0, None, inclusive_start=False),
+        "max_iter": Int % Range(1, None),
+        "near_zero_var": Bool,
+        "validation": Str % Choices("Mfold", "loo"),
+        "folds": Int % Range(2, None),
+        "nrepeat": Int % Range(3, None),
+        "signif_threshold": Float % Range(0, 1),
+        "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
+        "measure": Str % Choices("overall", "BER"),
+        "weighted": Bool,
+        "seed": Int % Range(0, 2**31 - 1),
+        "threads": Threads,
+    },
+    outputs=[("tuning", PLSFeatureSelection)],
+    input_descriptions={
+        "tables": "Named feature tables used as DIABLO blocks.",
+        "tuned_components": (
+            "Optional tuned-components artifact used to determine ncomp. "
+            "Provide this artifact or ncomp, but not both."
+        ),
+    },
+    parameter_descriptions={
+        "ncomp": "Manual component count. Provide this value or tuned_components.",
+        "keepx": "Optional named comma-separated keepX candidates by block.",
+        "auto_keepx": (
+            "Whether to adaptively refine keepX. When true, keepx supplies "
+            "the initial grid when provided; when false, keepx is required."
+        ),
+        "threads": (
+            "Number of BiocParallel workers. Use 0 or 'auto' to use "
+            "BiocParallel's default."
+        ),
+    },
+    output_descriptions={"tuning": "DIABLO feature-selection error-rate table."},
+    name="Select DIABLO block sPLS-DA features",
+    description="Tunes DIABLO keepX values using a manual ncomp or component tuning.",
+)
+
 plugin.register_formats(
     ComponentAnalysisDirFmt,
     PLSFitDirFmt,
-    PLSTuneDirFmt,
+    PLSTuneComponentsDirFmt,
+    PLSFeatureSelectionDirFmt,
 )
-plugin.register_semantic_types(ComponentAnalysis, PLSFit, PLSTune)
+plugin.register_semantic_types(
+    ComponentAnalysis, PLSFit, PLSTuneComponents, PLSFeatureSelection
+)
 plugin.register_artifact_class(
     ComponentAnalysis,
     directory_format=ComponentAnalysisDirFmt,
@@ -96,9 +177,15 @@ plugin.register_artifact_class(
     description="Represents fitted PLS model result tables produced by mixOmics.",
 )
 plugin.register_artifact_class(
-    PLSTune,
-    directory_format=PLSTuneDirFmt,
-    description="Represents PLS tuning result tables produced by mixOmics.",
+    PLSTuneComponents,
+    directory_format=PLSTuneComponentsDirFmt,
+    description="Represents PLS component-selection results produced by mixOmics.",
+)
+plugin.register_artifact_class(
+    PLSFeatureSelection,
+    directory_format=PLSFeatureSelectionDirFmt,
+    description="Represents PLS feature-selection results produced by mixOmics.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")
+importlib.import_module("q2_mfa.pls.types._transformer")

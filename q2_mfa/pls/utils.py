@@ -22,20 +22,20 @@ from rpy2.robjects import (
 from rpy2.robjects.conversion import localconverter
 
 
-def _align_samples(tables: dict, y) -> tuple[dict[str, pd.DataFrame], pd.Series]:
-    """Intersects input-table and categorical-target sample IDs."""
-    blocks = dict(getattr(tables, "collection", tables))
-    target = y.to_series().copy()
-    if len(blocks) < 2:
-        raise ValueError("block-splsda requires at least two named feature tables.")
-    if target.isna().any():
-        raise ValueError("The categorical target contains missing values.")
+def _align_samples(
+    tables: dict[str, pd.DataFrame], target: pd.Series
+) -> tuple[dict[str, pd.DataFrame], pd.Series]:
+    """Restricts feature tables and a categorical response to labelled samples."""
+    if len(tables) < 2:
+        raise ValueError("At least two named feature tables are required.")
+    target = target.dropna()
+    blocks = {**tables, "y": target.to_frame()}
 
     shared = next(iter(blocks.values())).index
-    for table in list(blocks.values())[1:] + [target.to_frame()]:
+    for table in list(blocks.values())[1:]:
         shared = shared.intersection(table.index)
     if shared.empty:
-        raise ValueError("DIABLO inputs do not share any sample IDs.")
+        raise ValueError("The input feature tables and response share no sample IDs.")
 
     aligned = {}
     for name, table in blocks.items():
@@ -43,30 +43,22 @@ def _align_samples(tables: dict, y) -> tuple[dict[str, pd.DataFrame], pd.Series]
         if not dropped.empty:
             warnings.warn(
                 f"Dropping samples from block '{name}' that are not shared "
-                f"across all DIABLO inputs:\n{', '.join(map(str, dropped))}",
+                f"across all blocks:\n"
+                f"{', '.join(map(str, dropped))}",
                 RachisWarning,
                 stacklevel=2,
             )
         aligned[str(name)] = table.loc[shared].copy()
-    dropped = target.index.difference(shared)
-    if not dropped.empty:
-        warnings.warn(
-            "Dropping target metadata samples that are not shared across all "
-            f"DIABLO inputs:\n{', '.join(map(str, dropped))}",
-            RachisWarning,
-            stacklevel=2,
-        )
-    return aligned, target.loc[shared].copy()
+    target = aligned.pop("y").iloc[:, 0]
+    return aligned, target
 
 
 def _resolve_design(
     design_matrix, design_weight: float | None, block_names: list[str]
 ) -> pd.DataFrame | float:
-    """Validates explicit design metadata or passes through a scalar design."""
+    """Validates an explicit design matrix or passes through a scalar weight."""
     if (design_matrix is None) == (design_weight is None):
-        raise ValueError(
-            "Provide exactly one of design_matrix or design_weight for DIABLO."
-        )
+        raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
     if design_weight is not None:
         return design_weight
 
@@ -74,18 +66,18 @@ def _resolve_design(
     expected = set(block_names)
     if set(matrix.index) != expected or set(matrix.columns) != expected:
         raise ValueError(
-            "Design matrix row and column names must exactly match the input "
-            "feature-table collection names."
+            "The row and column names in 'design-matrix' must exactly match "
+            "the input feature-table collection names."
         )
     matrix = matrix.loc[block_names, block_names]
     try:
         matrix = matrix.astype(float)
     except (TypeError, ValueError) as error:
-        raise ValueError("Design matrix values must be numeric.") from error
+        raise ValueError("Values in 'design-matrix' must be numeric.") from error
     if not np.allclose(matrix.to_numpy(), matrix.to_numpy().T):
-        raise ValueError("Design matrix must be symmetrical.")
+        raise ValueError("'design-matrix' must be symmetrical.")
     if not np.allclose(np.diag(matrix.to_numpy()), 0):
-        raise ValueError("Design matrix diagonal must contain only zeroes.")
+        raise ValueError("The diagonal of 'design-matrix' must contain only zeroes.")
     return matrix
 
 
@@ -96,7 +88,7 @@ def _build_bpparam(threads: int, seed: int):
     """
     r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"](**{"RNGseed": seed})
+        return r["SerialParam"](RNGseed=seed)
     kwargs = {"RNGseed": seed}
     if threads > 1:
         kwargs["workers"] = threads

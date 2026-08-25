@@ -21,13 +21,14 @@ from rachis.core.type import (
     Range,
     Str,
 )
-from rachis.plugin import Plugin, Threads
+from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.pls import (
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
+    _tune_components_block_splsda,
     tune_components_block_splsda,
 )
 from q2_mfa.preprocessing import transform_clr
@@ -58,19 +59,19 @@ plugin.methods.register_function(
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": (
-            "Value used to replace zeros before CLR. If not provided, a "
-            "pseudocount of 1 is used. This parameter is only used when "
-            "replacement_method is 'pseudocount'."
+            "Value used to replace zeros before CLR. If not provided, a value "
+            "of 1 is used. This parameter is used only when "
+            "'replacement-method' is 'pseudocount'."
         ),
         "replacement_method": (
-            "Method used to handle zeros before CLR. 'multiplicative' replaces "
-            "zeros while rescaling the remaining values to preserve the "
-            "composition. 'pseudocount' adds the pseudocount to all values in "
-            "the table."
+            "Method used to handle zeros before CLR. The 'multiplicative' "
+            "choice replaces zeros while rescaling the remaining values to "
+            "preserve the composition. The 'pseudocount' choice adds the "
+            "'pseudocount' value to all values in the table."
         ),
         "delta": (
             "Replacement value used for multiplicative replacement. This "
-            "parameter is only used when replacement_method is "
+            "parameter is used only when 'replacement-method' is "
             "'multiplicative'."
         ),
     },
@@ -91,53 +92,135 @@ plugin.methods.register_function(
     ],
 )
 
+component_tuning_parameters = {
+    "y": MetadataColumn[Categorical],
+    "design_matrix": Metadata,
+    "design_weight": Float % Range(0, 1),
+    "ncomp": Int % Range(2, None),
+    "scale": Bool,
+    "tol": Float % Range(0, None, inclusive_start=False),
+    "max_iter": Int % Range(1, None),
+    "near_zero_var": Bool,
+    "validation": Str % Choices("Mfold", "loo"),
+    "folds": Int % Range(2, None),
+    "nrepeat": Int % Range(3, None),
+    "signif_threshold": Float % Range(0, 1),
+    "seed": Int % Range(0, 2**31 - 1),
+    "threads": Threads,
+}
+
+component_tuning_parameter_descriptions = {
+    "y": ("Categorical response variable to predict."),
+    "design_matrix": (
+        "Block-relationship matrix. Provide exactly one of 'design-matrix' or "
+        "'design-weight'. This square metadata table must have rows and columns "
+        "named exactly as the feature-table collection, zeros on its diagonal, "
+        "and symmetric numeric off-diagonal values from 0 (no modeled "
+        "relationship) to 1 (maximum modeled relationship)."
+    ),
+    "design_weight": (
+        "Single block-relationship weight. Provide exactly one of "
+        "'design-weight' or 'design-matrix'. A value from 0 to 1 creates a "
+        "fully "
+        "connected design matrix with this value in every off-diagonal cell; "
+        "0 means no modeled block relationships and 1 is the maximum."
+    ),
+    "ncomp": ("Number of components to fit and evaluate by cross-validation."),
+    "scale": (
+        "Whether to standardize every feature within each input block to zero "
+        "mean and unit variance before fitting."
+    ),
+    "tol": (
+        "Positive convergence tolerance for the iterative PLS-DA fit. The "
+        "algorithm stops updating a component when successive estimates differ "
+        "by less than this value."
+    ),
+    "max_iter": (
+        "Maximum iterative updates allowed while fitting each latent component. "
+        "This limits fitting time when the convergence tolerance is not reached."
+    ),
+    "near_zero_var": (
+        "Whether to remove predictors with zero or near-zero variance before "
+        "fitting. Enable this for blocks with many zero-valued features; leave "
+        "it disabled when that filtering is unnecessary to reduce computation."
+    ),
+    "validation": (
+        "Internal cross-validation strategy used to estimate classification "
+        "error rates: Mfold repeatedly holds out folds, while loo leaves out "
+        "one sample at a time."
+    ),
+    "folds": (
+        "Number of sample folds for M-fold cross-validation. Ignored when "
+        "'validation' is 'loo'. Each fold should contain enough samples from "
+        "every "
+        "response class for model fitting and evaluation."
+    ),
+    "nrepeat": (
+        "Number of independent M-fold cross-validation repetitions. More "
+        "repetitions reduce sensitivity to random fold assignments but increase "
+        "runtime; it is not needed when 'validation' is 'loo'."
+    ),
+    "signif_threshold": (
+        "Minimum improvement in cross-validated error rate required before an "
+        "additional latent component is considered beneficial."
+    ),
+    "seed": ("Random seed used for reproducible cross-validation fold assignments."),
+    "threads": (
+        "Number of BiocParallel workers used for cross-validation model fits. "
+        "Use 1 for serial execution. The Rachis/QIIME value 'auto' is "
+        "converted to 0; both 0 and 'auto' omit 'workers' and let "
+        "BiocParallel select its default."
+    ),
+}
+
+component_tuning_input_descriptions = {
+    "tables": (
+        "Named feature tables used as PLS-DA blocks. Before fitting, every "
+        "block and the response are restricted to their shared sample IDs; a "
+        "sample missing from one or more blocks is dropped. Table names identify "
+        "the corresponding design-matrix rows and columns."
+    )
+}
+
 plugin.methods.register_function(
+    function=_tune_components_block_splsda,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters=component_tuning_parameters,
+    outputs=[("tuning", PLSTuneComponents)],
+    input_descriptions=component_tuning_input_descriptions,
+    parameter_descriptions=component_tuning_parameter_descriptions,
+    output_descriptions={
+        "tuning": "PLS-DA weighted- and majority-vote component-tuning metrics."
+    },
+    name="Tune block PLS-DA components",
+    description=(
+        "Fits block PLS-DA models across component counts and reports "
+        "cross-validated weighted- and majority-vote classification error rates."
+    ),
+)
+
+plugin.pipelines.register_function(
     function=tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters={
-        "y": MetadataColumn[Categorical],
-        "design_matrix": Metadata,
-        "design_weight": Float % Range(0, 1),
-        "ncomp": Int % Range(2, None),
-        "scale": Bool,
-        "tol": Float % Range(0, None, inclusive_start=False),
-        "max_iter": Int % Range(1, None),
-        "near_zero_var": Bool,
-        "validation": Str % Choices("Mfold", "loo"),
-        "folds": Int % Range(2, None),
-        "nrepeat": Int % Range(3, None),
-        "signif_threshold": Float % Range(0, 1),
-        "seed": Int % Range(0, 2**31 - 1),
-        "threads": Threads,
-    },
-    outputs=[("tuning", PLSTuneComponents)],
-    input_descriptions={"tables": "Named feature tables used as DIABLO blocks."},
-    parameter_descriptions={
-        "y": "Categorical class labels for the input samples.",
-        "design_matrix": "Optional DIABLO block-design matrix metadata.",
-        "design_weight": "Optional scalar DIABLO block-design weight.",
-        "ncomp": "Maximum number of components to evaluate.",
-        "scale": "Whether to scale features within each block.",
-        "tol": "Convergence tolerance for the dense DIABLO fit.",
-        "max_iter": "Maximum number of iterations for the dense DIABLO fit.",
-        "near_zero_var": "Whether mixOmics removes near-zero variance features.",
-        "validation": "Cross-validation strategy used by mixOmics perf.",
-        "folds": "Number of folds for M-fold cross-validation.",
-        "nrepeat": "Number of cross-validation repeats.",
-        "signif_threshold": "Minimum component improvement required by perf.",
-        "seed": "Random seed for mixOmics cross-validation.",
-        "threads": (
-            "Number of BiocParallel workers. Use 0 or 'auto' to use "
-            "BiocParallel's default."
+    parameters=component_tuning_parameters,
+    outputs=[
+        ("tuning", PLSTuneComponents),
+        ("visualization", Visualization),
+    ],
+    input_descriptions=component_tuning_input_descriptions,
+    parameter_descriptions=component_tuning_parameter_descriptions,
+    output_descriptions={
+        "tuning": "PLS-DA weighted- and majority-vote component-tuning metrics.",
+        "visualization": (
+            "Report containing weighted and majority-vote error-rate plots "
+            "and component-choice matrices."
         ),
     },
-    output_descriptions={
-        "tuning": "DIABLO weighted and majority-vote component-tuning tables."
-    },
-    name="Tune DIABLO block PLS-DA components",
+    name="Tune block PLS-DA components",
     description=(
-        "Fits DIABLO models across component counts and reports cross-validated "
-        "weighted-vote error rates."
+        "Fits block PLS-DA models across component counts, reports "
+        "cross-validated weighted- and majority-vote error rates, and visualizes the "
+        "component-selection diagnostics."
     ),
 )
 
@@ -160,7 +243,7 @@ plugin.register_artifact_class(
 plugin.register_artifact_class(
     PLSTuneComponents,
     directory_format=PLSTuneComponentsDirFmt,
-    description="Represents PLS component-selection results produced by mixOmics.",
+    description="Represents PLS-DA component-selection results produced by mixOmics.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")

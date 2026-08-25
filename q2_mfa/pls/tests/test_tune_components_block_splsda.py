@@ -5,205 +5,101 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import importlib
-
-import numpy as np
 import pandas as pd
+from pandas.testing import assert_frame_equal
+from q2_types.feature_table import FeatureTable, Unconstrained
+from rachis import Artifact, Metadata, ResultCollection, Visualization
+from rachis.plugin.testing import TestPluginBase
+
+from q2_mfa.pls import PLSTuneComponentsDirFmt
 
 
-class _FakeArray:
-    def __array__(self, dtype=None):
-        return np.asarray([[2], [1]], dtype=dtype)
+class TestTuneComponentsBlockSPLSDA(TestPluginBase):
+    package = "q2_mfa.pls.tests"
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        instance = cls()
 
-class _FakeChoice:
-    def rx2(self, name):
-        assert name in {"WeightedVote", "MajorityVote"}
-        return _FakeArray()
+        def read_table(name):
+            return pd.read_csv(
+                instance.get_data_path(f"tune-components/{name}"),
+                sep="\t",
+                index_col="id",
+            )
 
+        cls.tables = ResultCollection(
+            {
+                "block-a": Artifact.import_data(
+                    FeatureTable[Unconstrained], read_table("block-a.tsv")
+                ),
+                "block-b": Artifact.import_data(
+                    FeatureTable[Unconstrained], read_table("block-b.tsv")
+                ),
+            }
+        )
+        cls.response = Metadata(read_table("response.tsv")).get_column("group")
+        cls.expected_weighted_error_rates = read_table("weighted-error-rates.tsv")
+        cls.expected_majority_error_rates = read_table("majority-error-rates.tsv")
+        cls.expected_weighted_choices = read_table("weighted-choices.tsv")
+        cls.expected_majority_choices = read_table("majority-choices.tsv")
 
-class _FakePerfResult:
-    def rx2(self, name):
-        assert name == "choice.ncomp"
-        return _FakeChoice()
+    def _assert_tuning_matches_expected(self, tuning):
+        tuning_data = tuning.view(PLSTuneComponentsDirFmt)
+        actual_tables = (
+            (
+                tuning_data.error_rate_weighted.view(Metadata).to_dataframe(),
+                self.expected_weighted_error_rates,
+                True,
+            ),
+            (
+                tuning_data.error_rate_majority.view(Metadata).to_dataframe(),
+                self.expected_majority_error_rates,
+                True,
+            ),
+            (
+                tuning_data.choice_matrix_weighted.view(Metadata).to_dataframe(),
+                self.expected_weighted_choices,
+                False,
+            ),
+            (
+                tuning_data.choice_matrix_majority.view(Metadata).to_dataframe(),
+                self.expected_majority_choices,
+                False,
+            ),
+        )
 
+        for actual, expected, has_error_rates in actual_tables:
+            if has_error_rates:
+                assert_frame_equal(actual, expected, rtol=1e-8, atol=1e-10)
+            else:
+                assert_frame_equal(actual, expected, check_exact=True)
 
-class _FakeRateMatrix:
-    def __init__(self, values):
-        self.values = values
-
-    def __array__(self, dtype=None):
-        return np.asarray(self.values, dtype=dtype)
-
-
-class _FakeErrorRates:
-    names = ["max.dist"]
-
-    def __init__(self, values):
-        self.values = [_FakeRateMatrix(values)]
-
-    def __iter__(self):
-        return iter(self.values)
-
-
-class _FakeErrorRatePerfResult:
-    def __init__(self, mean, sd):
-        self.outputs = {
-            "WeightedVote.error.rate": _FakeErrorRates(mean),
-            "WeightedVote.error.rate.sd": _FakeErrorRates(sd),
+    def _tuning_parameters(self):
+        return {
+            "tables": self.tables,
+            "y": self.response,
+            "design_weight": 0.1,
+            "ncomp": 2,
+            "validation": "Mfold",
+            "folds": 3,
+            "nrepeat": 3,
+            "seed": 1,
+            "threads": 1,
         }
 
-    def rx2(self, name):
-        return self.outputs[name]
+    def test_tune_components_action_matches_expected_values(self):
+        tune_components = self.plugin.methods["_tune_components_block_splsda"]
 
+        (tuning,) = tune_components(**self._tuning_parameters())
 
-class _FakeR:
-    def __init__(self, perf_result):
-        self.perf_result = perf_result
-        self.perf_kwargs = None
+        self._assert_tuning_matches_expected(tuning)
 
-    def __call__(self, expression):
-        assert "library(mixOmics)" in expression
+    def test_tune_components_pipeline_matches_expected_values(self):
+        tune_components = self.plugin.pipelines["tune_components_block_splsda"]
 
-    def __getitem__(self, name):
-        if name == "block.plsda":
-            return lambda *args, **kwargs: object()
-        if name == "perf":
-            return self._perf
-        if name == "rownames":
-            return lambda value: ["Overall.BER", "Overall.ER"]
-        if name == "colnames":
-            return lambda value: ["max.dist"]
-        raise KeyError(name)
+        result = tune_components(**self._tuning_parameters())
 
-    def _perf(self, *args, **kwargs):
-        self.perf_kwargs = kwargs
-        return self.perf_result
-
-
-def test_tune_components_runs_perf_and_returns_error_rates(monkeypatch, capsys):
-    action = importlib.import_module("q2_mfa.pls.tune_components_block_splsda")
-    blocks = {"metabolome": pd.DataFrame([[1]]), "microbiome": pd.DataFrame([[2]])}
-    target = pd.Series(["case"])
-    expected = pd.DataFrame(
-        {
-            "distance": ["max.dist"],
-            "class": ["Overall.BER"],
-            "component": [0],
-            "mean": [0.2],
-            "sd": [float("nan")],
-        }
-    )
-    fake_r = _FakeR(_FakePerfResult())
-
-    monkeypatch.setattr(action, "r", fake_r)
-    monkeypatch.setattr(action, "_align_samples", lambda tables, y: (blocks, target))
-    monkeypatch.setattr(action, "_resolve_design", lambda *args: 0.1)
-    monkeypatch.setattr(action, "_build_bpparam", lambda *args: "backend")
-    monkeypatch.setattr(action, "_to_r_inputs", lambda *args: ("blocks", "y", "design"))
-    monkeypatch.setattr(action.CaptureHolder, "get_or_set", lambda seed, factory: 42)
-    monkeypatch.setattr(
-        action,
-        "_r_vote_error_rate_to_dataframe",
-        lambda result, vote: expected,
-    )
-
-    result = action.tune_components_block_splsda(
-        tables=blocks,
-        y=object(),
-        design_weight=0.1,
-        ncomp=4,
-    )
-
-    assert fake_r.perf_kwargs["nrepeat"] == 3
-    assert fake_r.perf_kwargs["progressBar"] is False
-    assert fake_r.perf_kwargs["BPPARAM"] == "backend"
-    output = capsys.readouterr().out
-    assert "WeightedVote component-choice matrix:" in output
-    assert "Best ncomp chosen" not in output
-    pd.testing.assert_frame_equal(
-        result.error_rate_weighted,
-        expected,
-    )
-    pd.testing.assert_frame_equal(result.error_rate_majority, expected)
-    pd.testing.assert_frame_equal(
-        result.choice_matrix_weighted,
-        pd.DataFrame(
-            {"max.dist": [2, 1]},
-            index=pd.Index(["Overall.BER", "Overall.ER"], name="id"),
-        ),
-    )
-
-
-def test_vote_error_rates_are_created_directly_in_wide_form(monkeypatch):
-    from q2_mfa.pls import utils
-
-    monkeypatch.setattr(utils, "r", _FakeR(_FakePerfResult()))
-    observed = utils._r_vote_error_rate_to_dataframe(
-        _FakeErrorRatePerfResult(
-            mean=[[0.1, 0.2], [0.3, 0.4]],
-            sd=[[0.01, 0.02], [0.03, 0.04]],
-        ),
-        "WeightedVote",
-    )
-
-    expected = pd.DataFrame(
-        {
-            "distance": ["max.dist"] * 4,
-            "class": ["Overall.BER", "Overall.BER", "Overall.ER", "Overall.ER"],
-            "component": [0, 1, 0, 1],
-            "mean": [0.1, 0.2, 0.3, 0.4],
-            "sd": [0.01, 0.02, 0.03, 0.04],
-        }
-    )
-    pd.testing.assert_frame_equal(observed, expected)
-
-
-def test_tune_components_serializes_both_votes(monkeypatch):
-    action = importlib.import_module("q2_mfa.pls.tune_components_block_splsda")
-    blocks = {"a": pd.DataFrame([[1]]), "b": pd.DataFrame([[2]])}
-    target = pd.Series(["case"])
-    captured = {}
-
-    monkeypatch.setattr(action, "r", _FakeR(_FakePerfResult()))
-    monkeypatch.setattr(action, "_align_samples", lambda tables, y: (blocks, target))
-    monkeypatch.setattr(action, "_resolve_design", lambda *args: 0.1)
-    monkeypatch.setattr(action, "_build_bpparam", lambda *args: "backend")
-    monkeypatch.setattr(action, "_to_r_inputs", lambda *args: ("blocks", "y", "design"))
-    monkeypatch.setattr(action.CaptureHolder, "get_or_set", lambda seed, factory: 42)
-
-    def fake_error_rates(result, vote):
-        captured.setdefault("votes", []).append(vote)
-        return pd.DataFrame(columns=["distance", "class", "component", "mean", "sd"])
-
-    monkeypatch.setattr(action, "_r_vote_error_rate_to_dataframe", fake_error_rates)
-
-    action.tune_components_block_splsda(tables=blocks, y=object(), design_weight=0.1)
-
-    assert captured["votes"] == ["WeightedVote", "MajorityVote"]
-
-
-def test_auto_threads_delegates_worker_count_to_biocparallel(monkeypatch):
-    from q2_mfa.pls import utils
-
-    calls = {}
-
-    class FakeR:
-        def __call__(self, expression):
-            assert "library(BiocParallel)" in expression
-
-        def __getitem__(self, name):
-            def constructor(**kwargs):
-                calls[name] = kwargs
-                return name, kwargs
-
-            return constructor
-
-    monkeypatch.setattr(utils, "r", FakeR())
-    monkeypatch.setattr(utils.platform, "system", lambda: "Darwin")
-
-    backend, kwargs = utils._build_bpparam(0, 42)
-
-    assert backend == "MulticoreParam"
-    assert kwargs == {"RNGseed": 42}
-    assert "workers" not in calls["MulticoreParam"]
+        self._assert_tuning_matches_expected(result.tuning)
+        self.assertIsInstance(result.visualization, Visualization)

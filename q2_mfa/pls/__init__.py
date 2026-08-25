@@ -5,11 +5,15 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .tune_components_block_splsda import tune_components_block_splsda
+from .tune_components_block_splsda import (
+    _tune_components_block_splsda,
+    tune_components_block_splsda,
+)
 from .types import PLSTuneComponents, PLSTuneComponentsDirFmt
 
 __all__ = [
     "PLSTuneComponents",
     "PLSTuneComponentsDirFmt",
+    "_tune_components_block_splsda",
     "tune_components_block_splsda",
 ]

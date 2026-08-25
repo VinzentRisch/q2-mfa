@@ -25,6 +25,7 @@ from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.pca import pca
 from q2_mfa.pls import (
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
@@ -35,14 +36,13 @@ from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
 
-
 plugin = Plugin(
     name="mfa",
     version=__version__,
     website="https://github.com/bokulich-lab/q2-mfa",
     package="q2_mfa",
-    description="A QIIME 2 plugin for PCA and MFA analysis.",
-    short_description="PCA and MFA analysis",
+    description="A QIIME 2 plugin for Multiomics analysis.",
+    short_description="Multiomics analysis",
     citations=[],
 )
 
@@ -59,19 +59,19 @@ plugin.methods.register_function(
     input_descriptions={"table": "The frequency table."},
     parameter_descriptions={
         "pseudocount": (
-            "Value used to replace zeros before CLR. If not provided, a value "
-            "of 1 is used. This parameter is used only when "
-            "'replacement-method' is 'pseudocount'."
+            "Value used to replace zeros before CLR. If not provided, a "
+            "pseudocount of 1 is used. This parameter is only used when "
+            "replacement_method is 'pseudocount'."
         ),
         "replacement_method": (
-            "Method used to handle zeros before CLR. The 'multiplicative' "
-            "choice replaces zeros while rescaling the remaining values to "
-            "preserve the composition. The 'pseudocount' choice adds the "
-            "'pseudocount' value to all values in the table."
+            "Method used to handle zeros before CLR. 'multiplicative' replaces "
+            "zeros while rescaling the remaining values to preserve the "
+            "composition. 'pseudocount' adds the pseudocount to all values in "
+            "the table."
         ),
         "delta": (
             "Replacement value used for multiplicative replacement. This "
-            "parameter is used only when 'replacement-method' is "
+            "parameter is only used when replacement_method is "
             "'multiplicative'."
         ),
     },
@@ -89,6 +89,64 @@ plugin.methods.register_function(
         citations["martin2003dealing"],
         citations["aitchison1982statistical"],
         citations["aton2025scikit"],
+    ],
+)
+
+plugin.methods.register_function(
+    function=pca,
+    inputs={"table": FeatureTable[Unconstrained]},
+    parameters={
+        "rescale_with_mean": Bool,
+        "rescale_with_std": Bool,
+        "n_components": Int % Range(1, None),
+        "n_iter": Int % Range(0, None),
+        "random_state": Int,
+        "engine": Str % Choices(["sklearn", "scipy"]),
+        "filter_zero_variance": Bool,
+    },
+    outputs=[("pca_results", ComponentAnalysis)],
+    input_descriptions={"table": "The frequency table."},
+    parameter_descriptions={
+        "n_components": "Number of principal components to compute.",
+        "rescale_with_mean": (
+            "Whether to center each feature by subtracting its mean before "
+            "performing SVD."
+        ),
+        "rescale_with_std": (
+            "Whether to standardize each feature to unit variance before "
+            "performing SVD."
+        ),
+        "n_iter": (
+            "Number of iterations used by the 'sklearn' randomized SVD "
+            "engine. This parameter is ignored by the 'scipy' engine."
+        ),
+        "engine": (
+            "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy' "
+            "uses SciPy SVD."
+        ),
+        "random_state": (
+            "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+            "reproducible results across multiple function calls. This "
+            "parameter is ignored by the 'scipy' engine."
+        ),
+        "filter_zero_variance": (
+            "Whether to remove columns with zero variance before analysis."
+        ),
+    },
+    output_descriptions={"pca_results": "The PCA results."},
+    name="PCA",
+    description=(
+        "Principal component analysis implementation with the prince package. "
+        "The output is a component-analysis result containing eigenvalues, "
+        "sample coordinates, feature coordinates, variance percentages, and "
+        "supporting PCA tables from prince. The result can also be viewed as an "
+        "ordination result through the registered transformer. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package docs for more information:"
+        "https://maxhalford.github.io/prince/pca/"
+    ),
+    citations=[
+        citations["Halford_Prince"],
     ],
 )
 

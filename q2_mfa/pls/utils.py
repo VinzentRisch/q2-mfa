@@ -100,10 +100,11 @@ def _build_bpparam(threads: int, seed: int):
 def _to_r_inputs(blocks, target, design):
     """Converts aligned pandas inputs to named R objects with preserved labels."""
     with localconverter(default_converter + pandas2ri.converter):
+        converter = conversion.get_conversion()
         r_blocks = ListVector(
-            {name: conversion.py2rpy(table) for name, table in blocks.items()}
+            {name: converter.py2rpy(table) for name, table in blocks.items()}
         )
-        r_design = conversion.py2rpy(design)
+        r_design = converter.py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
     return r_blocks, r_target, r_design

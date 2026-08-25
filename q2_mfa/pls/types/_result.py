@@ -14,5 +14,7 @@ import pandas as pd
 class _PLSTuneComponentsResult:
     """Holds DIABLO component-selection results before serialization."""
 
-    error_rate: pd.DataFrame
-    choice_matrix: pd.DataFrame
+    error_rate_weighted: pd.DataFrame
+    error_rate_majority: pd.DataFrame
+    choice_matrix_weighted: pd.DataFrame
+    choice_matrix_majority: pd.DataFrame

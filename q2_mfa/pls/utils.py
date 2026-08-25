@@ -5,7 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-"""Shared helpers for QIIME-facing DIABLO actions."""
 import platform
 import warnings
 
@@ -118,51 +117,30 @@ def _to_r_inputs(blocks, target, design):
     return r_blocks, r_target, r_design
 
 
-def _r_vote_error_rate_to_dataframe(perf_result, framework: str) -> pd.DataFrame:
-    """Converts a vote framework's mean and SD error rates to long-form rows."""
-    columns = ["vote", "distance", "class", "component", "statistic", "value"]
-    tables = [
-        _r_weighted_vote_error_rate_statistic_to_dataframe(
-            perf_result.rx2(f"{framework}.error.rate"), "mean", framework
-        ),
-        _r_weighted_vote_error_rate_statistic_to_dataframe(
-            perf_result.rx2(f"{framework}.error.rate.sd"), "sd", framework
-        ),
-    ]
-    tables = [table for table in tables if not table.empty]
-    return (
-        pd.concat(tables, ignore_index=True)
-        if tables
-        else pd.DataFrame(columns=columns)
-    )
+def _r_vote_error_rate_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
+    """Converts one vote's mean and SD error rates to wide records."""
+    columns = ["distance", "class", "component", "mean", "sd"]
+    records = {}
+    for statistic, error_rates in (
+        ("mean", perf_result.rx2(f"{vote}.error.rate")),
+        ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
+    ):
+        if type(error_rates).__name__ == "NULLType":
+            continue
+        for distance, rates in zip(error_rates.names, error_rates):
+            values = np.asarray(rates, dtype=float)
+            class_names = [str(name) for name in r["rownames"](rates)]
+            for class_name, class_values in zip(class_names, values):
+                for component, value in enumerate(class_values):
+                    key = (str(distance), class_name, component)
+                    record = records.setdefault(
+                        key,
+                        {
+                            "distance": key[0],
+                            "class": key[1],
+                            "component": key[2],
+                        },
+                    )
+                    record[statistic] = value
 
-
-def _r_weighted_vote_error_rate_statistic_to_dataframe(
-    error_rates, statistic: str, framework: str
-) -> pd.DataFrame:
-    """Converts one vote-framework error-rate statistic to long-form rows."""
-    columns = ["vote", "distance", "class", "component", "statistic", "value"]
-    if type(error_rates).__name__ == "NULLType":
-        return pd.DataFrame(columns=columns)
-    records = []
-    for distance, rates in zip(error_rates.names, error_rates):
-        values = np.asarray(rates, dtype=float)
-        class_names = [str(name) for name in r["rownames"](rates)]
-        for component in range(values.shape[1]):
-            records.append(
-                pd.DataFrame(
-                    {
-                        "vote": framework.removesuffix("Vote").lower(),
-                        "distance": str(distance),
-                        "class": class_names,
-                        "component": component,
-                        "statistic": statistic,
-                        "value": values[:, component],
-                    }
-                )
-            )
-    return (
-        pd.concat(records, ignore_index=True)
-        if records
-        else pd.DataFrame(columns=columns)
-    )
+    return pd.DataFrame(records.values(), columns=columns)

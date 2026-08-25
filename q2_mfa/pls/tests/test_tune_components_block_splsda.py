@@ -28,6 +28,35 @@ class _FakePerfResult:
         return _FakeChoice()
 
 
+class _FakeRateMatrix:
+    def __init__(self, values):
+        self.values = values
+
+    def __array__(self, dtype=None):
+        return np.asarray(self.values, dtype=dtype)
+
+
+class _FakeErrorRates:
+    names = ["max.dist"]
+
+    def __init__(self, values):
+        self.values = [_FakeRateMatrix(values)]
+
+    def __iter__(self):
+        return iter(self.values)
+
+
+class _FakeErrorRatePerfResult:
+    def __init__(self, mean, sd):
+        self.outputs = {
+            "WeightedVote.error.rate": _FakeErrorRates(mean),
+            "WeightedVote.error.rate.sd": _FakeErrorRates(sd),
+        }
+
+    def rx2(self, name):
+        return self.outputs[name]
+
+
 class _FakeR:
     def __init__(self, perf_result):
         self.perf_result = perf_result
@@ -58,12 +87,11 @@ def test_tune_components_runs_perf_and_returns_error_rates(monkeypatch, capsys):
     target = pd.Series(["case"])
     expected = pd.DataFrame(
         {
-            "vote": ["weighted"],
             "distance": ["max.dist"],
             "class": ["Overall.BER"],
             "component": [0],
-            "statistic": ["mean"],
-            "value": [0.2],
+            "mean": [0.2],
+            "sd": [float("nan")],
         }
     )
     fake_r = _FakeR(_FakePerfResult())
@@ -77,9 +105,7 @@ def test_tune_components_runs_perf_and_returns_error_rates(monkeypatch, capsys):
     monkeypatch.setattr(
         action,
         "_r_vote_error_rate_to_dataframe",
-        lambda result, framework: expected.assign(
-            vote="weighted" if framework == "WeightedVote" else "majority"
-        ),
+        lambda result, vote: expected,
     )
 
     result = action.tune_components_block_splsda(
@@ -96,38 +122,44 @@ def test_tune_components_runs_perf_and_returns_error_rates(monkeypatch, capsys):
     assert "WeightedVote component-choice matrix:" in output
     assert "Best ncomp chosen" not in output
     pd.testing.assert_frame_equal(
-        result.error_rate,
-        pd.concat([expected, expected.assign(vote="majority")], ignore_index=True),
+        result.error_rate_weighted,
+        expected,
     )
-    assert result.choice_matrix.to_dict("records") == [
-        {
-            "vote": "weighted",
-            "measure": "Overall.BER",
-            "distance": "max.dist",
-            "ncomp": 2,
-        },
-        {
-            "vote": "weighted",
-            "measure": "Overall.ER",
-            "distance": "max.dist",
-            "ncomp": 1,
-        },
-        {
-            "vote": "majority",
-            "measure": "Overall.BER",
-            "distance": "max.dist",
-            "ncomp": 2,
-        },
-        {
-            "vote": "majority",
-            "measure": "Overall.ER",
-            "distance": "max.dist",
-            "ncomp": 1,
-        },
-    ]
+    pd.testing.assert_frame_equal(result.error_rate_majority, expected)
+    pd.testing.assert_frame_equal(
+        result.choice_matrix_weighted,
+        pd.DataFrame(
+            {"max.dist": [2, 1]},
+            index=pd.Index(["Overall.BER", "Overall.ER"], name="id"),
+        ),
+    )
 
 
-def test_tune_components_serializes_both_vote_frameworks(monkeypatch):
+def test_vote_error_rates_are_created_directly_in_wide_form(monkeypatch):
+    from q2_mfa.pls import utils
+
+    monkeypatch.setattr(utils, "r", _FakeR(_FakePerfResult()))
+    observed = utils._r_vote_error_rate_to_dataframe(
+        _FakeErrorRatePerfResult(
+            mean=[[0.1, 0.2], [0.3, 0.4]],
+            sd=[[0.01, 0.02], [0.03, 0.04]],
+        ),
+        "WeightedVote",
+    )
+
+    expected = pd.DataFrame(
+        {
+            "distance": ["max.dist"] * 4,
+            "class": ["Overall.BER", "Overall.BER", "Overall.ER", "Overall.ER"],
+            "component": [0, 1, 0, 1],
+            "mean": [0.1, 0.2, 0.3, 0.4],
+            "sd": [0.01, 0.02, 0.03, 0.04],
+        }
+    )
+    pd.testing.assert_frame_equal(observed, expected)
+
+
+def test_tune_components_serializes_both_votes(monkeypatch):
     action = importlib.import_module("q2_mfa.pls.tune_components_block_splsda")
     blocks = {"a": pd.DataFrame([[1]]), "b": pd.DataFrame([[2]])}
     target = pd.Series(["case"])
@@ -140,17 +172,15 @@ def test_tune_components_serializes_both_vote_frameworks(monkeypatch):
     monkeypatch.setattr(action, "_to_r_inputs", lambda *args: ("blocks", "y", "design"))
     monkeypatch.setattr(action.CaptureHolder, "get_or_set", lambda seed, factory: 42)
 
-    def fake_error_rates(result, framework):
-        captured.setdefault("frameworks", []).append(framework)
-        return pd.DataFrame(
-            columns=["vote", "distance", "class", "component", "statistic", "value"]
-        )
+    def fake_error_rates(result, vote):
+        captured.setdefault("votes", []).append(vote)
+        return pd.DataFrame(columns=["distance", "class", "component", "mean", "sd"])
 
     monkeypatch.setattr(action, "_r_vote_error_rate_to_dataframe", fake_error_rates)
 
     action.tune_components_block_splsda(tables=blocks, y=object(), design_weight=0.1)
 
-    assert captured["frameworks"] == ["WeightedVote", "MajorityVote"]
+    assert captured["votes"] == ["WeightedVote", "MajorityVote"]
 
 
 def test_auto_threads_delegates_worker_count_to_biocparallel(monkeypatch):

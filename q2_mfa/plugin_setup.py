@@ -26,12 +26,8 @@ from rachis.plugin import Plugin, Threads
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.pls import (
-    PLSFit,
-    PLSFitDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
-    PLSTuneFeatures,
-    PLSTuneFeaturesDirFmt,
     tune_components_block_splsda,
 )
 from q2_mfa.preprocessing import transform_clr
@@ -147,15 +143,11 @@ plugin.methods.register_function(
 
 plugin.register_formats(
     ComponentAnalysisDirFmt,
-    PLSFitDirFmt,
     PLSTuneComponentsDirFmt,
-    PLSTuneFeaturesDirFmt,
 )
 plugin.register_semantic_types(
     ComponentAnalysis,
-    PLSFit,
     PLSTuneComponents,
-    PLSTuneFeatures,
 )
 plugin.register_artifact_class(
     ComponentAnalysis,
@@ -166,19 +158,9 @@ plugin.register_artifact_class(
     ),
 )
 plugin.register_artifact_class(
-    PLSFit,
-    directory_format=PLSFitDirFmt,
-    description="Represents fitted PLS model result tables produced by mixOmics.",
-)
-plugin.register_artifact_class(
     PLSTuneComponents,
     directory_format=PLSTuneComponentsDirFmt,
     description="Represents PLS component-selection results produced by mixOmics.",
-)
-plugin.register_artifact_class(
-    PLSTuneFeatures,
-    directory_format=PLSTuneFeaturesDirFmt,
-    description="Represents PLS feature-selection results produced by mixOmics.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")

@@ -5,7 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-"""QIIME-facing DIABLO component-selection action."""
 import secrets
 
 import numpy as np
@@ -14,7 +13,7 @@ from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import r
 
-from q2_mfa.pls.types._tune_components_result import _PLSTuneComponentsResult
+from q2_mfa.pls.types._result import _PLSTuneComponentsResult
 from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
@@ -75,61 +74,37 @@ def tune_components_block_splsda(
             "progressBar": False,
         },
     )
-    frameworks = ("WeightedVote", "MajorityVote")
-    choice_matrix = pd.concat(
-        [
-            _choice_matrix_to_dataframe(perf_result, framework)
-            for framework in frameworks
-        ],
-        ignore_index=True,
-    )
-    for framework in frameworks:
-        _print_component_choice(
-            choice_matrix.loc[
-                choice_matrix["vote"] == framework.removesuffix("Vote").lower()
-            ],
-            framework,
-        )
+    weighted_choice_matrix = _choice_matrix_to_dataframe(perf_result, "WeightedVote")
+    majority_choice_matrix = _choice_matrix_to_dataframe(perf_result, "MajorityVote")
+    weighted_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
+    majority_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote")
+    _print_component_choice(weighted_choice_matrix, "WeightedVote")
+    _print_component_choice(majority_choice_matrix, "MajorityVote")
     return _PLSTuneComponentsResult(
-        error_rate=pd.concat(
-            [
-                _r_vote_error_rate_to_dataframe(perf_result, framework)
-                for framework in frameworks
-            ],
-            ignore_index=True,
-        ),
-        choice_matrix=choice_matrix,
+        error_rate_weighted=weighted_error_rate,
+        error_rate_majority=majority_error_rate,
+        choice_matrix_weighted=weighted_choice_matrix,
+        choice_matrix_majority=majority_choice_matrix,
     )
 
 
 def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
-    """Converts one mixOmics component-choice matrix to long-form records."""
+    """Converts one mixOmics component-choice matrix to a DataFrame."""
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
-    columns = ["vote", "measure", "distance", "ncomp"]
     if type(matrix).__name__ == "NULLType":
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame()
     values = np.asarray(matrix)
-    records = [
-        {
-            "vote": vote.removesuffix("Vote").lower(),
-            "measure": str(measure),
-            "distance": str(distance),
-            "ncomp": int(value),
-        }
-        for measure, row in zip(r["rownames"](matrix), values)
-        for distance, value in zip(r["colnames"](matrix), row)
-        if not pd.isna(value)
-    ]
-    return pd.DataFrame(records, columns=columns)
+    return pd.DataFrame(
+        values,
+        index=pd.Index(r["rownames"](matrix), name="id"),
+        columns=r["colnames"](matrix),
+    )
 
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
-    """Prints one mixOmics vote framework's component-choice matrix."""
+    """Prints one mixOmics vote's component-choice matrix."""
     if choice_table.empty:
         print(f"{vote} component-choice matrix is unavailable.\n", flush=True)
         return
-    choice_table = choice_table.pivot(
-        index="measure", columns="distance", values="ncomp"
-    )
     print(f"{vote} component-choice matrix:\n", flush=True)
     print(f"{choice_table.to_string()}\n", flush=True)

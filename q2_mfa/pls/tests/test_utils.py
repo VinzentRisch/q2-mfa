@@ -194,8 +194,7 @@ class TestPLSUtils(TestPluginBase):
         self.assertEqual(list(utils.r["colnames"](r_design)), ["block-b", "block-a"])
 
     def test_vote_error_rates_combines_mean_and_standard_deviation(self):
-        perf_result = utils.r(
-            """
+        perf_result = utils.r("""
             list(
               `WeightedVote.error.rate` = list(
                 `max.dist` = matrix(
@@ -210,8 +209,7 @@ class TestPLSUtils(TestPluginBase):
                 )
               )
             )
-            """
-        )
+            """)
         observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
@@ -226,8 +224,7 @@ class TestPLSUtils(TestPluginBase):
         pd.testing.assert_frame_equal(observed, expected)
 
     def test_vote_error_rates_omits_missing_standard_deviation(self):
-        perf_result = utils.r(
-            """
+        perf_result = utils.r("""
             list(
               `WeightedVote.error.rate` = list(
                 `max.dist` = matrix(
@@ -237,8 +234,7 @@ class TestPLSUtils(TestPluginBase):
               ),
               `WeightedVote.error.rate.sd` = NULL
             )
-            """
-        )
+            """)
         observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
 
         self.assertEqual(observed["mean"].tolist(), [0.1, 0.3])
@@ -247,14 +243,12 @@ class TestPLSUtils(TestPluginBase):
     def test_vote_error_rates_returns_empty_table_when_both_statistics_are_missing(
         self,
     ):
-        perf_result = utils.r(
-            """
+        perf_result = utils.r("""
             list(
               `WeightedVote.error.rate` = NULL,
               `WeightedVote.error.rate.sd` = NULL
             )
-            """
-        )
+            """)
         observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
         self.assertTrue(observed.empty)
         self.assertEqual(

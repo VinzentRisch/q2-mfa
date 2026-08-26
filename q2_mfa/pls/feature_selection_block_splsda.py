@@ -5,7 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-"""QIIME-facing DIABLO feature-selection action."""
 import secrets
 
 import pandas as pd
@@ -13,7 +12,6 @@ from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import IntVector, ListVector, r
 
-from q2_mfa.pls.auto_keepx import adaptive_keepx_refinement
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 from q2_mfa.pls.types._tune_result import _PLSFeatureSelectionResult
 from q2_mfa.pls.utils import (
@@ -31,19 +29,11 @@ from q2_mfa.pls.utils import (
 def feature_selection_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
+    keepx: dict,
     design_matrix: Metadata = None,
     design_weight: float | None = None,
     tuned_components: PLSTuneComponentsDirFmt = None,
     ncomp: CaptureHolder[int] = None,
-    keepx: dict | None = None,
-    auto_keepx: bool = True,
-    min_keepx: int = 5,
-    max_keepx_fraction: float = 0.2,
-    grid_size: int = 5,
-    refinement_factor: float = 2.0,
-    selection_rule: str = "one_se",
-    ber_margin: float = 0.0,
-    se_multiplier: float = 1.0,
     scale: bool = True,
     tol: float = 1e-6,
     max_iter: int = 100,
@@ -73,67 +63,30 @@ def feature_selection_block_splsda(
         ncomp, tuned_components, weighted, measure, distance
     )
 
-    initial_keepx = _parse_keepx_collection(keepx, list(blocks)) if keepx else None
-    if auto_keepx:
-        automatic = adaptive_keepx_refinement(
-            blocks,
-            target,
-            design,
-            selected_ncomp,
-            initial_keepx=initial_keepx,
-            min_keepx=min_keepx,
-            max_keepx_fraction=max_keepx_fraction,
-            grid_size=grid_size,
-            refinement_factor=refinement_factor,
-            selection_rule=selection_rule,
-            ber_margin=ber_margin,
-            se_multiplier=se_multiplier,
-            tol=tol,
-            max_iter=max_iter,
-            near_zero_var=near_zero_var,
-            scale=scale,
-            validation=validation,
-            folds=folds,
-            nrepeat=nrepeat,
-            signif_threshold=signif_threshold,
-            distance=distance,
-            measure=measure,
-            weighted=weighted,
-            seed=resolved_seed,
-            threads=threads,
-        )
-        feature_rates = pd.concat(
-            [
-                _cache_to_error_rates(cache, component - 1)
-                for component, cache in automatic.evaluation_cache.items()
-            ],
-            ignore_index=True,
-        )
-        selected_keepx = automatic.keep_x
-    else:
-        if initial_keepx is None:
-            raise ValueError("keepx is required when auto_keepx is false.")
-        tune_result, feature_rates = _run_tune(
-            blocks,
-            target,
-            design,
-            selected_ncomp,
-            initial_keepx,
-            tol,
-            max_iter,
-            near_zero_var,
-            scale,
-            validation,
-            folds,
-            nrepeat,
-            signif_threshold,
-            distance,
-            measure,
-            weighted,
-            resolved_seed,
-            bpparam,
-        )
-        selected_keepx = _selected_keepx(tune_result)
+    if keepx is None:
+        raise ValueError("keepx is required for manual feature selection.")
+    parsed_keepx = _parse_keepx_collection(keepx, list(blocks))
+    tune_result, feature_rates = _run_tune(
+        blocks,
+        target,
+        design,
+        selected_ncomp,
+        parsed_keepx,
+        tol,
+        max_iter,
+        near_zero_var,
+        scale,
+        validation,
+        folds,
+        nrepeat,
+        signif_threshold,
+        distance,
+        measure,
+        weighted,
+        resolved_seed,
+        bpparam,
+    )
+    selected_keepx = _selected_keepx(tune_result)
     return _PLSFeatureSelectionResult(
         error_rate=_expand_keepx_columns(feature_rates, tuple(blocks)),
         selected_features=_selected_features_table(selected_keepx),
@@ -161,22 +114,6 @@ def _parse_keepx_collection(
             )
         parsed[name] = values
     return parsed
-
-
-def _cache_to_error_rates(cache, component: int) -> pd.DataFrame:
-    records = []
-    for values, entry in cache.items():
-        keepx = "_".join(map(str, values))
-        records.extend(
-            {
-                "keepx": keepx,
-                "component": component,
-                "statistic": statistic,
-                "value": entry[statistic],
-            }
-            for statistic in ("mean", "sd")
-        )
-    return pd.DataFrame(records, columns=["keepx", "component", "statistic", "value"])
 
 
 def _selected_keepx(tune_result) -> dict[str, list[int]]:

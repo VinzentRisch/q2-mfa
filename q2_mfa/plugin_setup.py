@@ -107,14 +107,6 @@ plugin.methods.register_function(
         "design_weight": Float % Range(0, 1),
         "ncomp": Int % Range(1, None),
         "keepx": Collection[Str],
-        "auto_keepx": Bool,
-        "min_keepx": Int % Range(1, None),
-        "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
-        "grid_size": Int % Range(3, None),
-        "refinement_factor": Float % Range(1, None, inclusive_start=False),
-        "selection_rule": Str % Choices("one_se", "absolute_margin"),
-        "ber_margin": Float % Range(0, None),
-        "se_multiplier": Float % Range(1, None),
         "scale": Bool,
         "tol": Float % Range(0, None, inclusive_start=False),
         "max_iter": Int % Range(1, None),
@@ -139,11 +131,7 @@ plugin.methods.register_function(
     },
     parameter_descriptions={
         "ncomp": "Manual component count. Provide this value or tuned_components.",
-        "keepx": "Optional named comma-separated keepX candidates by block.",
-        "auto_keepx": (
-            "Whether to adaptively refine keepX. When true, keepx supplies "
-            "the initial grid when provided; when false, keepx is required."
-        ),
+        "keepx": "Named comma-separated keepX candidates by block.",
         "threads": (
             "Number of BiocParallel workers. Use 0 or 'auto' to use "
             "BiocParallel's default."

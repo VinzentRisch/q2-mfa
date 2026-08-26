@@ -26,7 +26,7 @@ def test_keepx_collection_rejects_invalid_counts():
         _parse_keepx_collection({"a": "0", "b": "2"}, ["a", "b"])
 
 
-def test_auto_keepx_uses_given_collection_as_its_initial_grid(monkeypatch):
+def test_manual_keepx_passes_the_given_collection_to_tuning(monkeypatch):
     tuning = importlib.import_module("q2_mfa.pls.feature_selection_block_splsda")
 
     blocks = {"a": pd.DataFrame([[1], [2]]), "b": pd.DataFrame([[3], [4]])}
@@ -40,23 +40,37 @@ def test_auto_keepx_uses_given_collection_as_its_initial_grid(monkeypatch):
     monkeypatch.setattr(tuning, "r", lambda *args: None)
 
     class Result:
-        keep_x = {"a": [1], "b": [2]}
-        evaluation_cache = {1: {(1, 2): {"mean": 0.1, "sd": 0.01}}}
+        def rx2(self, name):
+            assert name == "choice.keepX"
 
-    def fake_auto(*args, **kwargs):
-        captured.update(kwargs)
-        return Result()
+            class KeepX:
+                names = ["a", "b"]
 
-    monkeypatch.setattr(tuning, "adaptive_keepx_refinement", fake_auto)
+                def __iter__(self):
+                    return iter([[1], [2]])
+
+            return KeepX()
+
+    def fake_tune(*args):
+        captured["keepx"] = args[4]
+        return Result(), pd.DataFrame(
+            {
+                "keepx": ["1_2", "1_2"],
+                "component": [0, 0],
+                "statistic": ["mean", "sd"],
+                "value": [0.1, 0.01],
+            }
+        )
+
+    monkeypatch.setattr(tuning, "_run_tune", fake_tune)
     result = feature_selection_block_splsda(
         tables=blocks,
         y=target,
         design_weight=0.1,
         ncomp=1,
         keepx={"a": "1,3", "b": "2,4"},
-        auto_keepx=True,
     )
-    assert captured["initial_keepx"] == {"a": [1, 3], "b": [2, 4]}
+    assert captured["keepx"] == {"a": [1, 3], "b": [2, 4]}
     assert result.selected_features.to_dict("records") == [
         {"block": "a", "component": 0, "value": 1},
         {"block": "b", "component": 0, "value": 2},
@@ -80,7 +94,6 @@ def test_manual_keepx_requires_a_collection(monkeypatch):
             design_weight=0.1,
             ncomp=1,
             keepx=None,
-            auto_keepx=False,
         )
 
 

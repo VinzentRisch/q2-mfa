@@ -25,7 +25,7 @@ from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
-from q2_mfa.pca import pca
+from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,

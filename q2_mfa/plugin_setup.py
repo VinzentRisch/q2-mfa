@@ -255,6 +255,9 @@ plugin.methods.register_function(
         "Fits block PLS-DA models across component counts and reports "
         "cross-validated weighted- and majority-vote classification error rates."
     ),
+    citations=[
+        citations["rohart2017mixomics"],
+    ],
 )
 
 plugin.pipelines.register_function(
@@ -280,6 +283,9 @@ plugin.pipelines.register_function(
         "cross-validated weighted- and majority-vote error rates, and visualizes the "
         "component-selection diagnostics."
     ),
+    citations=[
+        citations["rohart2017mixomics"],
+    ],
 )
 
 plugin.register_formats(

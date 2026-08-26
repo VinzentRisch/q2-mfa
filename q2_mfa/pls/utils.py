@@ -20,12 +20,30 @@ from rpy2.robjects import (
     r,
 )
 from rpy2.robjects.conversion import localconverter
+from rpy2.robjects.vectors import DataFrame as RDataFrame
+from rpy2.robjects.vectors import FactorVector
 
 
 def _align_samples(
     tables: dict[str, pd.DataFrame], target: pd.Series
 ) -> tuple[dict[str, pd.DataFrame], pd.Series]:
-    """Restricts feature tables and a categorical response to labelled samples."""
+    """
+    Aligns feature tables and a categorical response to shared samples.
+
+    Drops missing response values, retains only sample IDs shared by every
+    block and the response, and warns for each block or response row that is
+    excluded.
+
+    Args:
+        tables (dict[str, pd.DataFrame]): Named feature tables indexed by
+            sample ID.
+        target (pd.Series): Categorical response values indexed by sample ID.
+
+    Returns:
+        tuple[dict[str, pd.DataFrame], pd.Series]: A tuple containing:
+            - dict[str, pd.DataFrame]: Aligned named feature tables.
+            - pd.Series: Aligned response values.
+    """
     if len(tables) < 2:
         raise ValueError("At least two named feature tables are required.")
     target = target.dropna()
@@ -56,7 +74,23 @@ def _align_samples(
 def _resolve_design(
     design_matrix, design_weight: float | None, block_names: list[str]
 ) -> pd.DataFrame | float:
-    """Validates an explicit design matrix or passes through a scalar weight."""
+    """
+    Validates an explicit block design matrix or returns a scalar weight.
+
+    Requires exactly one design specification. Explicit matrices must contain
+    the input block names on both axes, be numeric and symmetric, and have a
+    zero diagonal; scalar weights are returned unchanged.
+
+    Args:
+        design_matrix (Metadata, optional): Explicit block-relationship matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight.
+        block_names (list[str]): Ordered names of the feature-table blocks.
+
+    Returns:
+        pd.DataFrame | float: Validated and ordered design matrix, or the
+            supplied scalar design weight.
+    """
     if (design_matrix is None) == (design_weight is None):
         raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
     if design_weight is not None:
@@ -82,9 +116,20 @@ def _resolve_design(
 
 
 def _build_bpparam(threads: int, seed: int):
-    """Creates an OS-appropriate BiocParallel backend.
+    """
+    Creates an operating-system-appropriate BiocParallel backend.
 
-    A value of zero delegates worker selection to BiocParallel.
+    Uses a serial backend for one worker, a socket backend on Windows, and a
+    multicore backend elsewhere. A thread count of zero leaves worker selection
+    to BiocParallel.
+
+    Args:
+        threads (int): Requested worker count, where zero selects the
+            BiocParallel default.
+        seed (int): Random seed supplied to the backend.
+
+    Returns:
+        rpy2.robjects.RObject: Configured BiocParallel parameter object.
     """
     r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
@@ -97,8 +142,27 @@ def _build_bpparam(threads: int, seed: int):
     return r["MulticoreParam"](**kwargs)
 
 
-def _to_r_inputs(blocks, target, design):
-    """Converts aligned pandas inputs to named R objects with preserved labels."""
+def _to_r_inputs(
+    blocks: dict[str, pd.DataFrame],
+    target: pd.Series,
+    design: pd.DataFrame | float,
+) -> tuple[ListVector, FactorVector, RDataFrame | float]:
+    """
+    Converts aligned Python inputs to labelled R objects.
+
+    Converts each block and an explicit design matrix through the pandas R
+    converter, and creates a named R factor for the categorical response.
+
+    Args:
+        blocks (dict[str, pd.DataFrame]): Aligned named feature tables.
+        target (pd.Series): Aligned categorical response values.
+        design (pd.DataFrame | float): Explicit design matrix or scalar design
+            weight.
+
+    Returns:
+        tuple[rpy2.robjects.ListVector, rpy2.robjects.vectors.FactorVector,
+        rpy2.robjects.RObject]: Named R blocks, response factor, and design.
+    """
     with localconverter(default_converter + pandas2ri.converter):
         converter = conversion.get_conversion()
         r_blocks = ListVector(
@@ -110,8 +174,23 @@ def _to_r_inputs(blocks, target, design):
     return r_blocks, r_target, r_design
 
 
-def _r_vote_error_rate_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
-    """Converts one vote's mean and SD error rates to wide records."""
+def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
+    """
+    Converts mixOmics vote error-rate means and standard deviations to rows.
+
+    Combines the requested vote's error-rate and standard-deviation matrices
+    into one table with distance measure, class, component, mean, and standard
+    deviation columns.
+
+    Args:
+        perf_result (rpy2.robjects.vectors.ListVector): Result returned by
+            mixOmics ``perf()``.
+        vote (str): Vote type to extract, such as ``WeightedVote`` or
+            ``MajorityVote``.
+
+    Returns:
+        pd.DataFrame: Error-rate records for the requested vote.
+    """
     columns = ["distance", "class", "component", "mean", "sd"]
     records = {}
     for statistic, error_rates in (

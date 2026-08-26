@@ -42,7 +42,44 @@ def _tune_components_block_splsda(
     seed: CaptureHolder[int] = None,
     threads: int = 1,
 ) -> PLSTuneComponentsDirFmt:
-    """Selects block PLS-DA components with weighted and majority voting."""
+    """
+    Tunes block sPLS-DA (DIABLO) component counts with mixOmics.
+
+    Aligns the input blocks and categorical response, fits a dense block
+    sPLS-DA (DIABLO) model as documented for component tuning in the mixOmics
+    vignette,
+    evaluates its component counts by cross-validation, and serializes
+    weighted- and majority-vote diagnostics as a component-tuning directory
+    format.
+
+    Args:
+        tables (ResultCollection): Named feature-table artifacts used for block
+            sPLS-DA (DIABLO).
+        y (CategoricalMetadataColumn): Categorical response labels for the
+            samples.
+        design_matrix (Metadata, optional): Explicit block-relationship design
+            matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight used when no design matrix is supplied.
+        ncomp (int): Number of latent components to fit and evaluate.
+        scale (bool): Whether to standardize features within every block.
+        tol (float): Convergence tolerance for the iterative model fit.
+        max_iter (int): Maximum iterations for each model fit.
+        near_zero_var (bool): Whether to remove zero or near-zero variance
+            predictors before fitting.
+        validation (str): Cross-validation strategy accepted by mixOmics.
+        folds (int): Number of folds used for M-fold cross-validation.
+        nrepeat (int): Number of cross-validation repetitions.
+        signif_threshold (float): Minimum error-rate improvement required to
+            retain an additional component.
+        seed (CaptureHolder[int], optional): Random seed holder used for
+            reproducible cross-validation.
+        threads (int): Number of BiocParallel workers to use.
+
+    Returns:
+        PLSTuneComponentsDirFmt: Serialized weighted- and majority-vote error
+            rates and component-choice matrices.
+    """
     r("suppressPackageStartupMessages(library(mixOmics))")
     blocks, target = _align_samples(dict(tables.collection), y.to_series())
     design = _resolve_design(design_matrix, design_weight, list(blocks))
@@ -50,6 +87,8 @@ def _tune_components_block_splsda(
     bpparam = _build_bpparam(threads, resolved_seed)
     r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
 
+    # Fit the dense model, as documented for component tuning in the mixOmics
+    # block sPLS-DA (DIABLO) vignette.
     perf_model = r["block.plsda"](
         r_blocks,
         r_target,
@@ -107,7 +146,44 @@ def tune_components_block_splsda(
     seed=None,
     threads=1,
 ):
-    """Tune block PLS-DA components and report selection diagnostics."""
+    """
+    Tunes block sPLS-DA (DIABLO) components and creates diagnostic
+    visualizations.
+
+    Runs the component-tuning method, plots the overall weighted- and
+    majority-vote error rates, tabulates both component-choice matrices, and
+    combines the resulting visualizations into a report.
+
+    Args:
+        ctx (Context): Pipeline execution context used to retrieve actions and
+            create reports.
+        tables (ResultCollection): Named feature-table artifacts used for block
+            sPLS-DA (DIABLO).
+        y (CategoricalMetadataColumn): Categorical response labels for the
+            samples.
+        design_matrix (Metadata, optional): Explicit block-relationship design
+            matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight used when no design matrix is supplied.
+        ncomp (int): Number of latent components to fit and evaluate.
+        scale (bool): Whether to standardize features within every block.
+        tol (float): Convergence tolerance for the iterative model fit.
+        max_iter (int): Maximum iterations for each model fit.
+        near_zero_var (bool): Whether to remove zero or near-zero variance
+            predictors before fitting.
+        validation (str): Cross-validation strategy accepted by mixOmics.
+        folds (int): Number of folds used for M-fold cross-validation.
+        nrepeat (int): Number of cross-validation repetitions.
+        signif_threshold (float): Minimum error-rate improvement required to
+            retain an additional component.
+        seed (int, optional): Random seed used for reproducible
+            cross-validation.
+        threads (int): Number of BiocParallel workers to use.
+
+    Returns:
+        tuple[Artifact, Visualization]: The component-tuning artifact and a
+            report containing error-rate plots and choice-matrix tables.
+    """
     tune_components = ctx.get_action("mfa", "_tune_components_block_splsda")
     lineplot = ctx.get_action("vizard", "lineplot")
     tabulate = ctx.get_action("metadata", "tabulate")
@@ -143,7 +219,7 @@ def tune_components_block_splsda(
         y_measure="mean",
         replicate_method="none",
         group_by="error_rate",
-        title="PLS-DA weighted-vote error rates",
+        title="sPLS-DA weighted-vote error rates",
     )
     (majority_error_rate_plot,) = lineplot(
         metadata=majority_error_rates,
@@ -151,7 +227,7 @@ def tune_components_block_splsda(
         y_measure="mean",
         replicate_method="none",
         group_by="error_rate",
-        title="PLS-DA majority-vote error rates",
+        title="sPLS-DA majority-vote error rates",
     )
     (weighted_choice_matrix,) = tabulate(
         input=tuning_data.choice_matrix_weighted.view(Metadata)
@@ -185,7 +261,21 @@ def tune_components_block_splsda(
 
 
 def _error_rate_metadata(error_rates: Metadata) -> Metadata:
-    """Filters and labels overall error rates for component plotting."""
+    """
+    Filters component error rates to overall classifications and labels them.
+
+    Retains only Overall.ER and Overall.BER rows and adds an ``error_rate``
+    column that combines the prediction distance with the error-rate class for
+    plotting.
+
+    Args:
+        error_rates (Metadata): Error-rate metadata containing distance and
+            class columns.
+
+    Returns:
+        Metadata: Overall error-rate records with an ``error_rate`` plot-group
+            column.
+    """
     error_rates = error_rates.to_dataframe().copy()
     error_rates = error_rates.loc[
         error_rates["class"].isin({"Overall.BER", "Overall.ER"})
@@ -197,7 +287,22 @@ def _error_rate_metadata(error_rates: Metadata) -> Metadata:
 
 
 def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
-    """Converts one mixOmics component-choice matrix to a DataFrame."""
+    """
+    Converts one mixOmics component-choice matrix to a DataFrame.
+
+    Extracts the requested vote matrix from a mixOmics ``perf()`` result and
+    preserves its distance-measure columns and overall-error-rate row labels.
+
+    Args:
+        perf_result (rpy2.robjects.vectors.ListVector): Result returned by
+            mixOmics ``perf()``.
+        vote (str): Vote type to extract, such as ``WeightedVote`` or
+            ``MajorityVote``.
+
+    Returns:
+        pd.DataFrame: Component-choice matrix, or an empty DataFrame when
+            mixOmics did not provide a matrix for the requested vote.
+    """
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
     if type(matrix).__name__ == "NULLType":
         return pd.DataFrame()
@@ -210,7 +315,19 @@ def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
 
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
-    """Prints one mixOmics vote's component-choice matrix."""
+    """
+    Prints a component-choice matrix or an unavailable-message.
+
+    Formats the table for user-visible action output and reports explicitly
+    when mixOmics did not produce component choices for a vote type.
+
+    Args:
+        choice_table (pd.DataFrame): Component-choice matrix to display.
+        vote (str): Vote type represented by the matrix.
+
+    Returns:
+        None: This function writes the formatted message to standard output.
+    """
     if choice_table.empty:
         print(f"{vote} component-choice matrix is unavailable.\n", flush=True)
         return
@@ -224,7 +341,28 @@ def _serialize_tune_components(
     choice_matrix_weighted: pd.DataFrame,
     choice_matrix_majority: pd.DataFrame,
 ) -> PLSTuneComponentsDirFmt:
-    """Serializes component-tuning tables as Table JSONL files."""
+    """
+    Serializes component-tuning tables as Table JSONL files.
+
+    Adds stable IDs to error-rate rows so the metadata transformer can use
+    them as metadata IDs, preserves choice-matrix IDs, attaches JSONL
+    descriptions, and writes all four component-tuning tables into the
+    directory format.
+
+    Args:
+        error_rate_weighted (pd.DataFrame): Weighted-vote cross-validated
+            error rates.
+        error_rate_majority (pd.DataFrame): Majority-vote cross-validated
+            error rates.
+        choice_matrix_weighted (pd.DataFrame): Weighted-vote selected-component
+            matrix.
+        choice_matrix_majority (pd.DataFrame): Majority-vote selected-component
+            matrix.
+
+    Returns:
+        PLSTuneComponentsDirFmt: Directory format containing the four JSONL
+            component-tuning tables.
+    """
     directory_format = PLSTuneComponentsDirFmt()
     error_rate_weighted = error_rate_weighted.copy()
     error_rate_majority = error_rate_majority.copy()

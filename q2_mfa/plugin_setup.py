@@ -189,7 +189,7 @@ component_tuning_parameter_descriptions = {
         "mean and unit variance before fitting."
     ),
     "tol": (
-        "Positive convergence tolerance for the iterative PLS-DA fit. The "
+        "Positive convergence tolerance for the iterative sPLS-DA fit. The "
         "algorithm stops updating a component when successive estimates differ "
         "by less than this value."
     ),
@@ -233,7 +233,7 @@ component_tuning_parameter_descriptions = {
 
 component_tuning_input_descriptions = {
     "tables": (
-        "Named feature tables used as PLS-DA blocks. Before fitting, every "
+        "Named feature tables used as sPLS-DA blocks. Before fitting, every "
         "block and the response are restricted to their shared sample IDs; a "
         "sample missing from one or more blocks is dropped. Table names identify "
         "the corresponding design-matrix rows and columns."
@@ -248,12 +248,17 @@ plugin.methods.register_function(
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "PLS-DA weighted- and majority-vote component-tuning metrics."
+        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics."
     },
-    name="Tune block PLS-DA components",
+    name="Tune block sPLS-DA (DIABLO) components",
     description=(
-        "Fits block PLS-DA models across component counts and reports "
-        "cross-validated weighted- and majority-vote classification error rates."
+        "Tunes the number of components for a block sPLS-DA (DIABLO) model with the "
+        "mixOmics package. The action fits a dense model across component "
+        "counts and uses cross-validation to report weighted- and "
+        "majority-vote classification error rates, allowing users to identify "
+        "a suitable component count. For questions about the implementation or "
+        "parameters, consult the mixOmics documentation: "
+        "https://mixomics.org/methods/diablo/"
     ),
     citations=[
         citations["rohart2017mixomics"],
@@ -271,17 +276,21 @@ plugin.pipelines.register_function(
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "PLS-DA weighted- and majority-vote component-tuning metrics.",
+        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics.",
         "visualization": (
             "Report containing weighted and majority-vote error-rate plots "
             "and component-choice matrices."
         ),
     },
-    name="Tune block PLS-DA components",
+    name="Tune block sPLS-DA (DIABLO) components",
     description=(
-        "Fits block PLS-DA models across component counts, reports "
-        "cross-validated weighted- and majority-vote error rates, and visualizes the "
-        "component-selection diagnostics."
+        "Tunes the number of components for a block sPLS-DA (DIABLO) model with the "
+        "mixOmics package. The pipeline fits a dense model across component "
+        "counts, uses cross-validation to calculate weighted- and "
+        "majority-vote classification error rates, and creates visualizations "
+        "of the component-tuning diagnostics. For questions about the "
+        "implementation or parameters, consult the mixOmics documentation: "
+        "https://mixomics.org/methods/diablo/"
     ),
     citations=[
         citations["rohart2017mixomics"],
@@ -307,7 +316,7 @@ plugin.register_artifact_class(
 plugin.register_artifact_class(
     PLSTuneComponents,
     directory_format=PLSTuneComponentsDirFmt,
-    description="Represents PLS-DA component-selection results produced by mixOmics.",
+    description="Represents PLS component tuning results produced by mixOmics.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")

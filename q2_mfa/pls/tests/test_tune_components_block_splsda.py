@@ -5,13 +5,16 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from unittest.mock import MagicMock, call, patch
+
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
-from rachis import Artifact, Metadata, ResultCollection, Visualization
+from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
 
 from q2_mfa.pls import PLSTuneComponentsDirFmt
+from q2_mfa.pls.tune_components_block_splsda import tune_components_block_splsda
 
 
 class TestTuneComponentsBlockSPLSDA(TestPluginBase):
@@ -45,7 +48,21 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         cls.expected_weighted_choices = read_table("weighted-choices.tsv")
         cls.expected_majority_choices = read_table("majority-choices.tsv")
 
-    def _assert_tuning_matches_expected(self, tuning):
+    def test_tune_components_action_matches_expected_values(self):
+        tune_components = self.plugin.methods["_tune_components_block_splsda"]
+
+        (tuning,) = tune_components(
+            tables=self.tables,
+            y=self.response,
+            design_weight=0.1,
+            ncomp=2,
+            validation="Mfold",
+            folds=3,
+            nrepeat=3,
+            seed=1,
+            threads=1,
+        )
+
         tuning_data = tuning.view(PLSTuneComponentsDirFmt)
         actual_tables = (
             (
@@ -76,30 +93,30 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             else:
                 assert_frame_equal(actual, expected, check_exact=True)
 
-    def _tuning_parameters(self):
-        return {
-            "tables": self.tables,
-            "y": self.response,
-            "design_weight": 0.1,
-            "ncomp": 2,
-            "validation": "Mfold",
-            "folds": 3,
-            "nrepeat": 3,
-            "seed": 1,
-            "threads": 1,
-        }
+    @patch("q2_mfa.pls.tune_components_block_splsda._error_rate_metadata")
+    def test_tune_components_pipeline_calls_its_actions(self, mock_error_rate_metadata):
+        tuning = MagicMock()
+        mock_action = MagicMock(
+            side_effect=[
+                lambda *args, **kwargs: (tuning,),
+                lambda *args, **kwargs: (MagicMock(),),
+                lambda *args, **kwargs: (MagicMock(),),
+            ]
+        )
+        mock_context = MagicMock(get_action=mock_action)
 
-    def test_tune_components_action_matches_expected_values(self):
-        tune_components = self.plugin.methods["_tune_components_block_splsda"]
+        tune_components_block_splsda(
+            ctx=mock_context,
+            tables=self.tables,
+            y=self.response,
+            design_weight=0.1,
+        )
 
-        (tuning,) = tune_components(**self._tuning_parameters())
-
-        self._assert_tuning_matches_expected(tuning)
-
-    def test_tune_components_pipeline_matches_expected_values(self):
-        tune_components = self.plugin.pipelines["tune_components_block_splsda"]
-
-        result = tune_components(**self._tuning_parameters())
-
-        self._assert_tuning_matches_expected(result.tuning)
-        self.assertIsInstance(result.visualization, Visualization)
+        self.assertEqual(
+            mock_context.get_action.call_args_list,
+            [
+                call("mfa", "_tune_components_block_splsda"),
+                call("vizard", "lineplot"),
+                call("metadata", "tabulate"),
+            ],
+        )

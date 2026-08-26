@@ -10,10 +10,10 @@ from ._tune_result import _PLSFeatureSelectionResult
 from ._type import PLSFeatureSelection, PLSFit, PLSTuneComponents
 
 __all__ = [
-    "PLSFit",
-    "PLSFitDirFmt",
     "PLSTuneComponents",
     "PLSTuneComponentsDirFmt",
+    "PLSFit",
+    "PLSFitDirFmt",
     "PLSFeatureSelection",
     "PLSFeatureSelectionDirFmt",
     "_PLSFeatureSelectionResult",

@@ -6,4 +6,5 @@ dependencies:
   - qiime2-tiny
   - pip
   - pip:
+     - prince
      - q2-mfa@git+https://github.com/bokulich-lab/q2-mfa.git@main

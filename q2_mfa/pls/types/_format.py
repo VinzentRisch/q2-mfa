@@ -9,13 +9,29 @@ import rachis.plugin.model as model
 from q2_types.tabular import TableJSONLFileFormat
 
 
-class PLSFitDirFmt(model.DirectoryFormat):
-    """Stores consolidated long-form fitted PLS and DIABLO result tables.
+class PLSTuneComponentsDirFmt(model.DirectoryFormat):
+    """Stores DIABLO component-selection diagnostics."""
 
-    Each output category is represented by one JSONL table. Block-specific
-    rows use an explicit ``block`` field, which keeps PLS and MFA result
-    schemas consistent and avoids per-block directory nesting.
-    """
+    error_rate_weighted = model.File(
+        "error_rate_weighted.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    error_rate_majority = model.File(
+        "error_rate_majority.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    choice_matrix_weighted = model.File(
+        "choice_matrix_weighted.jsonl",
+        format=TableJSONLFileFormat,
+    )
+    choice_matrix_majority = model.File(
+        "choice_matrix_majority.jsonl",
+        format=TableJSONLFileFormat,
+    )
+
+
+class PLSFitDirFmt(model.DirectoryFormat):
+    """Stores consolidated long-form fitted PLS and DIABLO result tables."""
 
     loadings = model.File("loadings.jsonl", format=TableJSONLFileFormat)
     loadings_star = model.File(
@@ -30,10 +46,7 @@ class PLSFitDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
-    error_rate = model.File(
-        "error_rate.jsonl",
-        format=TableJSONLFileFormat,
-    )
+    error_rate = model.File("error_rate.jsonl", format=TableJSONLFileFormat)
     feature_component_correlation = model.File(
         "feature_component_correlation.jsonl", format=TableJSONLFileFormat
     )
@@ -42,27 +55,10 @@ class PLSFitDirFmt(model.DirectoryFormat):
     )
 
 
-class PLSTuneComponentsDirFmt(model.DirectoryFormat):
-    """Stores DIABLO component-selection diagnostics."""
-
-    error_rate = model.File(
-        "error_rate.jsonl",
-        format=TableJSONLFileFormat,
-    )
-    choice_matrix = model.File(
-        "choice_matrix.jsonl",
-        format=TableJSONLFileFormat,
-    )
-
-
 class PLSFeatureSelectionDirFmt(model.DirectoryFormat):
     """Stores DIABLO feature-selection diagnostics and selected keepX values."""
 
-    error_rate = model.File(
-        "error_rate.jsonl",
-        format=TableJSONLFileFormat,
-    )
+    error_rate = model.File("error_rate.jsonl", format=TableJSONLFileFormat)
     selected_features = model.File(
-        "selected_features.jsonl",
-        format=TableJSONLFileFormat,
+        "selected_features.jsonl", format=TableJSONLFileFormat
     )

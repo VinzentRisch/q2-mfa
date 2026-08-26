@@ -7,6 +7,6 @@
 # ----------------------------------------------------------------------------
 from rachis.core.type import SemanticType
 
-PLSFit = SemanticType("PLSFit")
 PLSTuneComponents = SemanticType("PLSTuneComponents")
+PLSFit = SemanticType("PLSFit")
 PLSFeatureSelection = SemanticType("PLSFeatureSelection")

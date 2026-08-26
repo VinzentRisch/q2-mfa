@@ -14,8 +14,8 @@ from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import r
 
+from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
-from q2_mfa.pls.types._result import _PLSTuneComponentsResult
 from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
@@ -41,7 +41,7 @@ def _tune_components_block_splsda(
     signif_threshold: float = 0.01,
     seed: CaptureHolder[int] = None,
     threads: int = 1,
-) -> _PLSTuneComponentsResult:
+) -> PLSTuneComponentsDirFmt:
     """Selects block PLS-DA components with weighted and majority voting."""
     r("suppressPackageStartupMessages(library(mixOmics))")
     blocks, target = _align_samples(dict(tables.collection), y.to_series())
@@ -81,11 +81,11 @@ def _tune_components_block_splsda(
     majority_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote")
     _print_component_choice(weighted_choice_matrix, "WeightedVote")
     _print_component_choice(majority_choice_matrix, "MajorityVote")
-    return _PLSTuneComponentsResult(
-        error_rate_weighted=weighted_error_rate,
-        error_rate_majority=majority_error_rate,
-        choice_matrix_weighted=weighted_choice_matrix,
-        choice_matrix_majority=majority_choice_matrix,
+    return _serialize_tune_components(
+        weighted_error_rate,
+        majority_error_rate,
+        weighted_choice_matrix,
+        majority_choice_matrix,
     )
 
 
@@ -216,3 +216,43 @@ def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
         return
     print(f"{vote} component-choice matrix:\n", flush=True)
     print(f"{choice_table.to_string()}\n", flush=True)
+
+
+def _serialize_tune_components(
+    error_rate_weighted: pd.DataFrame,
+    error_rate_majority: pd.DataFrame,
+    choice_matrix_weighted: pd.DataFrame,
+    choice_matrix_majority: pd.DataFrame,
+) -> PLSTuneComponentsDirFmt:
+    """Serializes component-tuning tables as Table JSONL files."""
+    directory_format = PLSTuneComponentsDirFmt()
+    error_rate_weighted = error_rate_weighted.copy()
+    error_rate_majority = error_rate_majority.copy()
+    choice_matrix_weighted = choice_matrix_weighted.reset_index()
+    choice_matrix_majority = choice_matrix_majority.reset_index()
+
+    error_rate_weighted.insert(
+        0, "id", [f"row{index}" for index in range(1, len(error_rate_weighted) + 1)]
+    )
+    error_rate_majority.insert(
+        0, "id", [f"row{index}" for index in range(1, len(error_rate_majority) + 1)]
+    )
+
+    error_rate_weighted.attrs["description"] = jsonl_descriptions["error_rate_weighted"]
+    error_rate_majority.attrs["description"] = jsonl_descriptions["error_rate_majority"]
+    choice_matrix_weighted.attrs["description"] = jsonl_descriptions[
+        "choice_matrix_weighted"
+    ]
+    choice_matrix_majority.attrs["description"] = jsonl_descriptions[
+        "choice_matrix_majority"
+    ]
+
+    directory_format.error_rate_weighted.write_data(error_rate_weighted, pd.DataFrame)
+    directory_format.error_rate_majority.write_data(error_rate_majority, pd.DataFrame)
+    directory_format.choice_matrix_weighted.write_data(
+        choice_matrix_weighted, pd.DataFrame
+    )
+    directory_format.choice_matrix_majority.write_data(
+        choice_matrix_majority, pd.DataFrame
+    )
+    return directory_format

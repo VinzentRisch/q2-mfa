@@ -305,4 +305,3 @@ plugin.register_artifact_class(
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")
-importlib.import_module("q2_mfa.pls.types._tune_components_transformer")

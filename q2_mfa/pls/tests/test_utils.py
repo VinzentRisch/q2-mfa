@@ -11,9 +11,10 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from rachis import Metadata
 from rachis.core.exceptions import RachisWarning
+from rachis.plugin import CaptureHolder, Int
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import utils
+from q2_mfa.pls import PLSTuneComponentsDirFmt, utils
 
 
 class TestPLSUtils(TestPluginBase):
@@ -38,6 +39,12 @@ class TestPLSUtils(TestPluginBase):
             name: Metadata(read_table(f"design-{name}.tsv"))
             for name in ("valid", "nonnumeric", "nonsymmetric", "nonzero-diagonal")
         }
+        cls.tuned_ncomp = PLSTuneComponentsDirFmt(
+            instance.get_data_path("utils/tuned-ncomp"), mode="r"
+        )
+        cls.tuned_ncomp_missing_selection = PLSTuneComponentsDirFmt(
+            instance.get_data_path("utils/tuned-ncomp-missing-selection"), mode="r"
+        )
 
     def test_align_samples_drops_unshared_and_unlabelled_samples(self):
         with warnings.catch_warnings(record=True) as caught:
@@ -254,3 +261,93 @@ class TestPLSUtils(TestPluginBase):
         self.assertEqual(
             observed.columns.tolist(), ["distance", "class", "component", "mean", "sd"]
         )
+
+    def test_ncomp_from_tuned_ncomp_rejects_missing_selected_value(self):
+        """Rejects a tuning choice matrix with no selected component value."""
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^The component-tuning artifact has no selected number of components "
+            r"for the requested vote, measure, and distance\.$",
+        ):
+            utils._ncomp_from_tuned_ncomp(
+                self.tuned_ncomp_missing_selection,
+                weighted=True,
+                measure="BER",
+                distance="max.dist",
+            )
+
+    def test_ncomp_from_tuned_ncomp_selects_requested_vote(self):
+        """Reads the selected component from the requested vote matrix."""
+        for weighted, expected in ((True, 2), (False, 3)):
+            with self.subTest(weighted=weighted):
+                observed = utils._ncomp_from_tuned_ncomp(
+                    self.tuned_ncomp,
+                    weighted=weighted,
+                    measure="BER",
+                    distance="max.dist",
+                )
+                self.assertEqual(observed, expected)
+
+    def test_resolve_ncomp_returns_manual_value(self):
+        """Uses a manually provided component count without reading tuning data."""
+        ncomp = CaptureHolder("ncomp", 4, Int, Mock(parameters={}))
+
+        observed = utils._resolve_ncomp(
+            ncomp,
+            tuned_ncomp=None,
+            weighted=True,
+            measure="BER",
+            distance="max.dist",
+        )
+
+        self.assertEqual(observed, 4)
+
+    def test_resolve_ncomp_captures_value_from_tuned_ncomp(self):
+        """Derives and records the component count when no manual value exists."""
+        provenance = Mock(parameters={})
+        ncomp = CaptureHolder("ncomp", None, Int, provenance)
+
+        observed = utils._resolve_ncomp(
+            ncomp,
+            tuned_ncomp=self.tuned_ncomp,
+            weighted=True,
+            measure="BER",
+            distance="max.dist",
+        )
+
+        self.assertEqual(observed, 2)
+        self.assertTrue(ncomp.is_set)
+        self.assertEqual(provenance.parameters, {"ncomp": 2})
+
+    def test_resolve_ncomp_rejects_both_sources(self):
+        """Rejects a manual count paired with a component-tuning artifact."""
+        ncomp = CaptureHolder("ncomp", 4, Int, Mock(parameters={}))
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Provide exactly one of ncomp or a tuned-ncomp artifact\.$",
+        ):
+            utils._resolve_ncomp(
+                ncomp,
+                tuned_ncomp=self.tuned_ncomp,
+                weighted=True,
+                measure="BER",
+                distance="max.dist",
+            )
+
+    def test_resolve_ncomp_rejects_neither_source(self):
+        """Rejects an unset manual count without a component-tuning artifact."""
+        ncomp = CaptureHolder("ncomp", None, Int, Mock(parameters={}))
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Provide exactly one of ncomp or a tuned-ncomp artifact\.$",
+        ):
+            utils._resolve_ncomp(
+                ncomp,
+                tuned_ncomp=None,
+                weighted=True,
+                measure="BER",
+                distance="max.dist",
+            )

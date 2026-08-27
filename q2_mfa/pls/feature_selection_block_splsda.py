@@ -7,19 +7,18 @@
 # ----------------------------------------------------------------------------
 import secrets
 
+import numpy as np
 import pandas as pd
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import IntVector, ListVector, r
+from rpy2.robjects.vectors import FactorVector
 
-from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
-from q2_mfa.pls.types._tune_result import _PLSFeatureSelectionResult
+from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
+from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
 from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
-    _expand_keepx_columns,
-    _quiet_tune_block_splsda,
-    _r_feature_selection_error_rate_to_dataframe,
     _resolve_design,
     _resolve_ncomp,
     _to_r_inputs,
@@ -32,7 +31,7 @@ def feature_selection_block_splsda(
     keepx: dict,
     design_matrix: Metadata = None,
     design_weight: float | None = None,
-    tuned_components: PLSTuneComponentsDirFmt = None,
+    tuned_ncomp: PLSTuneComponentsDirFmt = None,
     ncomp: CaptureHolder[int] = None,
     scale: bool = True,
     tol: float = 1e-6,
@@ -47,29 +46,65 @@ def feature_selection_block_splsda(
     weighted: bool = True,
     seed: CaptureHolder[int] = None,
     threads: int = 1,
-) -> _PLSFeatureSelectionResult:
-    """Tunes sparse DIABLO feature counts for selected components.
+) -> PLSFeatureSelectionDirFmt:
+    """
+    Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
-    Provide either ``ncomp`` or a tuned-components artifact. The chosen value
-    is captured in the action provenance.
+    Aligns the input blocks and categorical response, determines the component
+    count from either ``ncomp`` or a component-tuning artifact, evaluates the
+    supplied manual keepX candidate grid, and serializes error rates and the
+    selected sparse-feature counts.
+
+    Args:
+        tables (ResultCollection): Named feature-table artifacts used as
+            DIABLO blocks.
+        y (CategoricalMetadataColumn): Categorical response labels for the
+            samples.
+        keepx (dict): Named comma-separated keepX candidate counts for each
+            input block.
+        design_matrix (Metadata, optional): Explicit block-relationship design
+            matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight used when no design matrix is supplied.
+        tuned_ncomp (PLSTuneComponentsDirFmt, optional): Component-tuning
+            artifact used when ``ncomp`` is not provided.
+        ncomp (CaptureHolder[int], optional): Manual number of components to
+            tune.
+        scale (bool): Whether to standardize features within every block.
+        tol (float): Convergence tolerance for the iterative model fit.
+        max_iter (int): Maximum iterations for each model fit.
+        near_zero_var (bool): Whether to remove zero or near-zero variance
+            predictors before fitting.
+        validation (str): Cross-validation strategy accepted by mixOmics.
+        folds (int): Number of folds used for M-fold cross-validation.
+        nrepeat (int): Number of cross-validation repetitions.
+        signif_threshold (float): Minimum error-rate improvement required to
+            retain an additional component.
+        distance (str): Prediction distance used for classification.
+        measure (str): Classification error measure used to select keepX.
+        weighted (bool): Whether to use weighted rather than majority voting.
+        seed (CaptureHolder[int], optional): Random seed holder used for
+            reproducible cross-validation.
+        threads (int): Number of BiocParallel workers to use.
+
+    Returns:
+        PLSFeatureSelectionDirFmt: Serialized keepX error rates and selected
+            feature counts.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
     blocks, target = _align_samples(tables, y)
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)
+    selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
 
-    selected_ncomp = _resolve_ncomp(
-        ncomp, tuned_components, weighted, measure, distance
-    )
-
-    if keepx is None:
-        raise ValueError("keepx is required for manual feature selection.")
-    parsed_keepx = _parse_keepx_collection(keepx, list(blocks))
-    tune_result, feature_rates = _run_tune(
-        blocks,
-        target,
-        design,
+    keepx_collection = dict(getattr(keepx, "collection", keepx))
+    parsed_keepx = _parse_keepx_collection(keepx_collection, list(blocks))
+    r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
+    tune_result = _run_tune(
+        r_blocks,
+        r_target,
+        r_design,
         selected_ncomp,
         parsed_keepx,
         tol,
@@ -86,61 +121,140 @@ def feature_selection_block_splsda(
         resolved_seed,
         bpparam,
     )
-    selected_keepx = _selected_keepx(tune_result)
-    return _PLSFeatureSelectionResult(
-        error_rate=_expand_keepx_columns(feature_rates, tuple(blocks)),
-        selected_features=_selected_features_table(selected_keepx),
+    error_rates = _r_feature_selection_error_rate_to_dataframe(
+        tune_result, tuple(blocks)
+    )
+    selected_features = _selected_features_table(tune_result)
+    print("Tuned keepX values:\n", flush=True)
+    print(f"{selected_features.to_string()}\n", flush=True)
+    return _serialize_feature_selection(
+        error_rates,
+        selected_features,
     )
 
 
 def _parse_keepx_collection(
     keepx: dict, block_names: list[str]
 ) -> dict[str, list[int]]:
-    """Parses a named collection of comma-separated candidate counts."""
-    grid = dict(getattr(keepx, "collection", keepx))
-    if set(grid) != set(block_names):
+    """
+    Parses named comma-separated keepX candidate counts.
+
+    For example, ``{"metabolome": "5,10", "microbiome": "3,6"}``
+    becomes ``{"metabolome": [5, 10], "microbiome": [3, 6]}``.
+
+    Args:
+        keepx (dict): Collection mapping each block to comma-separated feature
+            counts.
+        block_names (list[str]): Ordered names of the input feature blocks.
+
+    Returns:
+        dict[str, list[int]]: Validated candidate counts keyed by block name.
+
+    Raises:
+        ValueError: If the collection keys do not match the input blocks or a
+            value is not a positive integer.
+    """
+    if set(keepx) != set(block_names):
         raise ValueError("keepx keys must exactly match input block names.")
     parsed = {}
     for name in block_names:
         try:
-            values = [int(value.strip()) for value in str(grid[name]).split(",")]
+            values = [int(value.strip()) for value in str(keepx[name]).split(",")]
+            if not values or any(value < 1 for value in values):
+                raise ValueError
         except ValueError as error:
             raise ValueError(
                 "Each keepx value must be a comma-separated list of positive integers."
             ) from error
-        if not values or any(value < 1 for value in values):
-            raise ValueError(
-                "Each keepx value must be a comma-separated list of positive integers."
-            )
         parsed[name] = values
     return parsed
 
 
-def _selected_keepx(tune_result) -> dict[str, list[int]]:
-    """Converts mixOmics' selected component-wise keepX values to Python."""
-    values = tune_result.rx2("choice.keepX")
-    return {
-        str(name): [int(value) for value in block_values]
-        for name, block_values in zip(values.names, values)
-    }
+def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
+    """
+    Creates a block-by-component selected keepX-count table from a mixOmics
+    result.
 
+    Args:
+        tune_result (ListVector): Result returned by mixOmics
+            ``tune.block.splsda``.
 
-def _selected_features_table(selected_keepx: dict[str, list[int]]) -> pd.DataFrame:
-    """Serializes selected keepX values as block and zero-based component rows."""
-    return pd.DataFrame(
-        [
-            {"block": block, "component": component, "value": value}
-            for block, values in selected_keepx.items()
-            for component, value in enumerate(values)
-        ],
-        columns=["block", "component", "value"],
+    Returns:
+        pd.DataFrame: Selected feature counts with block names as the index and
+            zero-based component numbers as columns.
+    """
+    selected_keepx = tune_result.rx2("choice.keepX")
+    selected_features = pd.DataFrame(
+        [[int(value) for value in values] for values in selected_keepx],
+        index=[str(block) for block in selected_keepx.names],
     )
+    selected_features.index.name = "block"
+    selected_features.columns = selected_features.columns.astype(str)
+    selected_features.columns.name = "component"
+    return selected_features
+
+
+def _r_feature_selection_error_rate_to_dataframe(
+    tune_result: ListVector, block_names: tuple[str, ...]
+) -> pd.DataFrame:
+    """
+    Converts mixOmics keepX error-rate matrices to named wide-format records.
+
+    Reads the mean error-rate matrix and standard-deviation matrix returned by
+    ``tune.block.splsda``. The R matrices use keepX combinations such as
+    ``5_10`` as row names and component labels such as ``comp1`` as column
+    names. This function converts each matrix to a pandas table, converts the
+    one-based component labels to zero-based values, and joins the standard
+    deviations to their matching means. Finally, it expands every keepX label
+    into one ``keepx_<block>`` column for each input block.
+
+    Args:
+        tune_result: R ``tune.block.splsda`` result.
+        block_names (tuple[str, ...]): Ordered names of the input feature
+            blocks.
+
+    Returns:
+        pd.DataFrame: Component, mean, standard deviation, and one keepX
+            column per input block. Each row represents one tested keepX
+            combination for one component.
+    """
+    statistic_tables = {}
+    for statistic, error_rates in (
+        ("mean", tune_result.rx2("error.rate")),
+        ("sd", tune_result.rx2("error.rate.sd")),
+    ):
+        values = np.asarray(error_rates, dtype=float)
+        keepx_values = [str(value) for value in r["dimnames"](error_rates)[0]]
+        component_names = [str(value) for value in r["dimnames"](error_rates)[1]]
+        component_numbers = [
+            int(name.removeprefix("comp")) - 1 for name in component_names
+        ]
+        statistic_table = (
+            pd.DataFrame(
+                values.T,
+                index=pd.Index(component_numbers, name="component"),
+                columns=pd.Index(keepx_values, name="keepx"),
+            )
+            .reset_index()
+            .melt(id_vars="component", var_name="keepx", value_name=statistic)
+        )
+        statistic_tables[statistic] = statistic_table
+    result = statistic_tables["mean"].merge(
+        statistic_tables["sd"], on=["keepx", "component"], how="left", sort=False
+    )
+    keepx_columns = [f"keepx_{name}" for name in block_names]
+    parsed = result["keepx"].map(
+        lambda value: [int(count) for count in str(value).split("_")]
+    )
+    result = result.drop(columns="keepx")
+    result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
+    return result[["component", "mean", "sd", *keepx_columns]]
 
 
 def _run_tune(
-    blocks,
-    target,
-    design,
+    r_blocks: ListVector,
+    r_target: FactorVector,
+    r_design,
     ncomp,
     keep_x,
     tol,
@@ -156,14 +270,15 @@ def _run_tune(
     weighted,
     seed,
     bpparam,
-):
-    """Tunes DIABLO sparse variable counts for the perf-selected components.
+) -> ListVector:
+    """
+    Tunes DIABLO sparse feature counts for the selected components.
 
     Args:
-        blocks: Aligned named feature blocks.
-        target: Aligned categorical target.
-        design: Validated DIABLO design matrix.
-        ncomp: Number of components selected by perf.
+        r_blocks (ListVector): Named R feature blocks.
+        r_target (ListVector): Aligned R categorical target.
+        r_design: R DIABLO design matrix or scalar design weight.
+        ncomp: Number of components to tune.
         keep_x: Parsed candidate grids by block.
         tol: Convergence tolerance for tuning.
         max_iter: Maximum tuning iterations.
@@ -180,16 +295,15 @@ def _run_tune(
         bpparam: R BiocParallel backend.
 
     Returns:
-        tuple[object, pd.DataFrame]: R tuning result and its mean and standard
-            deviation error rates by tested keepX combination.
+        ListVector: Result returned by mixOmics ``tune.block.splsda``.
     """
-    print(
-        "2. Tune number of retained features per block and component (keepX)\n",
-        flush=True,
-    )
-    r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
     r_keep_x = ListVector({name: IntVector(values) for name, values in keep_x.items()})
-    tune_result = _quiet_tune_block_splsda(
+    quiet_tune = r(
+        "function(...) { "
+        "suppressWarnings(suppressMessages(tune.block.splsda(...))) "
+        "}"
+    )
+    tune_result = quiet_tune(
         r_blocks,
         r_target,
         **{
@@ -213,16 +327,38 @@ def _run_tune(
             "seed": seed,
         },
     )
-    tuned_keep_x = tune_result.rx2("choice.keepX")
-    keep_x_table = pd.DataFrame(
-        {
-            str(block_name): [int(value) for value in values]
-            for block_name, values in zip(tuned_keep_x.names, tuned_keep_x)
-        }
-    )
-    keep_x_table.index = [
-        f"comp{component}" for component in range(1, len(keep_x_table) + 1)
+    return tune_result
+
+
+def _serialize_feature_selection(
+    error_rate: pd.DataFrame,
+    selected_features: pd.DataFrame,
+) -> PLSFeatureSelectionDirFmt:
+    """
+    Serializes feature-selection tables as Table JSONL files.
+
+    Attaches table descriptions that identify the mixOmics sources for the
+    cross-validated error rates and selected keepX counts, then writes both
+    tables into the feature-selection directory format.
+
+    Args:
+        error_rate (pd.DataFrame): Cross-validated error rates for every tested
+            keepX combination and component.
+        selected_features (pd.DataFrame): Selected keepX counts with blocks as
+            rows and components as columns.
+
+    Returns:
+        PLSFeatureSelectionDirFmt: Directory format containing the serialized
+            feature-selection tables.
+    """
+    directory_format = PLSFeatureSelectionDirFmt()
+    error_rate = error_rate.copy()
+    selected_features = selected_features.reset_index()
+    selected_features.columns.name = None
+    error_rate.attrs["description"] = jsonl_descriptions["feature_selection_error_rate"]
+    selected_features.attrs["description"] = jsonl_descriptions[
+        "feature_selection_selected_features"
     ]
-    print("Tuned keepX values:\n", flush=True)
-    print(f"{keep_x_table.to_string()}\n", flush=True)
-    return tune_result, _r_feature_selection_error_rate_to_dataframe(tune_result)
+    directory_format.error_rate.write_data(error_rate, pd.DataFrame)
+    directory_format.selected_features.write_data(selected_features, pd.DataFrame)
+    return directory_format

@@ -13,8 +13,6 @@ from .tune_components_block_splsda import (
 from .types import (
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
-    PLSFit,
-    PLSFitDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
 )
@@ -24,8 +22,6 @@ __all__ = [
     "PLSTuneComponentsDirFmt",
     "_tune_components_block_splsda",
     "tune_components_block_splsda",
-    "PLSFit",
-    "PLSFitDirFmt",
     "PLSFeatureSelection",
     "PLSFeatureSelectionDirFmt",
     "feature_selection_block_splsda",

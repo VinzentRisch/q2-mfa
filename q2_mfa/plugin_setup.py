@@ -29,8 +29,6 @@ from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
-    PLSFit,
-    PLSFitDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
     _tune_components_block_splsda,
@@ -155,53 +153,6 @@ plugin.methods.register_function(
     ],
 )
 
-plugin.methods.register_function(
-    function=feature_selection_block_splsda,
-    inputs={
-        "tables": Collection[FeatureTable[Unconstrained]],
-        "tuned_components": PLSTuneComponents,
-    },
-    parameters={
-        "y": MetadataColumn[Categorical],
-        "design_matrix": Metadata,
-        "design_weight": Float % Range(0, 1),
-        "ncomp": Int % Range(1, None),
-        "keepx": Collection[Str],
-        "scale": Bool,
-        "tol": Float % Range(0, None, inclusive_start=False),
-        "max_iter": Int % Range(1, None),
-        "near_zero_var": Bool,
-        "validation": Str % Choices("Mfold", "loo"),
-        "folds": Int % Range(2, None),
-        "nrepeat": Int % Range(3, None),
-        "signif_threshold": Float % Range(0, 1),
-        "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
-        "measure": Str % Choices("overall", "BER"),
-        "weighted": Bool,
-        "seed": Int % Range(0, 2**31 - 1),
-        "threads": Threads,
-    },
-    outputs=[("tuning", PLSFeatureSelection)],
-    input_descriptions={
-        "tables": "Named feature tables used as DIABLO blocks.",
-        "tuned_components": (
-            "Optional tuned-components artifact used to determine ncomp. "
-            "Provide this artifact or ncomp, but not both."
-        ),
-    },
-    parameter_descriptions={
-        "ncomp": "Manual component count. Provide this value or tuned_components.",
-        "keepx": "Named comma-separated keepX candidates by block.",
-        "threads": (
-            "Number of BiocParallel workers. Use 0 or 'auto' to use "
-            "BiocParallel's default."
-        ),
-    },
-    output_descriptions={"tuning": "DIABLO feature-selection error-rate table."},
-    name="Select DIABLO block sPLS-DA features",
-    description="Tunes DIABLO keepX values using a manual ncomp or component tuning.",
-)
-
 component_tuning_parameters = {
     "y": MetadataColumn[Categorical],
     "design_matrix": Metadata,
@@ -292,6 +243,48 @@ component_tuning_input_descriptions = {
     )
 }
 
+feature_selection_parameters = {
+    **component_tuning_parameters,
+    "ncomp": Int % Range(1, None),
+    "keepx": Collection[Str],
+    "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
+    "measure": Str % Choices("overall", "BER"),
+    "weighted": Bool,
+}
+
+feature_selection_parameter_descriptions = {
+    **component_tuning_parameter_descriptions,
+    "ncomp": (
+        "Number of components to tune. Provide exactly one of this value or a "
+        "tuned-ncomp artifact."
+    ),
+    "keepx": (
+        "Named comma-separated candidate feature counts for every input "
+        "block. Every block must provide at least one positive integer; "
+        "mixOmics evaluates their Cartesian product for each component."
+    ),
+    "distance": (
+        "Prediction distance used to calculate cross-validated classification "
+        "error rates and select keepX values."
+    ),
+    "measure": (
+        "Classification error measure used to select keepX values: overall "
+        "error rate or balanced error rate (BER)."
+    ),
+    "weighted": (
+        "Whether to select keepX values using weighted voting. Disable to use "
+        "majority voting."
+    ),
+}
+
+feature_selection_input_descriptions = {
+    **component_tuning_input_descriptions,
+    "tuned_ncomp": (
+        "Component-tuning artifact used to determine ncomp. Provide exactly "
+        "one of this artifact or ncomp."
+    ),
+}
+
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
@@ -349,15 +342,45 @@ plugin.pipelines.register_function(
     ],
 )
 
+plugin.methods.register_function(
+    function=feature_selection_block_splsda,
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "tuned_ncomp": PLSTuneComponents,
+    },
+    parameters=feature_selection_parameters,
+    outputs=[("tuning", PLSFeatureSelection)],
+    input_descriptions=feature_selection_input_descriptions,
+    parameter_descriptions=feature_selection_parameter_descriptions,
+    output_descriptions={
+        "tuning": (
+            "Cross-validated keepX error rates and selected feature counts for "
+            "DIABLO feature selection."
+        )
+    },
+    name="Select block sPLS-DA (DIABLO) features",
+    description=(
+        "Tunes sparse feature counts for a block sPLS-DA (DIABLO) model with "
+        "mixOmics. The action evaluates a user-supplied keepX candidate grid "
+        "for every component and reports the resulting cross-validated error "
+        "rates and selected feature counts. Reported error rates use weighted "
+        "voting when the weighted parameter is enabled and majority voting "
+        "otherwise. The measure parameter determines whether they report "
+        "overall error rate (ER) or balanced error rate (BER). For questions "
+        "about the implementation or parameters, consult the mixOmics "
+        "documentation: "
+        "https://mixomics.org/methods/diablo/"
+    ),
+    citations=[citations["rohart2017mixomics"]],
+)
+
 plugin.register_formats(
     ComponentAnalysisDirFmt,
-    PLSFitDirFmt,
     PLSTuneComponentsDirFmt,
     PLSFeatureSelectionDirFmt,
 )
 plugin.register_semantic_types(
     ComponentAnalysis,
-    PLSFit,
     PLSTuneComponents,
     PLSFeatureSelection,
 )
@@ -368,11 +391,6 @@ plugin.register_artifact_class(
         "Represents the output for PCA and MFA actions implemented with the Prince "
         "package."
     ),
-)
-plugin.register_artifact_class(
-    PLSFit,
-    directory_format=PLSFitDirFmt,
-    description="Represents fitted PLS model result tables produced by mixOmics.",
 )
 plugin.register_artifact_class(
     PLSTuneComponents,
@@ -386,4 +404,3 @@ plugin.register_artifact_class(
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")
-importlib.import_module("q2_mfa.pls.types._transformer")

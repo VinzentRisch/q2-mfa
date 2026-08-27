@@ -21,7 +21,7 @@ from rachis.core.type import (
     Range,
     Str,
 )
-from rachis.plugin import Plugin, Threads
+from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
@@ -32,6 +32,7 @@ from q2_mfa.pls import (
     PLSFitDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
+    _feature_selection_block_splsda,
     feature_selection_block_splsda,
 )
 from q2_mfa.preprocessing import transform_clr
@@ -95,18 +96,49 @@ plugin.methods.register_function(
     ],
 )
 
+feature_selection_parameters = {
+    "y": MetadataColumn[Categorical],
+    "design_matrix": Metadata,
+    "design_weight": Float % Range(0, 1),
+    "ncomp": Int % Range(1, None),
+    "keepx": Collection[Str],
+    "scale": Bool,
+    "tol": Float % Range(0, None, inclusive_start=False),
+    "max_iter": Int % Range(1, None),
+    "near_zero_var": Bool,
+    "validation": Str % Choices("Mfold", "loo"),
+    "folds": Int % Range(2, None),
+    "nrepeat": Int % Range(3, None),
+    "signif_threshold": Float % Range(0, 1),
+    "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
+    "measure": Str % Choices("overall", "BER"),
+    "weighted": Bool,
+    "seed": Int % Range(0, 2**31 - 1),
+    "threads": Threads,
+}
+
 plugin.methods.register_function(
+    function=_feature_selection_block_splsda,
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+    },
+    parameters={
+        **feature_selection_parameters,
+        "previously_selected_keepx": Collection[Str],
+    },
+    outputs=[("tuning", PLSFeatureSelection)],
+    name="Internal block sPLS-DA feature selection",
+    description="Internal action used by the adaptive feature-selection pipeline.",
+)
+
+plugin.pipelines.register_function(
     function=feature_selection_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
         "tuned_components": PLSTuneComponents,
     },
     parameters={
-        "y": MetadataColumn[Categorical],
-        "design_matrix": Metadata,
-        "design_weight": Float % Range(0, 1),
-        "ncomp": Int % Range(1, None),
-        "keepx": Collection[Str],
+        **feature_selection_parameters,
         "auto_keepx": Bool,
         "min_keepx": Int % Range(1, None),
         "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
@@ -115,21 +147,8 @@ plugin.methods.register_function(
         "selection_rule": Str % Choices("one_se", "absolute_margin"),
         "ber_margin": Float % Range(0, None),
         "se_multiplier": Float % Range(1, None),
-        "scale": Bool,
-        "tol": Float % Range(0, None, inclusive_start=False),
-        "max_iter": Int % Range(1, None),
-        "near_zero_var": Bool,
-        "validation": Str % Choices("Mfold", "loo"),
-        "folds": Int % Range(2, None),
-        "nrepeat": Int % Range(3, None),
-        "signif_threshold": Float % Range(0, 1),
-        "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
-        "measure": Str % Choices("overall", "BER"),
-        "weighted": Bool,
-        "seed": Int % Range(0, 2**31 - 1),
-        "threads": Threads,
     },
-    outputs=[("tuning", PLSFeatureSelection)],
+    outputs=[("tuning", PLSFeatureSelection), ("visualization", Visualization)],
     input_descriptions={
         "tables": "Named feature tables used as DIABLO blocks.",
         "tuned_components": (
@@ -149,7 +168,10 @@ plugin.methods.register_function(
             "BiocParallel's default."
         ),
     },
-    output_descriptions={"tuning": "DIABLO feature-selection error-rate table."},
+    output_descriptions={
+        "tuning": "DIABLO feature-selection error-rate table.",
+        "visualization": "Feature-selection error-rate diagnostics.",
+    },
     name="Select DIABLO block sPLS-DA features",
     description="Tunes DIABLO keepX values using a manual ncomp or component tuning.",
 )

@@ -22,13 +22,14 @@ def _pls_feature_selection_to_dirfmt(
     result: _PLSFeatureSelectionResult,
 ) -> PLSFeatureSelectionDirFmt:
     directory_format = PLSFeatureSelectionDirFmt()
+    selected_features = result.selected_features
+    if selected_features.index.name == "component":
+        selected_features = selected_features.reset_index()
     _write_table(
         directory_format.error_rate.path_maker(),
         result.error_rate,
     )
-    _write_table(
-        directory_format.selected_features.path_maker(), result.selected_features
-    )
+    _write_table(directory_format.selected_features.path_maker(), selected_features)
     return directory_format
 
 

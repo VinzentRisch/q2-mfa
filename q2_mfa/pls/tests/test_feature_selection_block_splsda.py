@@ -1,7 +1,11 @@
 import importlib
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from q2_types.feature_table import FeatureTable, Unconstrained
+from rachis import Artifact, Metadata, ResultCollection
 from rpy2.robjects import r
 
 from q2_mfa.pls.feature_selection_block_splsda import (
@@ -33,11 +37,8 @@ def test_auto_keepx_uses_given_collection_as_its_initial_grid(monkeypatch):
     target = pd.Series(["x", "y"])
     captured = {}
 
-    monkeypatch.setattr(tuning, "_align_samples", lambda tables, y: (blocks, target))
     monkeypatch.setattr(tuning, "_resolve_design", lambda *args: 0.1)
-    monkeypatch.setattr(tuning.CaptureHolder, "get_or_set", lambda seed, factory: 42)
-    monkeypatch.setattr(tuning, "_build_bpparam", lambda *args: object())
-    monkeypatch.setattr(tuning, "r", lambda *args: None)
+    monkeypatch.setattr(tuning, "_feature_selection_visualization", lambda *args: None)
 
     class Result:
         keep_x = {"a": [1], "b": [2]}
@@ -48,34 +49,32 @@ def test_auto_keepx_uses_given_collection_as_its_initial_grid(monkeypatch):
         return Result()
 
     monkeypatch.setattr(tuning, "adaptive_keepx_refinement", fake_auto)
-    result = feature_selection_block_splsda(
-        tables=blocks,
-        y=target,
+    context = MagicMock()
+    feature_selection_block_splsda(
+        ctx=context,
+        tables=SimpleNamespace(
+            collection={
+                name: SimpleNamespace(view=lambda _, table=table: table)
+                for name, table in blocks.items()
+            }
+        ),
+        y=SimpleNamespace(to_series=lambda: target),
         design_weight=0.1,
         ncomp=1,
         keepx={"a": "1,3", "b": "2,4"},
         auto_keepx=True,
     )
     assert captured["initial_keepx"] == {"a": [1, 3], "b": [2, 4]}
-    assert result.selected_features.to_dict("records") == [
-        {"block": "a", "component": 0, "value": 1},
-        {"block": "b", "component": 0, "value": 2},
-    ]
+    context.make_artifact.assert_called_once()
 
 
-def test_manual_keepx_requires_a_collection(monkeypatch):
-    tuning = importlib.import_module("q2_mfa.pls.feature_selection_block_splsda")
-
+def test_manual_keepx_requires_a_collection():
     blocks = {"a": pd.DataFrame([[1]]), "b": pd.DataFrame([[2]])}
     target = pd.Series(["x"])
-    monkeypatch.setattr(tuning, "_align_samples", lambda tables, y: (blocks, target))
-    monkeypatch.setattr(tuning, "_resolve_design", lambda *args: 0.1)
-    monkeypatch.setattr(tuning.CaptureHolder, "get_or_set", lambda seed, factory: 42)
-    monkeypatch.setattr(tuning, "_build_bpparam", lambda *args: object())
-    monkeypatch.setattr(tuning, "r", lambda *args: None)
     with pytest.raises(ValueError, match="required"):
         feature_selection_block_splsda(
-            tables=blocks,
+            ctx=MagicMock(),
+            tables=SimpleNamespace(collection=blocks),
             y=target,
             design_weight=0.1,
             ncomp=1,
@@ -169,8 +168,50 @@ def test_feature_selection_error_rates_use_named_keepx_columns():
 def test_selected_features_use_zero_based_component_labels():
     result = _selected_features_table({"metabolome": [5, 7], "microbiome": [3, 4]})
     assert result.to_dict("records") == [
-        {"block": "metabolome", "component": 0, "value": 5},
-        {"block": "metabolome", "component": 1, "value": 7},
-        {"block": "microbiome", "component": 0, "value": 3},
-        {"block": "microbiome", "component": 1, "value": 4},
+        {"metabolome": 5, "microbiome": 3},
+        {"metabolome": 7, "microbiome": 4},
     ]
+    assert result.index.name == "component"
+
+
+def test_internal_feature_selection_action_runs_mixomics():
+    """Executes the non-mocked R-backed keepX action on fixture artifacts."""
+    from pathlib import Path
+
+    from q2_mfa.pls import PLSFeatureSelectionDirFmt
+    from q2_mfa.plugin_setup import plugin
+
+    fixture_dir = Path(__file__).parent / "data" / "tune-components"
+    tables = ResultCollection(
+        {
+            name: Artifact.import_data(
+                FeatureTable[Unconstrained],
+                pd.read_csv(fixture_dir / f"{name}.tsv", sep="\t", index_col="id"),
+            )
+            for name in ("block-a", "block-b")
+        }
+    )
+    response = Metadata(
+        pd.read_csv(fixture_dir / "response.tsv", sep="\t", index_col="id")
+    ).get_column("group")
+    (tuning,) = plugin.methods["_feature_selection_block_splsda"](
+        tables=tables,
+        y=response,
+        design_weight=0.1,
+        ncomp=1,
+        keepx={"block-a": "1,2", "block-b": "1,2"},
+        folds=3,
+        nrepeat=3,
+        seed=1,
+        threads=1,
+    )
+    error_rates = tuning.view(PLSFeatureSelectionDirFmt).error_rate.view(pd.DataFrame)
+    assert error_rates.columns.tolist() == [
+        "id",
+        "component",
+        "mean",
+        "sd",
+        "keepx_block-a",
+        "keepx_block-b",
+    ]
+    assert len(error_rates) == 4

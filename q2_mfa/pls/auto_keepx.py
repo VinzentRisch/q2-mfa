@@ -12,7 +12,7 @@ This module contains the automatic keepX strategy used by the QIIME action.
 from dataclasses import dataclass
 from itertools import product as cartesian_product
 from math import ceil, floor, prod, sqrt
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -70,6 +70,10 @@ def adaptive_keepx_refinement(
     weighted: bool = True,
     seed: int = 42,
     threads: int = 1,
+    round_runner: (
+        Callable[[int, dict[str, list[int]], dict[str, list[int]] | None], pd.DataFrame]
+        | None
+    ) = None,
 ) -> AdaptiveKeepXResult:
     """Tunes DIABLO ``keepX`` with a coarse-to-fine adaptive grid.
 
@@ -120,6 +124,9 @@ def adaptive_keepx_refinement(
         weighted: Whether tuning uses weighted prediction performance.
         seed: Reproducible seed for mixOmics cross-validation.
         threads: Number of OS-appropriate BiocParallel workers.
+        round_runner: Optional pipeline callback that evaluates one component
+            and keepX subgrid, returning its long-form mean/SD error rates.
+            When omitted, calls mixOmics directly.
 
     Returns:
         AdaptiveKeepXResult: Final component-wise counts and the unique
@@ -188,30 +195,34 @@ def adaptive_keepx_refinement(
                 if len(subgrids) > 1:
                     print("Evaluating unseen keepX subgrid:\n", flush=True)
                     print(f"{_grid_to_dataframe(subgrid).to_string()}\n", flush=True)
-                tune_result = _run_tuning_round(
-                    blocks,
-                    target,
-                    design,
-                    component,
-                    subgrid,
-                    fixed_keep_x if component > 1 else None,
-                    tol,
-                    max_iter,
-                    near_zero_var,
-                    scale,
-                    validation,
-                    folds,
-                    nrepeat,
-                    signif_threshold,
-                    distance,
-                    measure,
-                    weighted,
-                    seed,
-                    bpparam,
-                )
-                round_error_rates = _r_feature_selection_error_rate_to_dataframe(
-                    tune_result
-                )
+                previous_keepx = fixed_keep_x if component > 1 else None
+                if round_runner is None:
+                    tune_result = _run_tuning_round(
+                        blocks,
+                        target,
+                        design,
+                        component,
+                        subgrid,
+                        previous_keepx,
+                        tol,
+                        max_iter,
+                        near_zero_var,
+                        scale,
+                        validation,
+                        folds,
+                        nrepeat,
+                        signif_threshold,
+                        distance,
+                        measure,
+                        weighted,
+                        seed,
+                        bpparam,
+                    )
+                    round_error_rates = _r_feature_selection_error_rate_to_dataframe(
+                        tune_result
+                    )
+                else:
+                    round_error_rates = round_runner(component, subgrid, previous_keepx)
                 round_error_rates = round_error_rates.loc[
                     round_error_rates["component"] == component - 1
                 ].copy()

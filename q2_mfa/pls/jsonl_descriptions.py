@@ -34,8 +34,8 @@ jsonl_descriptions = {
         "the number of features retained for each input block."
     ),
     "feature_selection_selected_features": (
-        "Selected keepX feature-count matrix with input blocks as rows and "
-        "zero-based components as columns from mixOmics "
+        "Selected keepX feature-count matrix with zero-based components as "
+        "rows and input blocks as columns from mixOmics "
         "tune.block.splsda() choice.keepX."
     ),
 }

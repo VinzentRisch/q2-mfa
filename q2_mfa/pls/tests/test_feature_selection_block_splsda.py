@@ -113,7 +113,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
 
         self.assertEqual(
             list(error_rates.columns),
-            ["component", "mean", "sd", "keepx_block-a", "keepx_block-b"],
+            ["id", "component", "mean", "sd", "keepx_block-a", "keepx_block-b"],
         )
         self.assertTrue(error_rates["mean"].notna().all())
         self.assertTrue(error_rates["sd"].notna().all())
@@ -121,9 +121,13 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         self.assertEqual(len(error_rates), 4)
         self.assertEqual(set(error_rates["keepx_block-a"]), {1, 2})
         self.assertEqual(set(error_rates["keepx_block-b"]), {1, 2})
-        self.assertEqual(selected_features["block"].tolist(), ["block-a", "block-b"])
-        self.assertEqual(selected_features.columns.tolist(), ["block", "0"])
-        self.assertTrue(selected_features["0"].isin([1, 2]).all())
+        self.assertEqual(selected_features["component"].tolist(), [0])
+        self.assertEqual(
+            selected_features.columns.tolist(), ["component", "block-a", "block-b"]
+        )
+        self.assertTrue(
+            selected_features[["block-a", "block-b"]].isin([1, 2]).all().all()
+        )
 
     def test_error_rate_table_converts_mixomics_statistics(self):
         """Converts the mixOmics mean and standard-deviation matrices to rows."""
@@ -145,7 +149,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 "sd": [0.01, 0.02],
                 "keepx_block-a": [1, 3],
                 "keepx_block-b": [2, 4],
-            }
+            },
         )
 
         assert_frame_equal(observed, expected)
@@ -158,9 +162,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
 
         observed = _selected_features_table(tune_result)
         expected = pd.DataFrame(
-            [[5, 7], [3, 4]],
-            index=pd.Index(["metabolome", "microbiome"], name="block"),
-            columns=pd.Index(["0", "1"], name="component"),
+            {"metabolome": [5, 7], "microbiome": [3, 4]},
+            index=pd.Index([0, 1], name="component"),
         )
 
         assert_frame_equal(observed, expected)
@@ -174,9 +177,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         selected_features = pd.read_csv(
             self.get_data_path("feature-selection/serializer-selected-features.tsv"),
             sep="\t",
-            index_col="block",
+            index_col="component",
         )
-        selected_features.columns.name = "component"
         expected_error_rates = TableJSONLFileFormat(
             self.get_data_path(
                 "feature-selection/serializer-expected-error-rate.jsonl"

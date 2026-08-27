@@ -172,7 +172,7 @@ def _parse_keepx_collection(
 
 def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
     """
-    Creates a block-by-component selected keepX-count table from a mixOmics
+    Creates a component-by-block selected keepX-count table from a mixOmics
     result.
 
     Args:
@@ -180,17 +180,17 @@ def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
             ``tune.block.splsda``.
 
     Returns:
-        pd.DataFrame: Selected feature counts with block names as the index and
-            zero-based component numbers as columns.
+        pd.DataFrame: Selected feature counts with zero-based component numbers
+            as the index and block names as columns.
     """
     selected_keepx = tune_result.rx2("choice.keepX")
     selected_features = pd.DataFrame(
-        [[int(value) for value in values] for values in selected_keepx],
-        index=[str(block) for block in selected_keepx.names],
+        {
+            str(block): [int(value) for value in values]
+            for block, values in zip(selected_keepx.names, selected_keepx)
+        }
     )
-    selected_features.index.name = "block"
-    selected_features.columns = selected_features.columns.astype(str)
-    selected_features.columns.name = "component"
+    selected_features.index.name = "component"
     return selected_features
 
 
@@ -215,8 +215,8 @@ def _r_feature_selection_error_rate_to_dataframe(
 
     Returns:
         pd.DataFrame: Component, mean, standard deviation, and one keepX
-            column per input block. Each row represents one tested keepX
-            combination for one component.
+            column per input block. Each row represents one tested combination
+            for one component.
     """
     statistic_tables = {}
     for statistic, error_rates in (
@@ -344,8 +344,8 @@ def _serialize_feature_selection(
     Args:
         error_rate (pd.DataFrame): Cross-validated error rates for every tested
             keepX combination and component.
-        selected_features (pd.DataFrame): Selected keepX counts with blocks as
-            rows and components as columns.
+        selected_features (pd.DataFrame): Selected keepX counts with components
+            as rows and blocks as columns.
 
     Returns:
         PLSFeatureSelectionDirFmt: Directory format containing the serialized
@@ -354,7 +354,9 @@ def _serialize_feature_selection(
     directory_format = PLSFeatureSelectionDirFmt()
     error_rate = error_rate.copy()
     selected_features = selected_features.reset_index()
-    selected_features.columns.name = None
+    error_rate.insert(
+        0, "id", [f"row{index}" for index in range(1, len(error_rate) + 1)]
+    )
     error_rate.attrs["description"] = jsonl_descriptions["feature_selection_error_rate"]
     selected_features.attrs["description"] = jsonl_descriptions[
         "feature_selection_selected_features"

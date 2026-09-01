@@ -9,6 +9,7 @@
 
 This module contains the automatic keepX strategy used by the QIIME action.
 """
+
 from dataclasses import dataclass
 from itertools import product as cartesian_product
 from math import ceil, floor, prod, sqrt
@@ -16,15 +17,6 @@ from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
-from rpy2.rinterface_lib import callbacks
-from rpy2.robjects import IntVector, ListVector, r
-
-from q2_mfa.pls.utils import (
-    _build_bpparam,
-    _quiet_tune_block_splsda,
-    _r_feature_selection_error_rate_to_dataframe,
-    _to_r_inputs,
-)
 
 
 @dataclass(frozen=True)
@@ -57,23 +49,10 @@ def adaptive_keepx_refinement(
     selection_rule: Literal["one_se", "absolute_margin"] = "one_se",
     ber_margin: float = 0.0,
     se_multiplier: float = 1.0,
-    tol: float = 1e-6,
-    max_iter: int = 100,
-    near_zero_var: bool = True,
-    scale: bool = True,
-    validation: str = "Mfold",
-    folds: int = 5,
     nrepeat: int = 3,
-    signif_threshold: float = 0.01,
-    distance: str = "centroids.dist",
-    measure: str = "BER",
-    weighted: bool = True,
-    seed: int = 42,
-    threads: int = 1,
-    round_runner: (
-        Callable[[int, dict[str, list[int]], dict[str, list[int]] | None], pd.DataFrame]
-        | None
-    ) = None,
+    evaluate_grid: Callable[
+        [int, dict[str, list[int]], dict[str, list[int]] | None], pd.DataFrame
+    ] = None,
 ) -> AdaptiveKeepXResult:
     """Tunes DIABLO ``keepX`` with a coarse-to-fine adaptive grid.
 
@@ -111,22 +90,9 @@ def adaptive_keepx_refinement(
             ``absolute_margin``.
         se_multiplier: Multiplier of the best model's SE accepted
             by the ``one_se`` rule for selection and refinement.
-        tol: mixOmics convergence tolerance.
-        max_iter: mixOmics maximum fitting iterations.
-        near_zero_var: Whether mixOmics filters near-zero variance predictors.
-        scale: Whether mixOmics scales every block.
-        validation: mixOmics cross-validation scheme.
-        folds: Cross-validation folds.
         nrepeat: Cross-validation repeats.
-        signif_threshold: mixOmics component-significance threshold.
-        distance: Prediction distance used while tuning.
-        measure: Error measure used while tuning.
-        weighted: Whether tuning uses weighted prediction performance.
-        seed: Reproducible seed for mixOmics cross-validation.
-        threads: Number of OS-appropriate BiocParallel workers.
-        round_runner: Optional pipeline callback that evaluates one component
-            and keepX subgrid, returning its long-form mean/SD error rates.
-            When omitted, calls mixOmics directly.
+        evaluate_grid: Pipeline callback that evaluates one component and
+            keepX subgrid, returning its long-form mean/SD error rates.
 
     Returns:
         AdaptiveKeepXResult: Final component-wise counts and the unique
@@ -136,17 +102,12 @@ def adaptive_keepx_refinement(
         ValueError: If inputs do not have compatible sample IDs, a grid is too
             large, or refinement settings cannot retain every component value.
     """
-    # Inputs are aligned by tune_block_splsda before automatic tuning.
+    if evaluate_grid is None:
+        raise ValueError("Automatic keepX refinement requires a grid evaluator.")
     _validate_min_keepx_against_blocks(
         blocks,
         min_keepx,
     )
-
-    callbacks.consolewrite_print = lambda message: print(message, end="")
-    callbacks.consolewrite_warnerror = lambda message: print(message, end="")
-    r("suppressPackageStartupMessages(library(mixOmics))")
-    r("suppressPackageStartupMessages(library(BiocParallel))")
-    bpparam = _build_bpparam(threads, seed)
 
     evaluation_cache = {}
     final_component_decisions = {}
@@ -196,33 +157,7 @@ def adaptive_keepx_refinement(
                     print("Evaluating unseen keepX subgrid:\n", flush=True)
                     print(f"{_grid_to_dataframe(subgrid).to_string()}\n", flush=True)
                 previous_keepx = fixed_keep_x if component > 1 else None
-                if round_runner is None:
-                    tune_result = _run_tuning_round(
-                        blocks,
-                        target,
-                        design,
-                        component,
-                        subgrid,
-                        previous_keepx,
-                        tol,
-                        max_iter,
-                        near_zero_var,
-                        scale,
-                        validation,
-                        folds,
-                        nrepeat,
-                        signif_threshold,
-                        distance,
-                        measure,
-                        weighted,
-                        seed,
-                        bpparam,
-                    )
-                    round_error_rates = _r_feature_selection_error_rate_to_dataframe(
-                        tune_result
-                    )
-                else:
-                    round_error_rates = round_runner(component, subgrid, previous_keepx)
+                round_error_rates = evaluate_grid(component, subgrid, previous_keepx)
                 round_error_rates = round_error_rates.loc[
                     round_error_rates["component"] == component - 1
                 ].copy()
@@ -245,9 +180,7 @@ def adaptive_keepx_refinement(
                 )
             )
             print(
-                "Chosen sparse keepX values "
-                f"(measure={measure}, distance={distance}; "
-                f"rule={selection_rule}):",
+                "Chosen sparse keepX values " f"(rule={selection_rule}):",
                 flush=True,
             )
             print(
@@ -573,86 +506,6 @@ def _has_new_candidates(current_grid, next_grid) -> bool:
     return any(
         not set(next_grid[name]).issubset(current_grid[name]) for name in current_grid
     )
-
-
-def _run_tuning_round(
-    blocks,
-    target,
-    design,
-    ncomp,
-    keep_x,
-    already_tested_x,
-    tol,
-    max_iter,
-    near_zero_var,
-    scale,
-    validation,
-    folds,
-    nrepeat,
-    signif_threshold,
-    distance,
-    measure,
-    weighted,
-    seed,
-    bpparam,
-):
-    """Runs one current-component mixOmics tuning round.
-
-    ``already_tested_x`` fixes every preceding component, allowing mixOmics to
-    evaluate only the new component represented by ``ncomp``.
-    """
-    r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
-    r_keep_x = ListVector({name: IntVector(values) for name, values in keep_x.items()})
-    parameters = {
-        "ncomp": ncomp,
-        "tol": tol,
-        "max.iter": max_iter,
-        "near.zero.var": near_zero_var,
-        "design": r_design,
-        "scale": scale,
-        "test.keepX": r_keep_x,
-        "validation": validation,
-        "folds": folds,
-        "nrepeat": nrepeat,
-        "signif.threshold": signif_threshold,
-        "dist": distance,
-        "measure": measure,
-        "weighted": weighted,
-        "progressBar": False,
-        "light.output": True,
-        "BPPARAM": bpparam,
-        "seed": seed,
-    }
-    if already_tested_x:
-        parameters["already.tested.X"] = ListVector(
-            {name: IntVector(values) for name, values in already_tested_x.items()}
-        )
-    return _quiet_tune_block_splsda(
-        r_blocks,
-        r_target,
-        **parameters,
-    )
-
-
-def _selected_keep_x(tune_result) -> dict[str, list[int]]:
-    """Converts mixOmics' component-wise ``choice.keepX`` to Python values."""
-    values = tune_result.rx2("choice.keepX")
-    return {
-        str(name): [int(value) for value in block_values]
-        for name, block_values in zip(values.names, values)
-    }
-
-
-def _component_selection(
-    selection: dict[str, list[int]], component: int
-) -> dict[str, list[int]]:
-    """Extracts the one newly tuned component from mixOmics' full selection."""
-    try:
-        return {name: [values[component - 1]] for name, values in selection.items()}
-    except IndexError as error:
-        raise ValueError(
-            "mixOmics did not return a keepX choice for the current component."
-        ) from error
 
 
 def _grid_to_dataframe(grid: dict[str, list[int]]) -> pd.DataFrame:

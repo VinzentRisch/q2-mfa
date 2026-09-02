@@ -161,31 +161,15 @@ class TestPLSUtils(TestPluginBase):
     def test_build_bpparam_uses_multicore_workers(self):
         r = Mock()
         r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r), patch.object(
-            utils.platform, "system", return_value="Darwin"
-        ):
+        with patch.object(utils, "r", r):
             utils._build_bpparam(3, 4)
         r.__getitem__.assert_called_once_with("MulticoreParam")
         r.__getitem__.return_value.assert_called_once_with(RNGseed=4, workers=3)
 
-    def test_build_bpparam_uses_snow_backend_on_windows(self):
-        r = Mock()
-        r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r), patch.object(
-            utils.platform, "system", return_value="Windows"
-        ):
-            utils._build_bpparam(2, 4)
-        r.__getitem__.assert_called_once_with("SnowParam")
-        r.__getitem__.return_value.assert_called_once_with(
-            type="SOCK", RNGseed=4, workers=2
-        )
-
     def test_build_bpparam_delegates_worker_count_for_zero_threads(self):
         r = Mock()
         r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r), patch.object(
-            utils.platform, "system", return_value="Darwin"
-        ):
+        with patch.object(utils, "r", r):
             utils._build_bpparam(0, 4)
         r.__getitem__.assert_called_once_with("MulticoreParam")
         r.__getitem__.return_value.assert_called_once_with(RNGseed=4)

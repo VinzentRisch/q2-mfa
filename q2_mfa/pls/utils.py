@@ -5,8 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import platform
-
 import numpy as np
 import pandas as pd
 from q2_types.metadata import ImmutableMetadata
@@ -113,11 +111,10 @@ def _resolve_design(
 
 def _build_bpparam(threads: int, seed: int):
     """
-    Creates an operating-system-appropriate BiocParallel backend.
+    Creates a BiocParallel backend.
 
-    Uses a serial backend for one worker, a socket backend on Windows, and a
-    multicore backend elsewhere. A thread count of zero leaves worker selection
-    to BiocParallel.
+    Uses a serial backend for one worker and a multicore backend otherwise. A
+    thread count of zero leaves worker selection to BiocParallel.
 
     Args:
         threads (int): Requested worker count, where zero selects the
@@ -133,8 +130,6 @@ def _build_bpparam(threads: int, seed: int):
     kwargs = {"RNGseed": seed}
     if threads > 1:
         kwargs["workers"] = threads
-    if platform.system() == "Windows":
-        return r["SnowParam"](**{"type": "SOCK", **kwargs})
     return r["MulticoreParam"](**kwargs)
 
 

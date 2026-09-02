@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 import numpy as np
 import pandas as pd
+from q2_types.feature_table import FeatureTable, Unconstrained
 from q2_types.metadata import ImmutableMetadata
 from rachis import Metadata, ResultCollection
 from rpy2.robjects import (
@@ -29,7 +30,7 @@ def _align_samples_metadata(ctx, tables, metadata_column):
     - Removes missing metadata values.
     - Identifies IDs shared by the remaining column and every feature table
     - Filters the metadata column to those IDs.
-    - Filters every feature table once using the shared sample IDs.
+    - Filters and reorders every feature table to the metadata sample order.
 
     Args:
         ctx (Context): Pipeline execution context used to retrieve actions.
@@ -51,13 +52,18 @@ def _align_samples_metadata(ctx, tables, metadata_column):
     shared_ids = [str(sample_id) for sample_id in shared_ids]
     metadata_column = metadata_column.filter_ids(shared_ids)
     aligned_metadata = Metadata(metadata_column.to_dataframe())
+    sample_ids = aligned_metadata.to_dataframe().index.tolist()
 
     aligned_tables = {}
     for name, table in tables.items():
-        (aligned_tables[name],) = filter_ids(
+        (filtered_table,) = filter_ids(
             table=table,
             axis="sample",
             ids=shared_ids,
+        )
+        aligned_tables[name] = ctx.make_artifact(
+            FeatureTable[Unconstrained],
+            filtered_table.view(pd.DataFrame).loc[sample_ids],
         )
     return (
         ResultCollection(aligned_tables),

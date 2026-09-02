@@ -81,10 +81,7 @@ def _tune_components_block_splsda(
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
     target = y.to_series()
-    blocks = {
-        name: table.loc[target.index].copy()
-        for name, table in tables.collection.items()
-    }
+    blocks = tables.collection
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)

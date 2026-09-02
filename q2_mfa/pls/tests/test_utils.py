@@ -88,6 +88,19 @@ class TestPLSUtils(TestPluginBase):
             self.alignment_metadata.to_dataframe().loc[["s2", "s3"]],
         )
 
+    def test_alignment_orders_tables_to_metadata(self):
+        aligned_tables, aligned_metadata = self.align_samples(
+            tables=self.alignment_tables,
+            metadata_column=self.alignment_metadata,
+        )
+        expected_ids = ["s2", "s3"]
+
+        for table in aligned_tables.values():
+            self.assertEqual(table.view(pd.DataFrame).index.tolist(), expected_ids)
+        self.assertEqual(
+            aligned_metadata.view(Metadata).to_dataframe().index.tolist(), expected_ids
+        )
+
     def test_no_shared_samples_raises_error(self):
         with self.assertRaisesRegex(
             ValueError,

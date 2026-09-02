@@ -5,12 +5,11 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import platform
-import warnings
-
 import numpy as np
 import pandas as pd
-from rachis.core.exceptions import RachisWarning
+from q2_types.feature_table import FeatureTable, Unconstrained
+from q2_types.metadata import ImmutableMetadata
+from rachis import Metadata, ResultCollection
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
     ListVector,
@@ -21,67 +20,79 @@ from rpy2.robjects import (
     r,
 )
 from rpy2.robjects.conversion import localconverter
+from rpy2.robjects.vectors import DataFrame as RDataFrame
+from rpy2.robjects.vectors import FactorVector
 
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 
 
-def _align_samples(tables: dict, y) -> tuple[dict[str, pd.DataFrame], pd.Series]:
-    """Intersects input-table and categorical-target sample IDs.
+def _align_samples_metadata(ctx, tables, metadata_column):
+    """
+    Aligns feature tables and a metadata column to shared samples.
+
+    - Removes missing metadata values.
+    - Identifies IDs shared by the remaining column and every feature table
+    - Filters the metadata column to those IDs.
+    - Filters and reorders every feature table to the metadata sample order.
 
     Args:
-        tables (dict): Named input tables from a QIIME collection.
-        y: Categorical metadata column.
+        ctx (Context): Pipeline execution context used to retrieve actions.
+        tables (ResultCollection): Named unconstrained feature tables.
+        metadata_column (MetadataColumn): Metadata column to align.
 
     Returns:
-        tuple[dict[str, pd.DataFrame], pd.Series]: Aligned blocks and target.
-
-    Raises:
-        ValueError: If the inputs have no shared samples or the target is missing.
+        tuple[ResultCollection, Metadata]: A tuple containing:
+            - ResultCollection: Tables filtered to the shared sample IDs.
+            - Metadata: Aligned metadata containing the supplied column.
     """
-    blocks = dict(getattr(tables, "collection", tables))
-    target = y.to_series().copy() if hasattr(y, "to_series") else y.copy()
-    if len(blocks) < 2:
-        raise ValueError("At least two named feature tables are required.")
-    target = target.dropna()
-    blocks = {**blocks, "y": target.to_frame()}
+    filter_ids = ctx.get_action("feature_table", "filter_ids")
+    metadata_column = metadata_column.drop_missing_values()
+    shared_ids = metadata_column.get_ids()
+    for table in tables.values():
+        shared_ids.intersection_update(table.view(pd.DataFrame).index)
+    if not shared_ids:
+        raise ValueError("The feature tables and metadata column have no shared IDs.")
+    shared_ids = [str(sample_id) for sample_id in shared_ids]
+    metadata_column = metadata_column.filter_ids(shared_ids)
+    aligned_metadata = Metadata(metadata_column.to_dataframe())
+    sample_ids = aligned_metadata.to_dataframe().index.tolist()
 
-    shared = next(iter(blocks.values())).index
-    for table in list(blocks.values())[1:]:
-        shared = shared.intersection(table.index)
-    if shared.empty:
-        raise ValueError("The input feature tables and response share no sample IDs.")
-
-    aligned = {}
-    for name, table in blocks.items():
-        dropped = table.index.difference(shared)
-        if not dropped.empty:
-            warnings.warn(
-                f"Dropping samples from block '{name}' that are not shared "
-                f"across all blocks:\n{', '.join(map(str, dropped))}",
-                RachisWarning,
-                stacklevel=2,
-            )
-        aligned[str(name)] = table.loc[shared].copy()
-    target = aligned.pop("y").iloc[:, 0]
-    return aligned, target
+    aligned_tables = {}
+    for name, table in tables.items():
+        (filtered_table,) = filter_ids(
+            table=table,
+            axis="sample",
+            ids=shared_ids,
+        )
+        aligned_tables[name] = ctx.make_artifact(
+            FeatureTable[Unconstrained],
+            filtered_table.view(pd.DataFrame).loc[sample_ids],
+        )
+    return (
+        ResultCollection(aligned_tables),
+        ctx.make_artifact(ImmutableMetadata, aligned_metadata),
+    )
 
 
 def _resolve_design(
     design_matrix, design_weight: float | None, block_names: list[str]
 ) -> pd.DataFrame | float:
-    """Validates explicit design metadata or passes through a scalar design.
+    """
+    Validates an explicit block design matrix or returns a scalar weight.
+
+    Requires exactly one design specification. Explicit matrices must contain
+    the input block names on both axes, be numeric and symmetric, and have a
+    zero diagonal; scalar weights are returned unchanged.
 
     Args:
-        design_matrix: Optional Metadata-encoded matrix.
-        design_weight (float | None): Scalar design weight for mixOmics.
-        block_names (list[str]): Input-table collection keys.
+        design_matrix (Metadata, optional): Explicit block-relationship matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight.
+        block_names (list[str]): Ordered names of the feature-table blocks.
 
     Returns:
-        pd.DataFrame | float: Validated matrix or scalar weight for mixOmics.
-
-    Raises:
-        ValueError: If neither or both design representations are supplied, or
-            explicit metadata is not a valid block design matrix.
+        pd.DataFrame | float: Validated and ordered design matrix, or the
+            supplied scalar design weight.
     """
     if (design_matrix is None) == (design_weight is None):
         raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
@@ -93,7 +104,7 @@ def _resolve_design(
     if set(matrix.index) != expected or set(matrix.columns) != expected:
         raise ValueError(
             "The row and column names in 'design-matrix' must exactly match "
-            "feature-table collection names."
+            "the input feature-table collection names."
         )
     matrix = matrix.loc[block_names, block_names]
     try:
@@ -108,52 +119,82 @@ def _resolve_design(
 
 
 def _build_bpparam(threads: int, seed: int):
-    """Loads BiocParallel and creates an OS-appropriate backend.
+    """
+    Creates a BiocParallel backend.
+
+    Uses a serial backend for one worker and a multicore backend otherwise. A
+    thread count of zero leaves worker selection to BiocParallel.
 
     Args:
-        threads (int): Requested workers, or 0 for BiocParallel's default.
-        seed (int): Reproducible BiocParallel random-number seed.
+        threads (int): Requested worker count, where zero selects the
+            BiocParallel default.
+        seed (int): Random seed supplied to the backend.
 
     Returns:
-        object: R SerialParam, SnowParam, or MulticoreParam backend.
+        rpy2.robjects.RObject: Configured BiocParallel parameter object.
     """
     r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"](**{"RNGseed": seed})
+        return r["SerialParam"](RNGseed=seed)
     kwargs = {"RNGseed": seed}
     if threads > 1:
         kwargs["workers"] = threads
-    if platform.system() == "Windows":
-        return r["SnowParam"](**{"type": "SOCK", **kwargs})
     return r["MulticoreParam"](**kwargs)
 
 
-def _to_r_inputs(blocks, target, design):
-    """Converts aligned pandas inputs to named R objects with preserved labels.
+def _to_r_inputs(
+    blocks: dict[str, pd.DataFrame],
+    target: pd.Series,
+    design: pd.DataFrame | float,
+) -> tuple[ListVector, FactorVector, RDataFrame | float]:
+    """
+    Converts aligned Python inputs to labelled R objects.
+
+    Converts each block and an explicit design matrix through the pandas R
+    converter, and creates a named R factor for the categorical response.
 
     Args:
-        blocks: Named pandas input tables.
-        target: Aligned categorical target series.
-        design: Validated pandas design matrix.
+        blocks (dict[str, pd.DataFrame]): Aligned named feature tables.
+        target (pd.Series): Aligned categorical response values.
+        design (pd.DataFrame | float): Explicit design matrix or scalar design
+            weight.
 
     Returns:
-        tuple: Named R block list, factor target, and design matrix.
+        tuple[rpy2.robjects.ListVector, rpy2.robjects.vectors.FactorVector,
+        rpy2.robjects.RObject]: Named R blocks, response factor, and design.
     """
     with localconverter(default_converter + pandas2ri.converter):
+        converter = conversion.get_conversion()
         r_blocks = ListVector(
-            {
-                name: conversion.get_conversion().py2rpy(table)
-                for name, table in blocks.items()
-            }
+            {name: converter.py2rpy(table) for name, table in blocks.items()}
         )
-        r_design = conversion.get_conversion().py2rpy(design)
+        r_design = converter.py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
     return r_blocks, r_target, r_design
 
 
 def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
-    """Converts mixOmics vote error-rate means and standard deviations to rows."""
+    """
+    Converts mixOmics vote error-rate means and standard deviations to rows.
+
+    Combines the requested vote's error-rate and standard-deviation matrices
+    into one table with distance measure, class, component, mean, and standard
+    deviation columns.
+
+    Args:
+        perf_result (rpy2.robjects.vectors.ListVector): Result returned by
+            mixOmics ``perf()``.
+        vote (str): Vote type to extract, such as ``WeightedVote`` or
+            ``MajorityVote``.
+
+    Returns:
+        pd.DataFrame: Error-rate records for the requested vote.
+
+    Raises:
+        ValueError: If mixOmics did not provide either the mean or standard
+            deviation error-rate matrix for the requested vote.
+    """
     columns = ["distance", "class", "component", "mean", "sd"]
     records = {}
     for statistic, error_rates in (
@@ -161,7 +202,9 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
         ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
     ):
         if type(error_rates).__name__ == "NULLType":
-            continue
+            raise ValueError(
+                f"mixOmics did not provide {statistic} error rates for {vote}."
+            )
         for distance, rates in zip(error_rates.names, error_rates):
             values = np.asarray(rates, dtype=float)
             class_names = [str(name) for name in r["rownames"](rates)]
@@ -170,9 +213,14 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
                     key = (str(distance), class_name, component)
                     record = records.setdefault(
                         key,
-                        {"distance": key[0], "class": key[1], "component": key[2]},
+                        {
+                            "distance": key[0],
+                            "class": key[1],
+                            "component": key[2],
+                        },
                     )
                     record[statistic] = value
+
     return pd.DataFrame(records.values(), columns=columns)
 
 
@@ -183,34 +231,10 @@ def _resolve_ncomp(
     measure: str,
     distance: str,
 ) -> int:
-    """
-    Captures a manual component count or derives it from a tuning artifact.
-
-    Uses a manually supplied ``ncomp`` when available; otherwise, reads the
-    count selected by the requested voting, measure, and distance criteria from
-    the component-tuning artifact. The resolved value is captured for action
-    provenance.
-
-    Args:
-        ncomp (CaptureHolder[int] | int | None): Manually supplied component
-            count or capture holder for the resolved value.
-        tuned_ncomp (PLSTuneComponentsDirFmt | None): Component-tuning artifact
-            used when no manual component count is supplied.
-        weighted (bool): Whether to use the weighted rather than majority vote.
-        measure (str): Requested prediction-error measure.
-        distance (str): Requested prediction distance.
-
-    Returns:
-        int: The selected number of components.
-
-    Raises:
-        ValueError: If exactly one of a manual count and tuning artifact is not
-            provided, or the artifact has no unique matching selection.
-    """
-    if isinstance(ncomp, CaptureHolder):
-        manual_ncomp = ncomp.is_set
-    else:
-        manual_ncomp = ncomp is not None
+    """Captures a manual component count or derives it from tuning results."""
+    manual_ncomp = (
+        ncomp.is_set if isinstance(ncomp, CaptureHolder) else ncomp is not None
+    )
     has_tuned_ncomp = tuned_ncomp is not None
     if manual_ncomp == has_tuned_ncomp:
         raise ValueError("Provide exactly one of ncomp or a tuned-ncomp artifact.")
@@ -230,26 +254,7 @@ def _ncomp_from_tuned_ncomp(
     measure: str,
     distance: str,
 ) -> int:
-    """
-    Reads the component count chosen for a requested tuning criterion.
-
-    Reads the weighted- or majority-vote choice matrix from the current
-    component-tuning artifact.
-
-    Args:
-        tuned_ncomp (PLSTuneComponentsDirFmt): Component-tuning artifact
-            containing the selected component counts.
-        weighted (bool): Whether to use the weighted rather than majority vote.
-        measure (str): Requested prediction-error measure.
-        distance (str): Requested prediction distance.
-
-    Returns:
-        int: The uniquely selected number of components.
-
-    Raises:
-        ValueError: If the artifact has no selected component for the requested
-            vote, measure, and distance.
-    """
+    """Reads the component count selected for a tuning criterion."""
     requested_measure = "Overall.BER" if measure == "BER" else "Overall.ER"
     matrix_file = (
         tuned_ncomp.choice_matrix_weighted

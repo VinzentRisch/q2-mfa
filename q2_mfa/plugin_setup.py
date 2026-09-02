@@ -8,6 +8,7 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
+from q2_types.metadata import ImmutableMetadata
 from rachis import Citations
 from rachis.core.type import (
     Bool,
@@ -18,6 +19,7 @@ from rachis.core.type import (
     Int,
     Metadata,
     MetadataColumn,
+    Numeric,
     Range,
     Str,
 )
@@ -25,12 +27,14 @@ from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.component_analysis.mfa import mfa
 from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
+    _align_samples_metadata,
     _feature_selection_block_splsda,
     _tune_components_block_splsda,
     feature_selection_block_splsda,
@@ -96,6 +100,34 @@ plugin.methods.register_function(
     ],
 )
 
+plugin.pipelines.register_function(
+    function=_align_samples_metadata,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters={"metadata_column": MetadataColumn[Categorical | Numeric]},
+    outputs=[
+        ("aligned_tables", Collection[FeatureTable[Unconstrained]]),
+        ("aligned_metadata", ImmutableMetadata),
+    ],
+    input_descriptions={
+        "tables": "Named feature tables to restrict to their shared sample IDs."
+    },
+    parameter_descriptions={
+        "metadata_column": (
+            "Metadata column to align with the feature tables. Samples "
+            "with missing values in this column are excluded."
+        )
+    },
+    output_descriptions={
+        "aligned_tables": "Feature tables restricted to their shared sample IDs.",
+        "aligned_metadata": "The aligned metadata column.",
+    },
+    name="Align samples and metadata column",
+    description=(
+        "Restricts every input feature table and a metadata column to "
+        "their shared sample IDs."
+    ),
+)
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
@@ -152,6 +184,54 @@ plugin.methods.register_function(
     citations=[
         citations["Halford_Prince"],
     ],
+)
+
+mfa_parameters = {
+    "sample_metadata": Metadata,
+    "metadata_groups": Collection[Str],
+    "n_components": Int % Range(2, None),
+    "rescale_with_mean": Bool,
+    "rescale_with_std": Bool,
+    "filter_zero_variance": Bool,
+    "engine": Str % Choices(["sklearn", "scipy"]),
+    "n_iter": Int % Range(0, None),
+    "random_state": Int,
+}
+
+mfa_parameter_descriptions = {
+    "sample_metadata": "Optional sample metadata to include as additional MFA groups.",
+    "metadata_groups": (
+        "Optional mapping from metadata group names to comma-separated metadata "
+        "column strings."
+    ),
+    "n_components": "Number of principal components to compute.",
+    "rescale_with_mean": "Whether to center each feature before SVD.",
+    "rescale_with_std": "Whether to standardize each feature to unit variance.",
+    "filter_zero_variance": "Whether to remove columns with zero variance before SVD.",
+    "engine": "SVD engine used for the analysis.",
+    "n_iter": "Number of iterations used by the randomized SVD engine.",
+    "random_state": "Random seed used by the randomized SVD engine.",
+}
+
+plugin.methods.register_function(
+    function=mfa,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters=mfa_parameters,
+    outputs=[("mfa_results", ComponentAnalysis)],
+    input_descriptions={
+        "tables": (
+            "Feature tables to include as MFA groups. At least two groups must "
+            "be provided across feature tables and sample metadata groups."
+        )
+    },
+    parameter_descriptions=mfa_parameter_descriptions,
+    output_descriptions={"mfa_results": "MFA results."},
+    name="Multiple Factor Analysis (MFA)",
+    description=(
+        "Performs Multiple Factor Analysis with each input table treated as a "
+        "separate group."
+    ),
+    citations=[citations["escofier1994multiple"], citations["Halford_Prince"]],
 )
 
 component_tuning_parameters = {

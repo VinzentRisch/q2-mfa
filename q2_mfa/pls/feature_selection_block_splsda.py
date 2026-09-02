@@ -20,7 +20,6 @@ from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
 from q2_mfa.pls.types._type import PLSFeatureSelection
 from q2_mfa.pls.utils import (
-    _align_samples,
     _build_bpparam,
     _resolve_design,
     _resolve_ncomp,
@@ -54,10 +53,10 @@ def _feature_selection_block_splsda(
     """
     Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
-    Aligns the input blocks and categorical response, determines the component
-    count from either ``ncomp`` or a component-tuning artifact, evaluates the
-    supplied manual keepX candidate grid, and serializes error rates and the
-    selected sparse-feature counts.
+    Consumes pre-aligned input blocks and categorical response, determines the
+    component count from either ``ncomp`` or a component-tuning artifact,
+    evaluates the supplied manual keepX candidate grid, and serializes error
+    rates and the selected sparse-feature counts.
 
     Args:
         tables (ResultCollection): Named feature-table artifacts used as
@@ -96,7 +95,8 @@ def _feature_selection_block_splsda(
             feature counts.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks, target = _align_samples(tables, y)
+    blocks = tables.collection
+    target = y.to_series().copy()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)
@@ -178,9 +178,15 @@ def feature_selection_block_splsda(
     threads=1,
 ):
     """Runs manual or adaptive DIABLO feature selection and diagnostics."""
-    block_names = tuple(tables.collection)
+    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
     select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
+    aligned_tables, aligned_metadata = align_samples(
+        tables=tables,
+        metadata_column=y,
+    )
+    aligned_y = aligned_metadata.view(Metadata).get_column(y.name)
+    block_names = tuple(aligned_tables.collection)
 
     def evaluate_grid(component, grid, fixed_keepx):
         """Runs one provenance-tracked grid and returns cache-compatible rows."""
@@ -190,8 +196,8 @@ def feature_selection_block_splsda(
             else None
         )
         (tuning,) = select_features(
-            tables=tables,
-            y=y,
+            tables=aligned_tables,
+            y=aligned_y,
             design_matrix=design_matrix,
             design_weight=design_weight,
             ncomp=component,
@@ -220,8 +226,8 @@ def feature_selection_block_splsda(
         if keepx is None:
             raise ValueError("keepx is required when auto_keepx is false.")
         (tuning,) = select_features(
-            tables=tables,
-            y=y,
+            tables=aligned_tables,
+            y=aligned_y,
             design_matrix=design_matrix,
             design_weight=design_weight,
             tuned_ncomp=tuned_ncomp,
@@ -242,13 +248,11 @@ def feature_selection_block_splsda(
             threads=threads,
         )
     else:
-        blocks, target = _align_samples(
-            {
-                name: artifact.view(pd.DataFrame)
-                for name, artifact in tables.collection.items()
-            },
-            y.to_series(),
-        )
+        blocks = {
+            name: artifact.view(pd.DataFrame)
+            for name, artifact in aligned_tables.collection.items()
+        }
+        target = aligned_y.to_series().copy()
         design = _resolve_design(design_matrix, design_weight, list(blocks))
         initial_keepx = (
             _parse_keepx_collection(

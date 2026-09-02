@@ -13,4 +13,4 @@ try:
 except ModuleNotFoundError:
     __version__ = "0.0.0+notfound"
 
-__all__ = ["transform_clr", "pca"]
+__all__ = ["transform_clr", "pca", "mfa"]

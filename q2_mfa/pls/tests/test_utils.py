@@ -5,13 +5,13 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import warnings
 from unittest.mock import Mock, patch
 
 import pandas as pd
-from rachis import Metadata
-from rachis.core.exceptions import RachisWarning
+from q2_types.feature_table import FeatureTable, Unconstrained
+from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
+from rachis.sdk import PluginManager
 
 from q2_mfa.pls import utils
 
@@ -23,6 +23,9 @@ class TestPLSUtils(TestPluginBase):
     def setUpClass(cls):
         super().setUpClass()
         instance = cls()
+        cls.align_samples = (
+            PluginManager().get_plugin(name="mfa").pipelines["_align_samples_metadata"]
+        )
 
         def read_table(name):
             return pd.read_csv(
@@ -38,52 +41,62 @@ class TestPLSUtils(TestPluginBase):
             name: Metadata(read_table(f"design-{name}.tsv"))
             for name in ("valid", "nonnumeric", "nonsymmetric", "nonzero-diagonal")
         }
-
-    def test_align_samples_drops_unshared_and_unlabelled_samples(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            blocks, target = utils._align_samples(
-                self.blocks, self.response.to_series()
-            )
-
-        self.assertEqual([warning.category for warning in caught], [RachisWarning] * 3)
-        self.assertEqual(
-            [str(warning.message) for warning in caught],
-            [
-                "Dropping samples from block 'block-a' that are not shared "
-                "across all blocks:\ns1, s6",
-                "Dropping samples from block 'block-b' that are not shared "
-                "across all blocks:\ns4, s6",
-                "Dropping samples from block 'y' that are not shared across all "
-                "blocks:\ns5",
-            ],
+        cls.alignment_block_a = read_table("sample-alignment-table-a.tsv")
+        cls.alignment_block_b = read_table("sample-alignment-table-b.tsv")
+        cls.alignment_tables = ResultCollection(
+            {
+                "block-a": Artifact.import_data(
+                    FeatureTable[Unconstrained], cls.alignment_block_a
+                ),
+                "block-b": Artifact.import_data(
+                    FeatureTable[Unconstrained], cls.alignment_block_b
+                ),
+            }
         )
-        self.assertEqual(list(blocks), ["block-a", "block-b"])
-        for table in blocks.values():
-            self.assertEqual(table.index.tolist(), ["s2", "s3"])
-        self.assertEqual(target.index.tolist(), ["s2", "s3"])
+        cls.alignment_metadata = Metadata(
+            read_table("sample-alignment-metadata.tsv")
+        ).get_column("group")
+        cls.no_shared_samples_table = read_table(
+            "sample-alignment-no-shared-samples-table.tsv"
+        )
+        cls.no_shared_samples_tables = ResultCollection(
+            {
+                "block-a": Artifact.import_data(
+                    FeatureTable[Unconstrained], cls.no_shared_samples_table
+                ),
+                "block-b": Artifact.import_data(
+                    FeatureTable[Unconstrained], cls.alignment_block_b
+                ),
+            }
+        )
 
-    def test_align_samples_rejects_fewer_than_two_tables(self):
-        with self.assertRaisesRegex(
-            ValueError, "At least two named feature tables are required."
-        ):
-            utils._align_samples(
-                {"block-a": self.blocks["block-a"]}, self.response.to_series()
+    def test_aligns_tables_and_drops_missing_metadata_values(self):
+        aligned_tables, aligned_metadata = self.align_samples(
+            tables=self.alignment_tables,
+            metadata_column=self.alignment_metadata,
+        )
+
+        for name, table in aligned_tables.items():
+            actual = table.view(pd.DataFrame)
+            self.assertEqual(actual.index.tolist(), ["s2", "s3"])
+            pd.testing.assert_index_equal(
+                actual.columns,
+                self.alignment_tables[name].view(pd.DataFrame).columns,
             )
+        pd.testing.assert_frame_equal(
+            aligned_metadata.view(Metadata).to_dataframe(),
+            self.alignment_metadata.to_dataframe().loc[["s2", "s3"]],
+        )
 
-    def test_align_samples_rejects_inputs_without_shared_samples(self):
-        blocks = {
-            "block-a": self.blocks["block-a"].rename(
-                index=lambda sample: f"a-{sample}"
-            ),
-            "block-b": self.blocks["block-b"].rename(
-                index=lambda sample: f"b-{sample}"
-            ),
-        }
+    def test_no_shared_samples_raises_error(self):
         with self.assertRaisesRegex(
-            ValueError, "The input feature tables and response share no sample IDs."
+            ValueError,
+            "^The feature tables and metadata column have no shared IDs\\.$",
         ):
-            utils._align_samples(blocks, self.response.to_series())
+            self.align_samples(
+                tables=self.no_shared_samples_tables,
+                metadata_column=self.alignment_metadata,
+            )
 
     def test_resolve_design_rejects_missing_design_options(self):
         with self.assertRaisesRegex(
@@ -223,7 +236,7 @@ class TestPLSUtils(TestPluginBase):
         )
         pd.testing.assert_frame_equal(observed, expected)
 
-    def test_vote_error_rates_omits_missing_standard_deviation(self):
+    def test_vote_error_rates_rejects_missing_standard_deviation(self):
         perf_result = utils.r("""
             list(
               `WeightedVote.error.rate` = list(
@@ -235,22 +248,8 @@ class TestPLSUtils(TestPluginBase):
               `WeightedVote.error.rate.sd` = NULL
             )
             """)
-        observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
-
-        self.assertEqual(observed["mean"].tolist(), [0.1, 0.3])
-        self.assertTrue(observed["sd"].isna().all())
-
-    def test_vote_error_rates_returns_empty_table_when_both_statistics_are_missing(
-        self,
-    ):
-        perf_result = utils.r("""
-            list(
-              `WeightedVote.error.rate` = NULL,
-              `WeightedVote.error.rate.sd` = NULL
-            )
-            """)
-        observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
-        self.assertTrue(observed.empty)
-        self.assertEqual(
-            observed.columns.tolist(), ["distance", "class", "component", "mean", "sd"]
-        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "^mixOmics did not provide sd error rates for WeightedVote\\.$",
+        ):
+            utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")

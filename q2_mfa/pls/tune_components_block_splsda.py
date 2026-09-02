@@ -17,7 +17,6 @@ from rpy2.robjects import r
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 from q2_mfa.pls.utils import (
-    _align_samples,
     _build_bpparam,
     _r_vote_error_rate_to_dataframe,
     _resolve_design,
@@ -81,7 +80,11 @@ def _tune_components_block_splsda(
             rates and component-choice matrices.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks, target = _align_samples(dict(tables.collection), y.to_series())
+    target = y.to_series()
+    blocks = {
+        name: table.loc[target.index].copy()
+        for name, table in tables.collection.items()
+    }
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)
@@ -114,8 +117,8 @@ def _tune_components_block_splsda(
             "progressBar": False,
         },
     )
-    weighted_choice_matrix = _choice_matrix_to_dataframe(perf_result, "WeightedVote")
-    majority_choice_matrix = _choice_matrix_to_dataframe(perf_result, "MajorityVote")
+    weighted_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
+    majority_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "MajorityVote")
     weighted_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
     majority_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote")
     _print_component_choice(weighted_choice_matrix, "WeightedVote")
@@ -185,12 +188,17 @@ def tune_components_block_splsda(
             report containing error-rate plots and choice-matrix tables.
     """
     tune_components = ctx.get_action("mfa", "_tune_components_block_splsda")
+    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
     lineplot = ctx.get_action("vizard", "lineplot")
     tabulate = ctx.get_action("metadata", "tabulate")
 
-    (tuning,) = tune_components(
+    aligned_tables, aligned_metadata = align_samples(
         tables=tables,
-        y=y,
+        metadata_column=y,
+    )
+    (tuning,) = tune_components(
+        tables=aligned_tables,
+        y=aligned_metadata.view(Metadata).get_column(y.name),
         design_matrix=design_matrix,
         design_weight=design_weight,
         ncomp=ncomp,
@@ -286,7 +294,7 @@ def _error_rate_metadata(error_rates: Metadata) -> Metadata:
     return Metadata(error_rates)
 
 
-def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
+def _r_choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
     """
     Converts one mixOmics component-choice matrix to a DataFrame.
 
@@ -300,12 +308,17 @@ def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
             ``MajorityVote``.
 
     Returns:
-        pd.DataFrame: Component-choice matrix, or an empty DataFrame when
-            mixOmics did not provide a matrix for the requested vote.
+        pd.DataFrame: Component-choice matrix.
+
+    Raises:
+        ValueError: If mixOmics did not provide a component-choice matrix for
+            the requested vote.
     """
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
     if type(matrix).__name__ == "NULLType":
-        return pd.DataFrame()
+        raise ValueError(
+            f"mixOmics did not provide a component-choice matrix for {vote}."
+        )
     values = np.asarray(matrix)
     return pd.DataFrame(
         values,
@@ -316,10 +329,9 @@ def _choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
     """
-    Prints a component-choice matrix or an unavailable-message.
+    Prints a component-choice matrix.
 
-    Formats the table for user-visible action output and reports explicitly
-    when mixOmics did not produce component choices for a vote type.
+    Formats the table for user-visible action output.
 
     Args:
         choice_table (pd.DataFrame): Component-choice matrix to display.
@@ -328,9 +340,6 @@ def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
     Returns:
         None: This function writes the formatted message to standard output.
     """
-    if choice_table.empty:
-        print(f"{vote} component-choice matrix is unavailable.\n", flush=True)
-        return
     print(f"{vote} component-choice matrix:\n", flush=True)
     print(f"{choice_table.to_string()}\n", flush=True)
 

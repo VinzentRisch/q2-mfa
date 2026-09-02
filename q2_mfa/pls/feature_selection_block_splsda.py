@@ -11,13 +11,12 @@ import numpy as np
 import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
-from rachis.plugin import CaptureHolder
 from rpy2.robjects import IntVector, ListVector, r
 from rpy2.robjects.vectors import FactorVector
 
 from q2_mfa.pls.auto_keepx import _cache_to_error_rates, adaptive_keepx_refinement
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
-from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
+from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt
 from q2_mfa.pls.types._type import PLSFeatureSelection
 from q2_mfa.pls.utils import (
     _build_bpparam,
@@ -34,8 +33,7 @@ def _feature_selection_block_splsda(
     already_tested_keepx: dict | None = None,
     design_matrix: Metadata = None,
     design_weight: float | None = None,
-    tuned_ncomp: PLSTuneComponentsDirFmt = None,
-    ncomp: CaptureHolder[int] = None,
+    ncomp: int = None,
     scale: bool = True,
     tol: float = 1e-6,
     max_iter: int = 100,
@@ -47,16 +45,15 @@ def _feature_selection_block_splsda(
     distance: str = "max.dist",
     measure: str = "BER",
     weighted: bool = True,
-    seed: CaptureHolder[int] = None,
+    seed: int = None,
     threads: int = 1,
 ) -> PLSFeatureSelectionDirFmt:
     """
     Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
-    Consumes pre-aligned input blocks and categorical response, determines the
-    component count from either ``ncomp`` or a component-tuning artifact,
-    evaluates the supplied manual keepX candidate grid, and serializes error
-    rates and the selected sparse-feature counts.
+    Consumes pre-aligned input blocks and categorical response, evaluates the
+    supplied manual keepX candidate grid, and serializes error rates and the
+    selected sparse-feature counts.
 
     Args:
         tables (ResultCollection): Named feature-table artifacts used as
@@ -69,10 +66,7 @@ def _feature_selection_block_splsda(
             matrix.
         design_weight (float, optional): Shared off-diagonal relationship
             weight used when no design matrix is supplied.
-        tuned_ncomp (PLSTuneComponentsDirFmt, optional): Component-tuning
-            artifact used when ``ncomp`` is not provided.
-        ncomp (CaptureHolder[int], optional): Manual number of components to
-            tune.
+        ncomp (int): Resolved number of components to tune.
         scale (bool): Whether to standardize features within every block.
         tol (float): Convergence tolerance for the iterative model fit.
         max_iter (int): Maximum iterations for each model fit.
@@ -86,8 +80,7 @@ def _feature_selection_block_splsda(
         distance (str): Prediction distance used for classification.
         measure (str): Classification error measure used to select keepX.
         weighted (bool): Whether to use weighted rather than majority voting.
-        seed (CaptureHolder[int], optional): Random seed holder used for
-            reproducible cross-validation.
+        seed (int): Random seed used for reproducible cross-validation.
         threads (int): Number of BiocParallel workers to use.
 
     Returns:
@@ -98,9 +91,7 @@ def _feature_selection_block_splsda(
     blocks = tables.collection
     target = y.to_series().copy()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
-    resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
-    bpparam = _build_bpparam(threads, resolved_seed)
-    selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
+    bpparam = _build_bpparam(threads, seed)
 
     keepx_collection = dict(getattr(keepx, "collection", keepx))
     parsed_keepx = _parse_keepx_collection(keepx_collection, list(blocks))
@@ -117,7 +108,7 @@ def _feature_selection_block_splsda(
         r_blocks,
         r_target,
         r_design,
-        selected_ncomp,
+        ncomp,
         parsed_keepx,
         tol,
         max_iter,
@@ -130,7 +121,7 @@ def _feature_selection_block_splsda(
         distance,
         measure,
         weighted,
-        resolved_seed,
+        seed,
         bpparam,
         already_tested,
     )
@@ -180,6 +171,7 @@ def feature_selection_block_splsda(
     """Runs manual or adaptive DIABLO feature selection and diagnostics."""
     align_samples = ctx.get_action("mfa", "_align_samples_metadata")
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
+    resolved_seed = secrets.randbelow(2**31) if seed is None else seed
     select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
     aligned_tables, aligned_metadata = align_samples(
         tables=tables,
@@ -214,7 +206,7 @@ def feature_selection_block_splsda(
             distance=distance,
             measure=measure,
             weighted=weighted,
-            seed=seed,
+            seed=resolved_seed,
             threads=threads,
         )
         error_rates = tuning.view(PLSFeatureSelectionDirFmt).error_rate.view(
@@ -230,8 +222,7 @@ def feature_selection_block_splsda(
             y=aligned_y,
             design_matrix=design_matrix,
             design_weight=design_weight,
-            tuned_ncomp=tuned_ncomp,
-            ncomp=ncomp,
+            ncomp=selected_ncomp,
             keepx=keepx,
             scale=scale,
             tol=tol,
@@ -244,7 +235,7 @@ def feature_selection_block_splsda(
             distance=distance,
             measure=measure,
             weighted=weighted,
-            seed=seed,
+            seed=resolved_seed,
             threads=threads,
         )
     else:

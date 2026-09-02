@@ -366,6 +366,16 @@ feature_selection_input_descriptions = {
     ),
 }
 
+feature_selection_action_input_descriptions = {
+    "tables": component_tuning_input_descriptions["tables"],
+}
+
+feature_selection_action_parameter_descriptions = {
+    **feature_selection_parameter_descriptions,
+    "ncomp": "Resolved number of components to tune.",
+    "seed": "Resolved random seed used for reproducible cross-validation.",
+}
+
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
@@ -425,17 +435,14 @@ plugin.pipelines.register_function(
 
 plugin.methods.register_function(
     function=_feature_selection_block_splsda,
-    inputs={
-        "tables": Collection[FeatureTable[Unconstrained]],
-        "tuned_ncomp": PLSTuneComponents,
-    },
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters={
         **feature_selection_parameters,
         "already_tested_keepx": Collection[Str],
     },
     outputs=[("tuning", PLSFeatureSelection)],
-    input_descriptions=feature_selection_input_descriptions,
-    parameter_descriptions=feature_selection_parameter_descriptions,
+    input_descriptions=feature_selection_action_input_descriptions,
+    parameter_descriptions=feature_selection_action_parameter_descriptions,
     output_descriptions={
         "tuning": (
             "Cross-validated keepX error rates and selected feature counts for "

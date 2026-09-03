@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 from .tune_components_block_splsda import (
     _tune_components_block_splsda,
+    _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
 from .types import PLSTuneComponents, PLSTuneComponentsDirFmt
@@ -17,5 +18,6 @@ __all__ = [
     "PLSTuneComponentsDirFmt",
     "_align_samples_metadata",
     "_tune_components_block_splsda",
+    "_tune_components_block_visualisation",
     "tune_components_block_splsda",
 ]

@@ -23,6 +23,7 @@ from q2_mfa.pls.tune_components_block_splsda import (
     _print_component_choice,
     _r_choice_matrix_to_dataframe,
     _serialize_tune_components,
+    _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
 
@@ -54,14 +55,20 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         )
         cls.response = Metadata(read_table("response.tsv")).get_column("group")
         cls.expected_weighted_error_rates = read_table("weighted-error-rates.tsv")
+        cls.expected_weighted_error_rates["component"] = (
+            cls.expected_weighted_error_rates["component"].astype(float)
+        )
         cls.expected_majority_error_rates = read_table("majority-error-rates.tsv")
-        cls.expected_weighted_choices = read_table("weighted-choices.tsv")
-        cls.expected_majority_choices = read_table("majority-choices.tsv")
+        cls.expected_majority_error_rates["component"] = (
+            cls.expected_majority_error_rates["component"].astype(float)
+        )
+        cls.expected_weighted_choices = read_table("weighted-choices.tsv").astype(float)
+        cls.expected_majority_choices = read_table("majority-choices.tsv").astype(float)
 
-    def test_tune_components_action_matches_expected_values(self):
-        tune_components = self.plugin.methods["_tune_components_block_splsda"]
+    def test_tune_components_pipeline_matches_expected_values(self):
+        tune_components = self.plugin.pipelines["tune_components_block_splsda"]
 
-        (tuning,) = tune_components(
+        results = tune_components(
             tables=self.tables,
             y=self.response,
             design_weight=0.1,
@@ -73,6 +80,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             threads=1,
         )
 
+        tuning = results.tuning
         tuning_data = tuning.view(PLSTuneComponentsDirFmt)
         actual_tables = (
             (
@@ -103,22 +111,33 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             else:
                 assert_frame_equal(actual, expected, check_exact=True)
 
-    @patch("q2_mfa.pls.tune_components_block_splsda._error_rate_metadata")
-    def test_tune_components_pipeline_calls_its_actions(self, mock_error_rate_metadata):
+        with (
+            results.visualization._archiver.data_dir / "subfigures" / "index.json"
+        ).open() as fh:
+            report_index = json.load(fh)
+        self.assertEqual(list(report_index), ["Error rates", "Component choices"])
+        self.assertEqual(
+            list(report_index["Error rates"]["children"]),
+            ["Weighted vote", "Majority vote"],
+        )
+        self.assertEqual(
+            list(report_index["Component choices"]["children"]),
+            ["Weighted vote", "Majority vote"],
+        )
+
+    def test_tune_components_pipeline_calls_its_actions(self):
         tuning = MagicMock()
         aligned_metadata = Artifact.import_data(
             ImmutableMetadata, Metadata(self.response.to_dataframe())
         )
         align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
         tune_components = MagicMock(return_value=(tuning,))
-        lineplot = MagicMock(return_value=(MagicMock(),))
-        tabulate = MagicMock(return_value=(MagicMock(),))
+        visualisation = MagicMock(return_value=(MagicMock(),))
         mock_context = MagicMock()
         mock_context.get_action.side_effect = [
             tune_components,
             align_samples,
-            lineplot,
-            tabulate,
+            visualisation,
         ]
 
         tune_components_block_splsda(
@@ -133,8 +152,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             [
                 call("mfa", "_tune_components_block_splsda"),
                 call("mfa", "_align_samples_metadata"),
-                call("vizard", "lineplot"),
-                call("metadata", "tabulate"),
+                call("mfa", "_tune_components_block_visualisation"),
             ],
         )
         align_samples.assert_called_once_with(
@@ -158,6 +176,62 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             seed=None,
             threads=1,
         )
+        visualisation.assert_called_once_with(tuning=tuning)
+
+    @patch("q2_mfa.pls.tune_components_block_splsda._error_rate_metadata")
+    def test_tune_components_visualisation_pipeline_calls_its_actions(
+        self, mock_error_rate_metadata
+    ):
+        tuning = MagicMock()
+        weighted_error_rates = MagicMock()
+        majority_error_rates = MagicMock()
+        mock_error_rate_metadata.side_effect = [
+            weighted_error_rates,
+            majority_error_rates,
+        ]
+        lineplot = MagicMock(return_value=(MagicMock(),))
+        tabulate = MagicMock(return_value=(MagicMock(),))
+        mock_context = MagicMock()
+        mock_context.get_action.side_effect = [lineplot, tabulate]
+
+        _tune_components_block_visualisation(ctx=mock_context, tuning=tuning)
+
+        self.assertEqual(
+            mock_context.get_action.call_args_list,
+            [call("vizard", "lineplot"), call("metadata", "tabulate")],
+        )
+        self.assertEqual(mock_error_rate_metadata.call_count, 2)
+        lineplot.assert_has_calls(
+            [
+                call(
+                    metadata=weighted_error_rates,
+                    x_measure="component",
+                    y_measure="mean",
+                    replicate_method="none",
+                    group_by="error_rate",
+                    title="sPLS-DA weighted-vote error rates",
+                ),
+                call(
+                    metadata=majority_error_rates,
+                    x_measure="component",
+                    y_measure="mean",
+                    replicate_method="none",
+                    group_by="error_rate",
+                    title="sPLS-DA majority-vote error rates",
+                ),
+            ]
+        )
+        tabulate.assert_has_calls(
+            [
+                call(
+                    input=tuning.view.return_value.choice_matrix_weighted.view(Metadata)
+                ),
+                call(
+                    input=tuning.view.return_value.choice_matrix_majority.view(Metadata)
+                ),
+            ]
+        )
+        self.assertEqual(mock_context.make_report.call_count, 3)
 
     def test_error_rate_metadata_filters_and_labels_overall_error_rates(self):
         actual = _error_rate_metadata(

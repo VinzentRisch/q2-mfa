@@ -34,6 +34,7 @@ from q2_mfa.pls import (
     PLSTuneComponentsDirFmt,
     _align_samples_metadata,
     _tune_components_block_splsda,
+    _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
 from q2_mfa.preprocessing import transform_clr
@@ -342,6 +343,31 @@ plugin.methods.register_function(
         "a suitable component count. For questions about the implementation or "
         "parameters, consult the mixOmics documentation: "
         "https://mixomics.org/methods/diablo/"
+    ),
+    citations=[
+        citations["rohart2017mixomics"],
+    ],
+)
+
+plugin.pipelines.register_function(
+    function=_tune_components_block_visualisation,
+    inputs={"tuning": PLSTuneComponents},
+    parameters={},
+    outputs=[("visualization", Visualization)],
+    input_descriptions={
+        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics."
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "visualization": (
+            "Report containing weighted and majority-vote error-rate plots "
+            "and component-choice matrices."
+        ),
+    },
+    name="Visualize block sPLS-DA (DIABLO) component tuning",
+    description=(
+        "Creates a report of weighted and majority-vote component-tuning "
+        "diagnostics for block sPLS-DA (DIABLO)."
     ),
     citations=[
         citations["rohart2017mixomics"],

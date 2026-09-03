@@ -216,14 +216,17 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
             values = np.asarray(rates, dtype=float)
             class_names = [str(name) for name in r["rownames"](rates)]
             for class_name, class_values in zip(class_names, values):
-                for component, value in enumerate(class_values):
+                for component, value in enumerate(class_values, start=1):
                     key = (str(distance), class_name, component)
                     record = records.setdefault(
                         key,
                         {"distance": key[0], "class": key[1], "component": key[2]},
                     )
                     record[statistic] = value
-    return pd.DataFrame(records.values(), columns=columns)
+
+    error_rates = pd.DataFrame(records.values(), columns=columns)
+    error_rates["component"] = error_rates["component"].astype("Int64")
+    return error_rates
 
 
 def _resolve_ncomp(

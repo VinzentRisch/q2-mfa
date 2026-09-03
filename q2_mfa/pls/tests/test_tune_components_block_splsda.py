@@ -210,9 +210,9 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         actual = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
-            {"max.dist": [2.0, 1.0], "centroids.dist": [4.0, 3.0]},
+            {"max.dist": [2, 1], "centroids.dist": [4, 3]},
             index=pd.Index(["Overall.ER", "Overall.BER"], name="id"),
-        )
+        ).astype("Int64")
         assert_frame_equal(actual, expected)
 
     def test_r_choice_matrix_to_dataframe_rejects_r_null(self):

@@ -16,10 +16,12 @@ from .types import (
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
 )
+from .utils import _align_samples_metadata
 
 __all__ = [
     "PLSTuneComponents",
     "PLSTuneComponentsDirFmt",
+    "_align_samples_metadata",
     "_tune_components_block_splsda",
     "tune_components_block_splsda",
     "PLSFeatureSelection",

@@ -8,6 +8,7 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
+from q2_types.metadata import ImmutableMetadata
 from rachis import Citations
 from rachis.core.type import (
     Bool,
@@ -18,6 +19,7 @@ from rachis.core.type import (
     Int,
     Metadata,
     MetadataColumn,
+    Numeric,
     Range,
     Str,
 )
@@ -25,12 +27,14 @@ from rachis.plugin import Plugin, Threads, Visualization
 
 from q2_mfa import __version__
 from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
+from q2_mfa.component_analysis.mfa import mfa
 from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
+    _align_samples_metadata,
     _tune_components_block_splsda,
     feature_selection_block_splsda,
     tune_components_block_splsda,
@@ -95,47 +99,98 @@ plugin.methods.register_function(
     ],
 )
 
+plugin.pipelines.register_function(
+    function=_align_samples_metadata,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters={"metadata_column": MetadataColumn[Categorical | Numeric]},
+    outputs=[
+        ("aligned_tables", Collection[FeatureTable[Unconstrained]]),
+        ("aligned_metadata", ImmutableMetadata),
+    ],
+    input_descriptions={
+        "tables": "Named feature tables to restrict to their shared sample IDs."
+    },
+    parameter_descriptions={
+        "metadata_column": (
+            "Metadata column to align with the feature tables. Samples "
+            "with missing values in this column are excluded."
+        )
+    },
+    output_descriptions={
+        "aligned_tables": "Feature tables restricted to their shared sample IDs.",
+        "aligned_metadata": ("The aligned metadata column."),
+    },
+    name="Align samples and metadata column",
+    description=(
+        "Restricts every input feature table and a metadata column to "
+        "their shared sample IDs."
+    ),
+)
+
+ordination_parameters = {
+    "n_components": Int % Range(2, None),
+    "rescale_with_mean": Bool,
+    "rescale_with_std": Bool,
+    "filter_zero_variance": Bool,
+    "engine": Str % Choices(["sklearn", "scipy"]),
+    "n_iter": Int % Range(0, None),
+    "random_state": Int,
+}
+ordination_parameter_descriptions = {
+    "n_components": "Number of principal components to compute.",
+    "rescale_with_mean": (
+        "Whether to center each feature by subtracting its mean before SVD (Singular "
+        "Value Decomposition)."
+    ),
+    "rescale_with_std": (
+        "Whether to standardize each feature to unit variance before SVD."
+    ),
+    "filter_zero_variance": (
+        "Whether to remove columns with zero variance before SVD."
+    ),
+    "engine": (
+        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "uses deterministic SciPy SVD."
+    ),
+    "n_iter": (
+        "Number of iterations used by the 'sklearn' randomized SVD "
+        "engine. This parameter is ignored by the 'scipy' engine."
+    ),
+    "random_state": (
+        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "reproducible results across multiple function calls. This "
+        "parameter is ignored by the 'scipy' engine."
+    ),
+}
+
+mfa_parameters = {
+    "sample_metadata": Metadata,
+    "metadata_groups": Collection[Str],
+    **ordination_parameters,
+}
+mfa_parameter_descriptions = {
+    "sample_metadata": (
+        "Optional sample metadata to include as additional MFA groups."
+    ),
+    "metadata_groups": (
+        "Optional mapping from metadata group names to comma-separated metadata "
+        "column strings. Pass a collection/dict such as "
+        "{'group': 'column1,column2'} to define explicit groups. If a single "
+        "string is provided, all metadata columns are included in a group with "
+        "that string as the group name. If sample metadata is provided without "
+        "this parameter, all metadata columns are included in a group named "
+        "'metadata'. Groups must contain only numeric or only categorical columns."
+    ),
+    **ordination_parameter_descriptions,
+}
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
-    parameters={
-        "rescale_with_mean": Bool,
-        "rescale_with_std": Bool,
-        "n_components": Int % Range(1, None),
-        "n_iter": Int % Range(0, None),
-        "random_state": Int,
-        "engine": Str % Choices(["sklearn", "scipy"]),
-        "filter_zero_variance": Bool,
-    },
+    parameters=ordination_parameters,
     outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
-    parameter_descriptions={
-        "n_components": "Number of principal components to compute.",
-        "rescale_with_mean": (
-            "Whether to center each feature by subtracting its mean before "
-            "performing SVD."
-        ),
-        "rescale_with_std": (
-            "Whether to standardize each feature to unit variance before "
-            "performing SVD."
-        ),
-        "n_iter": (
-            "Number of iterations used by the 'sklearn' randomized SVD "
-            "engine. This parameter is ignored by the 'scipy' engine."
-        ),
-        "engine": (
-            "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy' "
-            "uses SciPy SVD."
-        ),
-        "random_state": (
-            "Random seed used by the 'sklearn' SVD engine. Pass an int for "
-            "reproducible results across multiple function calls. This "
-            "parameter is ignored by the 'scipy' engine."
-        ),
-        "filter_zero_variance": (
-            "Whether to remove columns with zero variance before analysis."
-        ),
-    },
+    parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
@@ -149,6 +204,34 @@ plugin.methods.register_function(
         "https://maxhalford.github.io/prince/pca/"
     ),
     citations=[
+        citations["Halford_Prince"],
+    ],
+)
+
+plugin.methods.register_function(
+    function=mfa,
+    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    parameters=mfa_parameters,
+    outputs=[("mfa_results", ComponentAnalysis)],
+    input_descriptions={
+        "tables": (
+            "Optional feature tables to include as MFA groups. At least two "
+            "groups must be provided across feature tables and sample metadata "
+            "groups."
+        )
+    },
+    parameter_descriptions=mfa_parameter_descriptions,
+    output_descriptions={"mfa_results": "MFA results"},
+    name="Multiple Factor Analysis (MFA)",
+    description=(
+        "Multiple Factor Analysis (MFA). Each table is treated as a separate group, "
+        "and the analysis is performed with the prince python package. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package documentation for more information: "
+        "https://maxhalford.github.io/prince/mfa/"
+    ),
+    citations=[
+        citations["escofier1994multiple"],
         citations["Halford_Prince"],
     ],
 )
@@ -279,6 +362,11 @@ feature_selection_parameter_descriptions = {
 
 feature_selection_input_descriptions = {
     **component_tuning_input_descriptions,
+    "tables": (
+        "Named feature tables used as sPLS-DA blocks. The blocks and response "
+        "must already have identical sample IDs in the same order. Table names "
+        "identify the corresponding design-matrix rows and columns."
+    ),
     "tuned_ncomp": (
         "Component-tuning artifact used to determine ncomp. Provide exactly "
         "one of this artifact or ncomp."

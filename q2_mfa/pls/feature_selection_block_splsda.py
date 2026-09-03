@@ -17,7 +17,6 @@ from rpy2.robjects.vectors import FactorVector
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
 from q2_mfa.pls.utils import (
-    _align_samples,
     _build_bpparam,
     _resolve_design,
     _resolve_ncomp,
@@ -50,10 +49,10 @@ def feature_selection_block_splsda(
     """
     Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
-    Aligns the input blocks and categorical response, determines the component
-    count from either ``ncomp`` or a component-tuning artifact, evaluates the
-    supplied manual keepX candidate grid, and serializes error rates and the
-    selected sparse-feature counts.
+    Assumes the input blocks and categorical response have already been sample
+    aligned, determines the component count from either ``ncomp`` or a
+    component-tuning artifact, evaluates the supplied manual keepX candidate
+    grid, and serializes error rates and the selected sparse-feature counts.
 
     Args:
         tables (ResultCollection): Named feature-table artifacts used as
@@ -92,7 +91,8 @@ def feature_selection_block_splsda(
             feature counts.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks, target = _align_samples(tables, y)
+    blocks = tables.collection
+    target = y.to_series()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)

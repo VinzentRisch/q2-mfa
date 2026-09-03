@@ -26,6 +26,7 @@ requirements:
     - bioconductor-mixomics
     - pandas
     - prince-factor-analysis
+    - q2-feature-table >={{ q2_feature_table }}
     - q2-metadata >={{ q2_metadata }}
     - q2-types >={{ q2_types }}
     - q2-vizard >={{ q2_vizard }}

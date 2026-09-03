@@ -5,12 +5,11 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-import platform
-import warnings
-
 import numpy as np
 import pandas as pd
-from rachis.core.exceptions import RachisWarning
+from q2_types.feature_table import FeatureTable, Unconstrained
+from q2_types.metadata import ImmutableMetadata
+from rachis import Metadata, ResultCollection
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
     ListVector,
@@ -25,45 +24,52 @@ from rpy2.robjects.conversion import localconverter
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 
 
-def _align_samples(tables: dict, y) -> tuple[dict[str, pd.DataFrame], pd.Series]:
-    """Intersects input-table and categorical-target sample IDs.
+def _align_samples_metadata(ctx, tables, metadata_column):
+    """
+    Aligns feature tables and a metadata column to shared samples.
+
+    - Removes missing metadata values.
+    - Identifies IDs shared by the remaining column and every feature table
+    - Filters the metadata column to those IDs.
+    - Filters and reorders every feature table to the metadata sample order.
 
     Args:
-        tables (dict): Named input tables from a QIIME collection.
-        y: Categorical metadata column.
+        ctx (Context): Pipeline execution context used to retrieve actions.
+        tables (ResultCollection): Named unconstrained feature tables.
+        metadata_column (MetadataColumn): Metadata column to align.
 
     Returns:
-        tuple[dict[str, pd.DataFrame], pd.Series]: Aligned blocks and target.
-
-    Raises:
-        ValueError: If the inputs have no shared samples or the target is missing.
+        tuple[ResultCollection, Metadata]: A tuple containing:
+            - ResultCollection: Tables filtered to the shared sample IDs.
+            - Metadata: Aligned metadata containing the supplied column.
     """
-    blocks = dict(getattr(tables, "collection", tables))
-    target = y.to_series().copy() if hasattr(y, "to_series") else y.copy()
-    if len(blocks) < 2:
-        raise ValueError("At least two named feature tables are required.")
-    target = target.dropna()
-    blocks = {**blocks, "y": target.to_frame()}
+    filter_ids = ctx.get_action("feature_table", "filter_ids")
+    metadata_column = metadata_column.drop_missing_values()
+    shared_ids = metadata_column.get_ids()
+    for table in tables.values():
+        shared_ids.intersection_update(table.view(pd.DataFrame).index)
+    if not shared_ids:
+        raise ValueError("The feature tables and metadata column have no shared IDs.")
+    shared_ids = [str(sample_id) for sample_id in shared_ids]
+    metadata_column = metadata_column.filter_ids(shared_ids)
+    aligned_metadata = Metadata(metadata_column.to_dataframe())
+    sample_ids = aligned_metadata.to_dataframe().index.tolist()
 
-    shared = next(iter(blocks.values())).index
-    for table in list(blocks.values())[1:]:
-        shared = shared.intersection(table.index)
-    if shared.empty:
-        raise ValueError("The input feature tables and response share no sample IDs.")
-
-    aligned = {}
-    for name, table in blocks.items():
-        dropped = table.index.difference(shared)
-        if not dropped.empty:
-            warnings.warn(
-                f"Dropping samples from block '{name}' that are not shared "
-                f"across all blocks:\n{', '.join(map(str, dropped))}",
-                RachisWarning,
-                stacklevel=2,
-            )
-        aligned[str(name)] = table.loc[shared].copy()
-    target = aligned.pop("y").iloc[:, 0]
-    return aligned, target
+    aligned_tables = {}
+    for name, table in tables.items():
+        (filtered_table,) = filter_ids(
+            table=table,
+            axis="sample",
+            ids=shared_ids,
+        )
+        aligned_tables[name] = ctx.make_artifact(
+            FeatureTable[Unconstrained],
+            filtered_table.view(pd.DataFrame).loc[sample_ids],
+        )
+    return (
+        ResultCollection(aligned_tables),
+        ctx.make_artifact(ImmutableMetadata, aligned_metadata),
+    )
 
 
 def _resolve_design(
@@ -108,7 +114,11 @@ def _resolve_design(
 
 
 def _build_bpparam(threads: int, seed: int):
-    """Loads BiocParallel and creates an OS-appropriate backend.
+    """
+    Creates a BiocParallel backend.
+
+    Uses a serial backend for one worker and a multicore backend otherwise. A
+    thread count of zero leaves worker selection to BiocParallel.
 
     Args:
         threads (int): Requested workers, or 0 for BiocParallel's default.
@@ -123,8 +133,6 @@ def _build_bpparam(threads: int, seed: int):
     kwargs = {"RNGseed": seed}
     if threads > 1:
         kwargs["workers"] = threads
-    if platform.system() == "Windows":
-        return r["SnowParam"](**{"type": "SOCK", **kwargs})
     return r["MulticoreParam"](**kwargs)
 
 
@@ -153,7 +161,26 @@ def _to_r_inputs(blocks, target, design):
 
 
 def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
-    """Converts mixOmics vote error-rate means and standard deviations to rows."""
+    """
+    Converts mixOmics vote error-rate means and standard deviations to rows.
+
+    Combines the requested vote's error-rate and standard-deviation matrices
+    into one table with distance measure, class, component, mean, and standard
+    deviation columns.
+
+    Args:
+        perf_result (rpy2.robjects.vectors.ListVector): Result returned by
+            mixOmics ``perf()``.
+        vote (str): Vote type to extract, such as ``WeightedVote`` or
+            ``MajorityVote``.
+
+    Returns:
+        pd.DataFrame: Error-rate records for the requested vote.
+
+    Raises:
+        ValueError: If mixOmics did not provide either the mean or standard
+            deviation error-rate matrix for the requested vote.
+    """
     columns = ["distance", "class", "component", "mean", "sd"]
     records = {}
     for statistic, error_rates in (
@@ -161,7 +188,9 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
         ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
     ):
         if type(error_rates).__name__ == "NULLType":
-            continue
+            raise ValueError(
+                f"mixOmics did not provide {statistic} error rates for {vote}."
+            )
         for distance, rates in zip(error_rates.names, error_rates):
             values = np.asarray(rates, dtype=float)
             class_names = [str(name) for name in r["rownames"](rates)]

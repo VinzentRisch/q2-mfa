@@ -328,11 +328,13 @@ plugin.methods.register_function(
     function=_tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=component_tuning_parameters,
-    outputs=[("tuning", PLSTuneComponents)],
+    outputs=[("tune_components", PLSTuneComponents)],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        )
     },
     name="Tune block sPLS-DA (DIABLO) components",
     description=(
@@ -351,11 +353,13 @@ plugin.methods.register_function(
 
 plugin.pipelines.register_function(
     function=_tune_components_block_visualisation,
-    inputs={"tuning": PLSTuneComponents},
+    inputs={"tune_components": PLSTuneComponents},
     parameters={},
     outputs=[("visualization", Visualization)],
     input_descriptions={
-        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        )
     },
     parameter_descriptions={},
     output_descriptions={
@@ -379,13 +383,15 @@ plugin.pipelines.register_function(
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=component_tuning_parameters,
     outputs=[
-        ("tuning", PLSTuneComponents),
+        ("tune_components", PLSTuneComponents),
         ("visualization", Visualization),
     ],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics.",
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        ),
         "visualization": (
             "Report containing weighted and majority-vote error-rate plots "
             "and component-choice matrices."

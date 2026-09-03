@@ -80,7 +80,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             threads=1,
         )
 
-        tuning = results.tuning
+        tuning = results.tune_components
         tuning_data = tuning.view(PLSTuneComponentsDirFmt)
         actual_tables = (
             (
@@ -176,7 +176,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             seed=None,
             threads=1,
         )
-        visualisation.assert_called_once_with(tuning=tuning)
+        visualisation.assert_called_once_with(tune_components=tuning)
 
     @patch("q2_mfa.pls.tune_components_block_splsda._error_rate_metadata")
     def test_tune_components_visualisation_pipeline_calls_its_actions(
@@ -194,7 +194,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         mock_context = MagicMock()
         mock_context.get_action.side_effect = [lineplot, tabulate]
 
-        _tune_components_block_visualisation(ctx=mock_context, tuning=tuning)
+        _tune_components_block_visualisation(ctx=mock_context, tune_components=tuning)
 
         self.assertEqual(
             mock_context.get_action.call_args_list,

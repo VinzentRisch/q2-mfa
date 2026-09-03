@@ -150,9 +150,8 @@ def tune_components_block_splsda(
     Tunes block sPLS-DA (DIABLO) components and creates diagnostic
     visualizations.
 
-    Runs the component-tuning method, plots the overall weighted- and
-    majority-vote error rates, tabulates both component-choice matrices, and
-    combines the resulting visualizations into a report.
+    Runs the component-tuning method and delegates diagnostic visualization
+    generation to the component-tuning visualization pipeline.
 
     Args:
         ctx (Context): Pipeline execution context used to retrieve actions and
@@ -184,16 +183,15 @@ def tune_components_block_splsda(
         tuple[Artifact, Visualization]: The component-tuning artifact and a
             report containing error-rate plots and choice-matrix tables.
     """
-    tune_components = ctx.get_action("mfa", "_tune_components_block_splsda")
+    tune_components_action = ctx.get_action("mfa", "_tune_components_block_splsda")
     align_samples = ctx.get_action("mfa", "_align_samples_metadata")
-    lineplot = ctx.get_action("vizard", "lineplot")
-    tabulate = ctx.get_action("metadata", "tabulate")
+    visualisation = ctx.get_action("mfa", "_tune_components_block_visualisation")
 
     aligned_tables, aligned_metadata = align_samples(
         tables=tables,
         metadata_column=y,
     )
-    (tuning,) = tune_components(
+    (tune_components,) = tune_components_action(
         tables=aligned_tables,
         y=aligned_metadata.view(Metadata).get_column(y.name),
         design_matrix=design_matrix,
@@ -210,7 +208,30 @@ def tune_components_block_splsda(
         seed=seed,
         threads=threads,
     )
-    tuning_data = tuning.view(PLSTuneComponentsDirFmt)
+    (report,) = visualisation(tune_components=tune_components)
+    return tune_components, report
+
+
+def _tune_components_block_visualisation(ctx, tune_components):
+    """
+    Creates diagnostic visualizations for block sPLS-DA component tuning.
+
+    Plots overall weighted- and majority-vote error rates, tabulates both
+    component-choice matrices, and combines the resulting visualizations into
+    a report.
+
+    Args:
+        ctx (Context): Pipeline execution context used to retrieve actions and
+            create reports.
+        tune_components (Artifact): Component-tuning metrics artifact.
+
+    Returns:
+        Visualization: Report containing error-rate plots and component-choice
+            matrices.
+    """
+    lineplot = ctx.get_action("vizard", "lineplot")
+    tabulate = ctx.get_action("metadata", "tabulate")
+    tuning_data = tune_components.view(PLSTuneComponentsDirFmt)
 
     weighted_error_rates = _error_rate_metadata(
         tuning_data.error_rate_weighted.view(Metadata)
@@ -262,7 +283,7 @@ def tune_components_block_splsda(
             "Component choices": choice_matrix_report,
         },
     )
-    return tuning, report
+    return report
 
 
 def _error_rate_metadata(error_rates: Metadata) -> Metadata:

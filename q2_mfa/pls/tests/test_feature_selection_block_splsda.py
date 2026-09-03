@@ -55,7 +55,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
     def test_parse_keepx_collection_requires_expected_blocks(self):
         """Rejects keepX grids whose block names differ from the input blocks."""
         with self.assertRaisesRegex(ValueError, "must exactly match input block names"):
-            _parse_keepx_collection({"block-a": "1,2"}, ("block-a", "block-b"))
+            _parse_keepx_collection({"block-a": "1,2"}, ("block-a", "block-b"), ncomp=2)
 
     def test_parse_keepx_collection_parses_named_candidate_grids(self):
         """Converts each named comma-separated candidate grid to integers."""
@@ -66,6 +66,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 "block-c": "7,8,9",
             },
             ("block-a", "block-b", "block-c"),
+            ncomp=3,
         )
 
         self.assertEqual(
@@ -88,7 +89,36 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                     _parse_keepx_collection(
                         {"block-a": values, "block-b": "1,2"},
                         ("block-a", "block-b"),
+                        ncomp=2,
                     )
+
+    def test_parse_keepx_collection_requires_equal_prior_selection_lengths(self):
+        """Rejects prior selections with unequal numbers of components."""
+        with self.assertRaisesRegex(
+            ValueError,
+            "^Each 'already-tested-x' value must contain the same number of "
+            "component selections\\.$",
+        ):
+            _parse_keepx_collection(
+                {"block-a": "1,2", "block-b": "3"},
+                ("block-a", "block-b"),
+                ncomp=3,
+                already_tested=True,
+            )
+
+    def test_parse_keepx_collection_requires_remaining_component_to_tune(self):
+        """Rejects prior selections that fill every requested component."""
+        with self.assertRaisesRegex(
+            ValueError,
+            "^'ncomp' must be greater than the number of 'already-tested-x' "
+            "component selections\\.$",
+        ):
+            _parse_keepx_collection(
+                {"block-a": "1,2", "block-b": "3,4"},
+                ("block-a", "block-b"),
+                ncomp=2,
+                already_tested=True,
+            )
 
     def test_feature_selection_block_splsda_integration(self):
         """Runs the full action and selects one count from each two-value grid."""

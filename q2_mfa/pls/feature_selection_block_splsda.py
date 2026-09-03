@@ -28,6 +28,7 @@ def feature_selection_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
     keepx: dict,
+    already_tested_x: dict | None = None,
     design_matrix: Metadata = None,
     design_weight: float | None = None,
     tuned_ncomp: PLSTuneComponentsDirFmt = None,
@@ -61,6 +62,9 @@ def feature_selection_block_splsda(
             samples.
         keepx (dict): Named comma-separated keepX candidate counts for each
             input block.
+        already_tested_x (dict, optional): Named comma-separated selected
+            keepX counts for earlier components. Each block must provide the
+            same number of prior component selections.
         design_matrix (Metadata, optional): Explicit block-relationship design
             matrix.
         design_weight (float, optional): Shared off-diagonal relationship
@@ -99,9 +103,18 @@ def feature_selection_block_splsda(
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
 
     keepx_collection = dict(getattr(keepx, "collection", keepx))
-    parsed_keepx = _parse_keepx_collection(keepx_collection, list(blocks))
-    r_blocks, r_target, r_design, r_keep_x = _to_r_inputs(
-        blocks, target, design, parsed_keepx
+    parsed_keepx = _parse_keepx_collection(
+        keepx_collection, list(blocks), selected_ncomp
+    )
+    if already_tested_x is not None:
+        already_tested_x = _parse_keepx_collection(
+            dict(getattr(already_tested_x, "collection", already_tested_x)),
+            list(blocks),
+            selected_ncomp,
+            already_tested=True,
+        )
+    r_blocks, r_target, r_design, r_keep_x, r_already_tested_x = _to_r_inputs(
+        blocks, target, design, parsed_keepx, already_tested_x
     )
     tune_result = _run_tune(
         r_blocks,
@@ -109,6 +122,7 @@ def feature_selection_block_splsda(
         r_design,
         selected_ncomp,
         r_keep_x,
+        r_already_tested_x,
         tol,
         max_iter,
         near_zero_var,
@@ -136,7 +150,10 @@ def feature_selection_block_splsda(
 
 
 def _parse_keepx_collection(
-    keepx: dict, block_names: list[str]
+    keepx: dict,
+    block_names: list[str],
+    ncomp: int,
+    already_tested: bool = False,
 ) -> dict[str, list[int]]:
     """
     Parses named comma-separated keepX candidate counts.
@@ -148,13 +165,17 @@ def _parse_keepx_collection(
         keepx (dict): Collection mapping each block to comma-separated feature
             counts.
         block_names (list[str]): Ordered names of the input feature blocks.
+        ncomp (int): Total components being tuned.
+        already_tested (bool): Whether the values are fixed selections for
+            earlier components rather than candidate counts.
 
     Returns:
         dict[str, list[int]]: Validated candidate counts keyed by block name.
 
     Raises:
-        ValueError: If the collection keys do not match the input blocks or a
-            value is not a positive integer.
+        ValueError: If the collection keys do not match the input blocks, a
+            value is not a positive integer, fixed selections have unequal
+            lengths, or ncomp does not exceed their length.
     """
     if set(keepx) != set(block_names):
         raise ValueError("keepx keys must exactly match input block names.")
@@ -169,6 +190,18 @@ def _parse_keepx_collection(
                 "Each keepx value must be a comma-separated list of positive integers."
             ) from error
         parsed[name] = values
+    if already_tested:
+        selection_lengths = {len(values) for values in parsed.values()}
+        if len(selection_lengths) != 1:
+            raise ValueError(
+                "Each 'already-tested-x' value must contain the same number of "
+                "component selections."
+            )
+        if ncomp <= selection_lengths.pop():
+            raise ValueError(
+                "'ncomp' must be greater than the number of 'already-tested-x' "
+                "component selections."
+            )
     return parsed
 
 
@@ -259,6 +292,7 @@ def _run_tune(
     r_design,
     ncomp,
     r_keep_x: ListVector,
+    r_already_tested_x: ListVector | None,
     tol,
     max_iter,
     near_zero_var,
@@ -282,6 +316,8 @@ def _run_tune(
         r_design: R DIABLO design matrix or scalar design weight.
         ncomp: Number of components to tune.
         r_keep_x: Named R keepX candidate grids by block.
+        r_already_tested_x: Named R selections for previously tuned
+            components, or None.
         tol: Convergence tolerance for tuning.
         max_iter: Maximum tuning iterations.
         near_zero_var: Whether to filter near-zero variance features.
@@ -304,30 +340,29 @@ def _run_tune(
         "suppressWarnings(suppressMessages(tune.block.splsda(...))) "
         "}"
     )
-    tune_result = quiet_tune(
-        r_blocks,
-        r_target,
-        **{
-            "ncomp": ncomp,
-            "tol": tol,
-            "max.iter": max_iter,
-            "near.zero.var": near_zero_var,
-            "design": r_design,
-            "scale": scale,
-            "test.keepX": r_keep_x,
-            "validation": validation,
-            "folds": folds,
-            "nrepeat": nrepeat,
-            "signif.threshold": signif_threshold,
-            "dist": distance,
-            "measure": measure,
-            "weighted": weighted,
-            "progressBar": False,
-            "light.output": True,
-            "BPPARAM": bpparam,
-            "seed": seed,
-        },
-    )
+    parameters = {
+        "ncomp": ncomp,
+        "tol": tol,
+        "max.iter": max_iter,
+        "near.zero.var": near_zero_var,
+        "design": r_design,
+        "scale": scale,
+        "test.keepX": r_keep_x,
+        "validation": validation,
+        "folds": folds,
+        "nrepeat": nrepeat,
+        "signif.threshold": signif_threshold,
+        "dist": distance,
+        "measure": measure,
+        "weighted": weighted,
+        "progressBar": False,
+        "light.output": True,
+        "BPPARAM": bpparam,
+        "seed": seed,
+    }
+    if r_already_tested_x is not None:
+        parameters["already.tested.X"] = r_already_tested_x
+    tune_result = quiet_tune(r_blocks, r_target, **parameters)
     return tune_result
 
 

@@ -330,6 +330,7 @@ feature_selection_parameters = {
     **component_tuning_parameters,
     "ncomp": Int % Range(1, None),
     "keepx": Collection[Str],
+    "already_tested_x": Collection[Str],
     "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
     "measure": Str % Choices("overall", "BER"),
     "weighted": Bool,
@@ -343,8 +344,18 @@ feature_selection_parameter_descriptions = {
     ),
     "keepx": (
         "Named comma-separated candidate feature counts for every input "
-        "block. Every block must provide at least one positive integer; "
-        "mixOmics evaluates their Cartesian product for each component."
+        'block. For example, microbiome="5,10" and '
+        'metabolomics="20,40" test all four count pairs (5,20), '
+        "(5,40), (10,20), and (10,40) for each component. Every block must "
+        "provide at least one positive integer."
+    ),
+    "already_tested_x": (
+        "Named comma-separated selected keepX counts for previously tuned "
+        'components. For example, microbiome="10,8" and '
+        'metabolomics="40,30" fix component 1 at (10,40) and component '
+        "2 at (8,30), then tune the next component using keepx. Every block "
+        "must provide the same number of selections and the block names must "
+        "match the input tables."
     ),
     "distance": (
         "Prediction distance used to calculate cross-validated classification "

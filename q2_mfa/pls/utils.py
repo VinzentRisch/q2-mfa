@@ -137,7 +137,13 @@ def _build_bpparam(threads: int, seed: int):
     return r["MulticoreParam"](**kwargs)
 
 
-def _to_r_inputs(blocks, target, design, keep_x: dict[str, list[int]] | None = None):
+def _to_r_inputs(
+    blocks,
+    target,
+    design,
+    keep_x: dict[str, list[int]] | None = None,
+    already_tested_x: dict[str, list[int]] | None = None,
+):
     """Converts aligned pandas inputs to named R objects with preserved labels.
 
     Args:
@@ -145,10 +151,12 @@ def _to_r_inputs(blocks, target, design, keep_x: dict[str, list[int]] | None = N
         target: Aligned categorical target series.
         design: Validated pandas design matrix.
         keep_x: Optional parsed keepX candidate grids by block.
+        already_tested_x: Optional parsed selected keepX counts for
+            previously tuned components, by block.
 
     Returns:
         tuple: Named R block list, factor target, design matrix, and optional
-            named R keepX list.
+            named R keepX and already-tested keepX lists.
     """
     with localconverter(default_converter + pandas2ri.converter):
         r_blocks = ListVector(
@@ -160,12 +168,17 @@ def _to_r_inputs(blocks, target, design, keep_x: dict[str, list[int]] | None = N
         r_design = conversion.get_conversion().py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
-    r_keep_x = (
-        ListVector({name: IntVector(values) for name, values in keep_x.items()})
-        if keep_x is not None
-        else None
+    r_keep_x, r_already_tested_x = (
+        (
+            ListVector(
+                {name: IntVector(values) for name, values in candidate_grid.items()}
+            )
+            if candidate_grid is not None
+            else None
+        )
+        for candidate_grid in (keep_x, already_tested_x)
     )
-    return r_blocks, r_target, r_design, r_keep_x
+    return r_blocks, r_target, r_design, r_keep_x, r_already_tested_x
 
 
 def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:

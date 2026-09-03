@@ -147,11 +147,11 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         )
         self.assertTrue(error_rates["mean"].notna().all())
         self.assertTrue(error_rates["sd"].notna().all())
-        self.assertEqual(set(error_rates["component"]), {0})
+        self.assertEqual(set(error_rates["component"]), {1})
         self.assertEqual(len(error_rates), 4)
         self.assertEqual(set(error_rates["keepx_block-a"]), {1, 2})
         self.assertEqual(set(error_rates["keepx_block-b"]), {1, 2})
-        self.assertEqual(selected_features["component"].tolist(), [0])
+        self.assertEqual(selected_features["component"].tolist(), [1])
         self.assertEqual(
             selected_features.columns.tolist(), ["component", "block-a", "block-b"]
         )
@@ -174,13 +174,13 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         )
         expected = pd.DataFrame(
             {
-                "component": [0, 0],
+                "component": [1, 1],
                 "mean": [0.2, 0.4],
                 "sd": [0.01, 0.02],
                 "keepx_block-a": [1, 3],
                 "keepx_block-b": [2, 4],
             },
-        )
+        ).astype({"component": "Int64"})
 
         assert_frame_equal(observed, expected)
 
@@ -193,7 +193,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         observed = _selected_features_table(tune_result)
         expected = pd.DataFrame(
             {"metabolome": [5, 7], "microbiome": [3, 4]},
-            index=pd.Index([0, 1], name="component"),
+            index=pd.Index([1, 2], dtype="Int64", name="component"),
         )
 
         assert_frame_equal(observed, expected)

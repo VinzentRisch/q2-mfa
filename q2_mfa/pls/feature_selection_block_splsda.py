@@ -218,7 +218,7 @@ def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
             ``tune.block.splsda``.
 
     Returns:
-        pd.DataFrame: Selected feature counts with zero-based component numbers
+        pd.DataFrame: Selected feature counts with one-based component numbers
             as the index and block names as columns.
     """
     selected_keepx = tune_result.rx2("choice.keepX")
@@ -228,7 +228,9 @@ def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
             for block, values in zip(selected_keepx.names, selected_keepx)
         }
     )
-    selected_features.index.name = "component"
+    selected_features.index = pd.Index(
+        range(1, len(selected_features) + 1), dtype="Int64", name="component"
+    )
     return selected_features
 
 
@@ -241,8 +243,8 @@ def _r_feature_selection_error_rate_to_dataframe(
     Reads the mean error-rate matrix and standard-deviation matrix returned by
     ``tune.block.splsda``. The R matrices use keepX combinations such as
     ``5_10`` as row names and component labels such as ``comp1`` as column
-    names. This function converts each matrix to a pandas table, converts the
-    one-based component labels to zero-based values, and joins the standard
+    names. This function converts each matrix to a pandas table, preserves the
+    one-based component labels, and joins the standard
     deviations to their matching means. Finally, it expands every keepX label
     into one ``keepx_<block>`` column for each input block.
 
@@ -264,9 +266,7 @@ def _r_feature_selection_error_rate_to_dataframe(
         values = np.asarray(error_rates, dtype=float)
         keepx_values = [str(value) for value in r["dimnames"](error_rates)[0]]
         component_names = [str(value) for value in r["dimnames"](error_rates)[1]]
-        component_numbers = [
-            int(name.removeprefix("comp")) - 1 for name in component_names
-        ]
+        component_numbers = [int(name.removeprefix("comp")) for name in component_names]
         statistic_table = (
             pd.DataFrame(
                 values.T,
@@ -286,6 +286,7 @@ def _r_feature_selection_error_rate_to_dataframe(
     )
     result = result.drop(columns="keepx")
     result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
+    result["component"] = result["component"].astype("Int64")
     return result[["component", "mean", "sd", *keepx_columns]]
 
 

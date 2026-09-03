@@ -199,8 +199,11 @@ class TestPLSUtils(TestPluginBase):
         blocks = {name: table.loc[sample_ids] for name, table in self.blocks.items()}
         target = self.response.to_series().loc[sample_ids]
 
-        r_blocks, r_target, r_design = utils._to_r_inputs(
-            blocks, target, self.designs["valid"].to_dataframe()
+        r_blocks, r_target, r_design, r_keep_x = utils._to_r_inputs(
+            blocks,
+            target,
+            self.designs["valid"].to_dataframe(),
+            {"block-a": [1, 2], "block-b": [3, 4]},
         )
 
         self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
@@ -209,6 +212,9 @@ class TestPLSUtils(TestPluginBase):
         self.assertEqual(list(utils.r["as.character"](r_target)), ["case", "control"])
         self.assertEqual(list(utils.r["rownames"](r_design)), ["block-b", "block-a"])
         self.assertEqual(list(utils.r["colnames"](r_design)), ["block-b", "block-a"])
+        self.assertEqual(list(r_keep_x.names), ["block-a", "block-b"])
+        self.assertEqual(list(r_keep_x.rx2("block-a")), [1, 2])
+        self.assertEqual(list(r_keep_x.rx2("block-b")), [3, 4])
 
     def test_vote_error_rates_combines_mean_and_standard_deviation(self):
         perf_result = utils.r("""

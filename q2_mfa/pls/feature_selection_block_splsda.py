@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import IntVector, ListVector, r
+from rpy2.robjects import ListVector, r
 from rpy2.robjects.vectors import FactorVector
 
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
@@ -100,13 +100,15 @@ def feature_selection_block_splsda(
 
     keepx_collection = dict(getattr(keepx, "collection", keepx))
     parsed_keepx = _parse_keepx_collection(keepx_collection, list(blocks))
-    r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
+    r_blocks, r_target, r_design, r_keep_x = _to_r_inputs(
+        blocks, target, design, parsed_keepx
+    )
     tune_result = _run_tune(
         r_blocks,
         r_target,
         r_design,
         selected_ncomp,
-        parsed_keepx,
+        r_keep_x,
         tol,
         max_iter,
         near_zero_var,
@@ -256,7 +258,7 @@ def _run_tune(
     r_target: FactorVector,
     r_design,
     ncomp,
-    keep_x,
+    r_keep_x: ListVector,
     tol,
     max_iter,
     near_zero_var,
@@ -279,7 +281,7 @@ def _run_tune(
         r_target (ListVector): Aligned R categorical target.
         r_design: R DIABLO design matrix or scalar design weight.
         ncomp: Number of components to tune.
-        keep_x: Parsed candidate grids by block.
+        r_keep_x: Named R keepX candidate grids by block.
         tol: Convergence tolerance for tuning.
         max_iter: Maximum tuning iterations.
         near_zero_var: Whether to filter near-zero variance features.
@@ -297,7 +299,6 @@ def _run_tune(
     Returns:
         ListVector: Result returned by mixOmics ``tune.block.splsda``.
     """
-    r_keep_x = ListVector({name: IntVector(values) for name, values in keep_x.items()})
     quiet_tune = r(
         "function(...) { "
         "suppressWarnings(suppressMessages(tune.block.splsda(...))) "

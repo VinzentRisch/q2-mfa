@@ -12,6 +12,7 @@ from q2_types.metadata import ImmutableMetadata
 from rachis import Metadata, ResultCollection
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
+    IntVector,
     ListVector,
     StrVector,
     conversion,
@@ -136,16 +137,18 @@ def _build_bpparam(threads: int, seed: int):
     return r["MulticoreParam"](**kwargs)
 
 
-def _to_r_inputs(blocks, target, design):
+def _to_r_inputs(blocks, target, design, keep_x: dict[str, list[int]] | None = None):
     """Converts aligned pandas inputs to named R objects with preserved labels.
 
     Args:
         blocks: Named pandas input tables.
         target: Aligned categorical target series.
         design: Validated pandas design matrix.
+        keep_x: Optional parsed keepX candidate grids by block.
 
     Returns:
-        tuple: Named R block list, factor target, and design matrix.
+        tuple: Named R block list, factor target, design matrix, and optional
+            named R keepX list.
     """
     with localconverter(default_converter + pandas2ri.converter):
         r_blocks = ListVector(
@@ -157,7 +160,12 @@ def _to_r_inputs(blocks, target, design):
         r_design = conversion.get_conversion().py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
-    return r_blocks, r_target, r_design
+    r_keep_x = (
+        ListVector({name: IntVector(values) for name, values in keep_x.items()})
+        if keep_x is not None
+        else None
+    )
+    return r_blocks, r_target, r_design, r_keep_x
 
 
 def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:

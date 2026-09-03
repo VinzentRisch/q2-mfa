@@ -321,7 +321,7 @@ def _r_choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
         values,
         index=pd.Index(r["rownames"](matrix), name="id"),
         columns=r["colnames"](matrix),
-    )
+    ).astype("Int64")
 
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:

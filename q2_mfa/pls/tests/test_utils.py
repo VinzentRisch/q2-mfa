@@ -226,11 +226,12 @@ class TestPLSUtils(TestPluginBase):
             {
                 "distance": ["max.dist"] * 4,
                 "class": ["Overall.BER", "Overall.BER", "Overall.ER", "Overall.ER"],
-                "component": [0, 1, 0, 1],
+                "component": [1, 2, 1, 2],
                 "mean": [0.1, 0.2, 0.3, 0.4],
                 "sd": [0.01, 0.02, 0.03, 0.04],
             }
         )
+        expected["component"] = expected["component"].astype("Int64")
         pd.testing.assert_frame_equal(observed, expected)
 
     def test_vote_error_rates_rejects_missing_standard_deviation(self):

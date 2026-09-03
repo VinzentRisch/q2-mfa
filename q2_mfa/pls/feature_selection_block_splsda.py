@@ -12,7 +12,6 @@ import pandas as pd
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import ListVector, r
-from rpy2.robjects.vectors import FactorVector
 
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
@@ -116,27 +115,31 @@ def feature_selection_block_splsda(
     r_blocks, r_target, r_design, r_keep_x, r_already_tested_x = _to_r_inputs(
         blocks, target, design, parsed_keepx, already_tested_x
     )
-    tune_result = _run_tune(
-        r_blocks,
-        r_target,
-        r_design,
-        selected_ncomp,
-        r_keep_x,
-        r_already_tested_x,
-        tol,
-        max_iter,
-        near_zero_var,
-        scale,
-        validation,
-        folds,
-        nrepeat,
-        signif_threshold,
-        distance,
-        measure,
-        weighted,
-        resolved_seed,
-        bpparam,
-    )
+    tune_parameters = {
+        "ncomp": selected_ncomp,
+        "tol": tol,
+        "max.iter": max_iter,
+        "near.zero.var": near_zero_var,
+        "design": r_design,
+        "scale": scale,
+        "test.keepX": r_keep_x,
+        "validation": validation,
+        "folds": folds,
+        "nrepeat": nrepeat,
+        "signif.threshold": signif_threshold,
+        "dist": distance,
+        "measure": measure,
+        "weighted": weighted,
+        "progressBar": False,
+        "light.output": True,
+        "BPPARAM": bpparam,
+        "seed": resolved_seed,
+    }
+    if r_already_tested_x is not None:
+        tune_parameters["already.tested.X"] = r_already_tested_x
+    tune_result = r(
+        "function(...) suppressWarnings(suppressMessages(tune.block.splsda(...)))"
+    )(r_blocks, r_target, **tune_parameters)
     error_rates = _r_feature_selection_error_rate_to_dataframe(
         tune_result, tuple(blocks)
     )
@@ -284,86 +287,6 @@ def _r_feature_selection_error_rate_to_dataframe(
     result = result.drop(columns="keepx")
     result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
     return result[["component", "mean", "sd", *keepx_columns]]
-
-
-def _run_tune(
-    r_blocks: ListVector,
-    r_target: FactorVector,
-    r_design,
-    ncomp,
-    r_keep_x: ListVector,
-    r_already_tested_x: ListVector | None,
-    tol,
-    max_iter,
-    near_zero_var,
-    scale,
-    validation,
-    folds,
-    nrepeat,
-    signif_threshold,
-    distance,
-    measure,
-    weighted,
-    seed,
-    bpparam,
-) -> ListVector:
-    """
-    Tunes DIABLO sparse feature counts for the selected components.
-
-    Args:
-        r_blocks (ListVector): Named R feature blocks.
-        r_target (ListVector): Aligned R categorical target.
-        r_design: R DIABLO design matrix or scalar design weight.
-        ncomp: Number of components to tune.
-        r_keep_x: Named R keepX candidate grids by block.
-        r_already_tested_x: Named R selections for previously tuned
-            components, or None.
-        tol: Convergence tolerance for tuning.
-        max_iter: Maximum tuning iterations.
-        near_zero_var: Whether to filter near-zero variance features.
-        scale: Whether to scale blocks.
-        validation: Cross-validation strategy.
-        folds: Number of folds.
-        nrepeat: Number of repeats.
-        signif_threshold: Component improvement threshold.
-        distance: Prediction distance used by tuning.
-        measure: Error measure used by tuning.
-        weighted: Whether to use weighted prediction performance.
-        seed: Captured random seed.
-        bpparam: R BiocParallel backend.
-
-    Returns:
-        ListVector: Result returned by mixOmics ``tune.block.splsda``.
-    """
-    quiet_tune = r(
-        "function(...) { "
-        "suppressWarnings(suppressMessages(tune.block.splsda(...))) "
-        "}"
-    )
-    parameters = {
-        "ncomp": ncomp,
-        "tol": tol,
-        "max.iter": max_iter,
-        "near.zero.var": near_zero_var,
-        "design": r_design,
-        "scale": scale,
-        "test.keepX": r_keep_x,
-        "validation": validation,
-        "folds": folds,
-        "nrepeat": nrepeat,
-        "signif.threshold": signif_threshold,
-        "dist": distance,
-        "measure": measure,
-        "weighted": weighted,
-        "progressBar": False,
-        "light.output": True,
-        "BPPARAM": bpparam,
-        "seed": seed,
-    }
-    if r_already_tested_x is not None:
-        parameters["already.tested.X"] = r_already_tested_x
-    tune_result = quiet_tune(r_blocks, r_target, **parameters)
-    return tune_result
 
 
 def _serialize_feature_selection(

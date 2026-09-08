@@ -13,7 +13,7 @@ This module contains the automatic keepX strategy used by the QIIME action.
 from dataclasses import dataclass
 from itertools import product as cartesian_product
 from math import ceil, floor, prod, sqrt
-from typing import Callable, Literal
+from typing import Generator, Literal
 
 import numpy as np
 import pandas as pd
@@ -35,13 +35,54 @@ class AdaptiveKeepXResult:
     evaluation_cache: dict[int, dict[tuple[int, ...], dict[str, float | int]]]
 
 
+@dataclass(frozen=True)
+class GridRequest:
+    """One registered feature-selection action invocation requested by tuning."""
+
+    component: int
+    keepx: dict[str, list[int]] | None
+    already_tested_keepx: dict[str, list[int]] | None
+
+
+def _parse_keepx_collection(keepx, block_names: list[str]) -> dict[str, list[int]]:
+    """Parses named comma-separated keepX candidate counts.
+
+    Args:
+        keepx: QIIME collection or mapping from block names to comma-separated
+            candidate counts.
+        block_names: Ordered names of the input feature blocks.
+
+    Returns:
+        Validated integer candidate counts keyed by block name.
+
+    Raises:
+        ValueError: If the collection keys do not match the input blocks or a
+            value is not a positive integer.
+    """
+    keepx_collection = dict(getattr(keepx, "collection", keepx))
+    if set(keepx_collection) != set(block_names):
+        raise ValueError("keepx keys must exactly match input block names.")
+    parsed = {}
+    for name in block_names:
+        try:
+            values = [
+                int(value.strip()) for value in str(keepx_collection[name]).split(",")
+            ]
+            if not values or any(value < 1 for value in values):
+                raise ValueError
+        except ValueError as error:
+            raise ValueError(
+                "Each keepx value must be a comma-separated list of positive integers."
+            ) from error
+        parsed[name] = values
+    return parsed
+
+
 def adaptive_keepx_refinement(
-    blocks: dict[str, pd.DataFrame],
-    target: pd.Series,
-    design: pd.DataFrame | float,
+    block_feature_counts: dict[str, int],
     ncomp: int,
     *,
-    initial_keepx: dict[str, list[int]] | None = None,
+    initial_keepx=None,
     min_keepx: int = 5,
     max_keepx_fraction: float = 0.2,
     grid_size: int = 5,
@@ -50,10 +91,7 @@ def adaptive_keepx_refinement(
     ber_margin: float = 0.0,
     se_multiplier: float = 1.0,
     nrepeat: int = 3,
-    evaluate_grid: Callable[
-        [int, dict[str, list[int]], dict[str, list[int]] | None], pd.DataFrame
-    ] = None,
-) -> AdaptiveKeepXResult:
+) -> Generator[GridRequest, pd.DataFrame, AdaptiveKeepXResult]:
     """Tunes DIABLO ``keepX`` with a coarse-to-fine adaptive grid.
 
     Components are tuned sequentially. Each component receives its own
@@ -72,12 +110,11 @@ def adaptive_keepx_refinement(
     values when components select different values.
 
     Args:
-        blocks: Named, sample-by-feature input data frames.
-        target: Categorical target indexed by the same sample IDs as ``blocks``.
-        design: DIABLO design matrix or scalar design weight.
+        block_feature_counts: Available feature count for each named input
+            block. The strategy uses these bounds to construct valid grids.
         ncomp: Number of components to tune.
-        initial_keepx: Optional user-supplied candidate grid used as the first
-            grid for every component. When supplied, automatic first-grid
+        initial_keepx: Optional QIIME keepX collection used as the first grid
+            for every component. When supplied, automatic first-grid
             construction settings are ignored.
         min_keepx: Smallest retained-feature count considered during refinement.
         max_keepx_fraction: Initial upper-bound fraction per block.
@@ -91,34 +128,43 @@ def adaptive_keepx_refinement(
         se_multiplier: Multiplier of the best model's SE accepted
             by the ``one_se`` rule for selection and refinement.
         nrepeat: Cross-validation repeats.
-        evaluate_grid: Pipeline callback that evaluates one component and
-            keepX subgrid, returning its long-form mean/SD error rates.
+        Yields: Grid requests that the pipeline executes through the
+            registered private feature-selection action. Each resumed value
+            must be the action's long-form mean/SD error-rate table.
 
     Returns:
         AdaptiveKeepXResult: Final component-wise counts and the unique
             component-wise evaluation cache.
 
     Raises:
-        ValueError: If inputs do not have compatible sample IDs, a grid is too
-            large, or refinement settings cannot retain every component value.
+        ValueError: If a grid is too large or refinement settings cannot retain
+            every component value.
     """
-    if evaluate_grid is None:
-        raise ValueError("Automatic keepX refinement requires a grid evaluator.")
-    _validate_min_keepx_against_blocks(
-        blocks,
+    _validate_min_keepx_against_feature_counts(
+        block_feature_counts,
         min_keepx,
+    )
+    initial_keepx = (
+        _parse_keepx_collection(initial_keepx, list(block_feature_counts))
+        if initial_keepx is not None
+        else None
     )
 
     evaluation_cache = {}
     final_component_decisions = {}
-    fixed_keep_x = {name: [] for name in blocks}
+    fixed_keep_x = {name: [] for name in block_feature_counts}
 
     print("Sequential adaptive keepX grid refinement\n", flush=True)
     for component in range(1, ncomp + 1):
         grid = (
             {name: values.copy() for name, values in initial_keepx.items()}
             if initial_keepx is not None
-            else _initial_grids(blocks, min_keepx, max_keepx_fraction, grid_size)
+            else _initial_grids(
+                block_feature_counts,
+                min_keepx,
+                max_keepx_fraction,
+                grid_size,
+            )
         )
         print(f"Tune component {component} of {ncomp}\n", flush=True)
         if component > 1:
@@ -157,9 +203,13 @@ def adaptive_keepx_refinement(
                     print("Evaluating unseen keepX subgrid:\n", flush=True)
                     print(f"{_grid_to_dataframe(subgrid).to_string()}\n", flush=True)
                 previous_keepx = fixed_keep_x if component > 1 else None
-                round_error_rates = evaluate_grid(component, subgrid, previous_keepx)
+                round_error_rates = yield GridRequest(
+                    component=component,
+                    keepx=subgrid,
+                    already_tested_keepx=previous_keepx,
+                )
                 round_error_rates = round_error_rates.loc[
-                    round_error_rates["component"] == component - 1
+                    round_error_rates["component"] == component
                 ].copy()
                 if round_error_rates.empty:
                     raise ValueError(
@@ -167,12 +217,12 @@ def adaptive_keepx_refinement(
                         f"component ({component})."
                     )
                 _add_evaluations_to_cache(
-                    component_cache, round_error_rates, tuple(blocks)
+                    component_cache, round_error_rates, tuple(block_feature_counts)
                 )
             round_decisions, current_selection, refinement_anchors = (
                 _select_near_optimal_keep_x(
-                    _cache_to_error_rates(component_cache, component - 1),
-                    tuple(blocks),
+                    _cache_to_error_rates(component_cache, component),
+                    tuple(block_feature_counts),
                     nrepeat,
                     selection_rule,
                     ber_margin,
@@ -204,7 +254,7 @@ def adaptive_keepx_refinement(
             next_grid = _refine_grids(
                 grid,
                 refinement_anchors,
-                blocks,
+                block_feature_counts,
                 min_keepx,
                 grid_size,
                 refinement_factor,
@@ -222,7 +272,8 @@ def adaptive_keepx_refinement(
         evaluation_cache[component] = component_cache
         final_component_decisions[component] = round_decisions
         fixed_keep_x = {
-            name: fixed_keep_x[name] + current_selection[name] for name in blocks
+            name: fixed_keep_x[name] + current_selection[name]
+            for name in block_feature_counts
         }
         print(f"Fixed component {component} keepX values.\n", flush=True)
 
@@ -232,15 +283,17 @@ def adaptive_keepx_refinement(
 
     return AdaptiveKeepXResult(
         keep_x=fixed_keep_x,
-        block_names=tuple(blocks),
+        block_names=tuple(block_feature_counts),
         evaluation_cache=evaluation_cache,
     )
 
 
-def _validate_min_keepx_against_blocks(blocks, min_keepx):
+def _validate_min_keepx_against_feature_counts(block_feature_counts, min_keepx):
     """Ensures every input block has at least ``min_keepx`` features."""
     invalid_blocks = [
-        str(name) for name, table in blocks.items() if table.shape[1] < min_keepx
+        str(name)
+        for name, feature_count in block_feature_counts.items()
+        if feature_count < min_keepx
     ]
     if invalid_blocks:
         raise ValueError(
@@ -250,14 +303,14 @@ def _validate_min_keepx_against_blocks(blocks, min_keepx):
 
 
 def _initial_grids(
-    blocks, min_keepx, initial_fraction, grid_size
+    block_feature_counts, min_keepx, initial_fraction, grid_size
 ) -> dict[str, list[int]]:
     """Builds feature-count-aware first-round candidate grids."""
     grids = {}
-    for name, table in blocks.items():
+    for name, feature_count in block_feature_counts.items():
         initial_upper = min(
-            table.shape[1],
-            max(min_keepx, ceil(table.shape[1] * initial_fraction)),
+            feature_count,
+            max(min_keepx, ceil(feature_count * initial_fraction)),
         )
         grids[name] = _spaced_integers(
             min_keepx, initial_upper, grid_size, geometric=True
@@ -266,12 +319,12 @@ def _initial_grids(
 
 
 def _refine_grids(
-    grid, selection, blocks, min_keepx, grid_size, factor
+    grid, selection, block_feature_counts, min_keepx, grid_size, factor
 ) -> dict[str, list[int]]:
     """Builds one bounded local candidate grid around each selected count."""
     refined = {}
     for name, candidates in grid.items():
-        hard_upper = blocks[name].shape[1]
+        hard_upper = block_feature_counts[name]
         centres = sorted(set(selection[name]))
         local_candidates = set(centres)
         for centre in centres:

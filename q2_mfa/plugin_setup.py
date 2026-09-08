@@ -39,6 +39,7 @@ from q2_mfa.pls import (
     _feature_selection_block_splsda_visualiser,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
+    adaptive_feature_selection_block_splsda,
     feature_selection_block_splsda,
     tune_components_block_splsda,
 )
@@ -392,6 +393,55 @@ feature_selection_action_input_descriptions = {
     ),
 }
 
+adaptive_feature_selection_parameters = {
+    **component_tuning_parameters,
+    "ncomp": Int % Range(1, None),
+    "keepx": Collection[Str],
+    "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
+    "measure": Str % Choices("overall", "BER"),
+    "weighted": Bool,
+    "min_keepx": Int % Range(1, None),
+    "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
+    "grid_size": Int % Range(3, None),
+    "refinement_factor": Float % Range(1, None, inclusive_start=False),
+    "selection_rule": Str % Choices("one_se", "absolute_margin"),
+    "ber_margin": Float % Range(0, None),
+    "se_multiplier": Float % Range(1, None),
+}
+
+adaptive_feature_selection_parameter_descriptions = {
+    **component_tuning_parameter_descriptions,
+    "ncomp": feature_selection_parameter_descriptions["ncomp"],
+    "keepx": (
+        "Optional initial named comma-separated keepX candidate grid for every "
+        "input block. When omitted, the first grid is generated automatically "
+        "from each block's feature count."
+    ),
+    "distance": feature_selection_parameter_descriptions["distance"],
+    "measure": feature_selection_parameter_descriptions["measure"],
+    "weighted": feature_selection_parameter_descriptions["weighted"],
+    "min_keepx": "Smallest retained-feature count considered automatically.",
+    "max_keepx_fraction": (
+        "Fraction of each block's features used as the initial automatic "
+        "keepX upper bound."
+    ),
+    "grid_size": "Candidate count in each automatic refinement grid.",
+    "refinement_factor": (
+        "Factor used to narrow interior grids or expand grids at an edge."
+    ),
+    "selection_rule": (
+        "Rule used to select near-optimal sparse grid points: one-SE or an "
+        "absolute BER margin."
+    ),
+    "ber_margin": (
+        "Allowed BER increase above the minimum when selection-rule is "
+        "absolute-margin."
+    ),
+    "se_multiplier": (
+        "Standard-error allowance above the minimum when selection-rule is " "one-SE."
+    ),
+}
+
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
@@ -564,6 +614,40 @@ plugin.pipelines.register_function(
         "weighted is enabled and majority voting otherwise. The measure "
         "parameter determines whether overall error rate (ER) or balanced "
         "error rate (BER) is used."
+    ),
+    citations=[citations["rohart2017mixomics"]],
+)
+
+plugin.pipelines.register_function(
+    function=adaptive_feature_selection_block_splsda,
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "tuned_ncomp": PLSTuneComponents,
+    },
+    parameters=adaptive_feature_selection_parameters,
+    outputs=[
+        ("feature_selection", PLSFeatureSelection),
+        ("visualization", Visualization),
+    ],
+    input_descriptions=feature_selection_input_descriptions,
+    parameter_descriptions=adaptive_feature_selection_parameter_descriptions,
+    output_descriptions={
+        "feature_selection": (
+            "Combined cross-validated keepX error rates and selected feature "
+            "counts from adaptive block sPLS-DA (DIABLO) feature selection."
+        ),
+        "visualization": (
+            "Tabulated adaptive feature-selection error rates and selected "
+            "feature counts and, for exactly two blocks, one mean-error "
+            "heatmap per component."
+        ),
+    },
+    name="Adaptively select block sPLS-DA (DIABLO) features",
+    description=(
+        "Aligns input blocks and the response, adaptively refines sparse "
+        "feature-count grids for each component through repeated calls to the "
+        "internal block sPLS-DA feature-selection action, and creates "
+        "diagnostic visualizations."
     ),
     citations=[citations["rohart2017mixomics"]],
 )

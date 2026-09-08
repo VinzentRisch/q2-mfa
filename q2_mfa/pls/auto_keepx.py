@@ -18,6 +18,8 @@ from typing import Generator, Literal
 import numpy as np
 import pandas as pd
 
+from q2_mfa.pls.feature_selection_block_splsda import _parse_keepx_collection
+
 
 @dataclass(frozen=True)
 class AdaptiveKeepXResult:
@@ -42,40 +44,6 @@ class GridRequest:
     component: int
     keepx: dict[str, list[int]] | None
     already_tested_keepx: dict[str, list[int]] | None
-
-
-def _parse_keepx_collection(keepx, block_names: list[str]) -> dict[str, list[int]]:
-    """Parses named comma-separated keepX candidate counts.
-
-    Args:
-        keepx: QIIME collection or mapping from block names to comma-separated
-            candidate counts.
-        block_names: Ordered names of the input feature blocks.
-
-    Returns:
-        Validated integer candidate counts keyed by block name.
-
-    Raises:
-        ValueError: If the collection keys do not match the input blocks or a
-            value is not a positive integer.
-    """
-    keepx_collection = dict(getattr(keepx, "collection", keepx))
-    if set(keepx_collection) != set(block_names):
-        raise ValueError("keepx keys must exactly match input block names.")
-    parsed = {}
-    for name in block_names:
-        try:
-            values = [
-                int(value.strip()) for value in str(keepx_collection[name]).split(",")
-            ]
-            if not values or any(value < 1 for value in values):
-                raise ValueError
-        except ValueError as error:
-            raise ValueError(
-                "Each keepx value must be a comma-separated list of positive integers."
-            ) from error
-        parsed[name] = values
-    return parsed
 
 
 def adaptive_keepx_refinement(
@@ -145,7 +113,11 @@ def adaptive_keepx_refinement(
         min_keepx,
     )
     initial_keepx = (
-        _parse_keepx_collection(initial_keepx, list(block_feature_counts))
+        _parse_keepx_collection(
+            dict(getattr(initial_keepx, "collection", initial_keepx)),
+            list(block_feature_counts),
+            ncomp,
+        )
         if initial_keepx is not None
         else None
     )

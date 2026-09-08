@@ -7,21 +7,26 @@
 # -----------------------------------------------------------------------------
 
 import json
+from unittest.mock import MagicMock, call, patch
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
+from q2_types.metadata import ImmutableMetadata
 from q2_types.tabular import TableJSONLFileFormat
+from q2templates.reports import matryoshka_template
 from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
 
 from q2_mfa.pls import PLSFeatureSelectionDirFmt
 from q2_mfa.pls.feature_selection_block_splsda import (
+    _feature_selection_block_splsda_visualiser,
     _parse_keepx_collection,
     _r_feature_selection_error_rate_to_dataframe,
     _selected_features_table,
     _serialize_feature_selection,
+    feature_selection_block_splsda,
 )
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
 
@@ -51,6 +56,16 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             }
         )
         cls.response = Metadata(read_table("response.tsv")).get_column("group")
+        cls.expected_error_rates = pd.read_csv(
+            instance.get_data_path("feature-selection/pipeline-error-rates.tsv"),
+            sep="\t",
+            index_col="id",
+        )
+        cls.expected_selected_features = pd.read_csv(
+            instance.get_data_path("feature-selection/pipeline-selected-features.tsv"),
+            sep="\t",
+            index_col="id",
+        )
 
     def test_parse_keepx_collection_requires_expected_blocks(self):
         """Rejects keepX grids whose block names differ from the input blocks."""
@@ -120,11 +135,66 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 already_tested=True,
             )
 
-    def test_feature_selection_block_splsda_integration(self):
-        """Runs the full action and selects one count from each two-value grid."""
-        select_features = self.plugin.methods["feature_selection_block_splsda"]
+    @patch("q2_mfa.pls.feature_selection_block_splsda.r")
+    def test_private_feature_selection_calls_mixomics_and_serializes(self, mock_r):
+        """Passes converted inputs to mixOmics and serializes its result."""
+        tune_result = r(
+            "list("
+            "error.rate = structure(matrix(c(0.2, 0.3, 0.1, 0.25), nrow = 4, "
+            "dimnames = list(c('1_1', '2_1', '1_2', '2_2'), 'comp1'))), "
+            "error.rate.sd = structure(matrix(c(0.01, 0.02, 0.03, 0.04), "
+            "nrow = 4, dimnames = list(c('1_1', '2_1', '1_2', '2_2'), "
+            "'comp1'))), choice.keepX = list(`block-a` = 1, `block-b` = 2))"
+        )
+        tune = MagicMock(return_value=tune_result)
+        mock_r.side_effect = [None, tune]
+        mock_r.__getitem__.side_effect = r.__getitem__
+        select_features = self.plugin.methods["_feature_selection_block_splsda"]
 
-        (tuning,) = select_features(
+        (observed,) = select_features(
+            tables=self.tables,
+            y=self.response,
+            keepx={"block-a": "1,2", "block-b": "1,2"},
+            design_weight=0.1,
+            ncomp=1,
+            seed=1,
+            threads=1,
+        )
+
+        self.assertEqual(
+            mock_r.call_args_list,
+            [
+                call("suppressPackageStartupMessages(library(mixOmics))"),
+                call(
+                    "function(...) suppressWarnings(suppressMessages("
+                    "tune.block.splsda(...)))"
+                ),
+            ],
+        )
+        r_blocks, r_target = tune.call_args.args
+        self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
+        self.assertEqual(
+            list(r_target.names),
+            self.response.to_series().index.astype(str).tolist(),
+        )
+        tune_parameters = tune.call_args.kwargs
+        self.assertEqual(tune_parameters["ncomp"], 1)
+        self.assertEqual(tune_parameters["seed"], 1)
+        self.assertEqual(
+            list(tune_parameters["test.keepX"].names),
+            ["block-a", "block-b"],
+        )
+        self.assertEqual(
+            [list(values) for values in tune_parameters["test.keepX"]],
+            [[1, 2], [1, 2]],
+        )
+        observed.view(PLSFeatureSelectionDirFmt).validate()
+
+    def test_feature_selection_pipeline_matches_expected_values(self):
+        """Runs the public pipeline and creates its two-block report."""
+        select_features = self.plugin.pipelines["feature_selection_block_splsda"]
+
+        results = select_features(
             tables=self.tables,
             y=self.response,
             design_weight=0.1,
@@ -137,27 +207,202 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             threads=1,
         )
 
-        tuning_data = tuning.view(PLSFeatureSelectionDirFmt)
-        error_rates = tuning_data.error_rate.view(pd.DataFrame)
-        selected_features = tuning_data.selected_features.view(pd.DataFrame)
+        feature_selection_data = results.feature_selection.view(
+            PLSFeatureSelectionDirFmt
+        )
+        error_rates = feature_selection_data.error_rate.view(Metadata).to_dataframe()
+        selected_features = feature_selection_data.selected_features.view(
+            Metadata
+        ).to_dataframe()
+        assert_frame_equal(
+            error_rates,
+            self.expected_error_rates,
+            rtol=1e-8,
+            atol=1e-10,
+        )
+        assert_frame_equal(selected_features, self.expected_selected_features)
+
+        with (
+            results.visualization._archiver.data_dir / "subfigures" / "index.json"
+        ).open() as fh:
+            report_index = json.load(fh)
+        self.assertEqual(
+            list(report_index),
+            ["Error-rate heatmaps", "Error rates", "Selected features"],
+        )
+        self.assertEqual(
+            list(report_index["Error-rate heatmaps"]["children"]), ["Component 1"]
+        )
+
+    @patch("q2_mfa.pls.feature_selection_block_splsda._resolve_ncomp")
+    def test_feature_selection_pipeline_calls_its_actions(self, resolve_ncomp):
+        """Aligns inputs, resolves ncomp, selects features, and visualizes."""
+        resolve_ncomp.return_value = 3
+        aligned_metadata = Artifact.import_data(
+            ImmutableMetadata, Metadata(self.response.to_dataframe())
+        )
+        align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
+        feature_selection = MagicMock()
+        select_features = MagicMock(return_value=(feature_selection,))
+        visualization = MagicMock()
+        visualise = MagicMock(return_value=(visualization,))
+        context = MagicMock()
+        context.get_action.side_effect = [select_features, align_samples, visualise]
+        tuned_ncomp = MagicMock()
+
+        observed = feature_selection_block_splsda(
+            ctx=context,
+            tables=self.tables,
+            y=self.response,
+            keepx={"block-a": "1,2", "block-b": "1,2"},
+            design_weight=0.1,
+            tuned_ncomp=tuned_ncomp,
+        )
 
         self.assertEqual(
-            list(error_rates.columns),
-            ["id", "component", "mean", "sd", "keepx_block-a", "keepx_block-b"],
+            context.get_action.call_args_list,
+            [
+                call("mfa", "_feature_selection_block_splsda"),
+                call("mfa", "_align_samples_metadata"),
+                call("mfa", "_feature_selection_block_splsda_visualiser"),
+            ],
         )
-        self.assertTrue(error_rates["mean"].notna().all())
-        self.assertTrue(error_rates["sd"].notna().all())
-        self.assertEqual(set(error_rates["component"]), {1})
-        self.assertEqual(len(error_rates), 4)
-        self.assertEqual(set(error_rates["keepx_block-a"]), {1, 2})
-        self.assertEqual(set(error_rates["keepx_block-b"]), {1, 2})
-        self.assertEqual(selected_features["component"].tolist(), [1])
+        align_samples.assert_called_once_with(
+            tables=self.tables,
+            metadata_column=self.response,
+        )
+        resolve_ncomp.assert_called_once_with(
+            None, tuned_ncomp, True, "BER", "max.dist"
+        )
+        selection_args = select_features.call_args.kwargs
+        self.assertIs(selection_args["tables"], self.tables)
+        self.assertEqual(selection_args["y"].name, "group")
+        self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})
+        self.assertEqual(selection_args["ncomp"], 3)
+        visualise.assert_called_once_with(feature_selection=feature_selection)
+        self.assertEqual(observed, (feature_selection, visualization))
+
+    @patch("q2_mfa.pls.feature_selection_block_splsda.Metadata")
+    def test_feature_selection_visualiser_creates_component_heatmaps(self, metadata):
+        """Calls the heatmap action once per component for two blocks."""
+        error_rates = MagicMock()
+        selected_features = MagicMock()
+        error_rate_data = MagicMock()
+        error_rate_data.columns = [
+            "keepx_block-a",
+            "keepx_block-b",
+            "component",
+            "mean",
+            "sd",
+        ]
+        components = MagicMock()
+        components.unique.return_value = [1, 2]
+        error_rate_data.__getitem__.return_value = components
+        error_rates.to_dataframe.return_value = error_rate_data
+        feature_selection = MagicMock()
+        feature_selection.view.return_value.error_rate.view.return_value = error_rates
+        feature_selection.view.return_value.selected_features.view.return_value = (
+            selected_features
+        )
+        error_rate_table = MagicMock()
+        selected_features_table = MagicMock()
+        tabulate = MagicMock(
+            side_effect=[(error_rate_table,), (selected_features_table,)]
+        )
+        component_heatmaps = [MagicMock(), MagicMock()]
+        component_metadata = [MagicMock(), MagicMock()]
+        metadata.side_effect = component_metadata
+        heatmap = MagicMock(side_effect=[(plot,) for plot in component_heatmaps])
+        heatmap_report = MagicMock()
+        combined_report = MagicMock()
+        context = MagicMock()
+        context.get_action.side_effect = [tabulate, heatmap]
+        context.make_report.side_effect = [heatmap_report, combined_report]
+
+        observed = _feature_selection_block_splsda_visualiser(
+            ctx=context,
+            feature_selection=feature_selection,
+        )
+
         self.assertEqual(
-            selected_features.columns.tolist(), ["component", "block-a", "block-b"]
+            context.get_action.call_args_list,
+            [call("metadata", "tabulate"), call("vizard", "heatmap")],
         )
-        self.assertTrue(
-            selected_features[["block-a", "block-b"]].isin([1, 2]).all().all()
+        self.assertEqual(
+            tabulate.call_args_list,
+            [call(input=error_rates), call(input=selected_features)],
         )
+        self.assertEqual(
+            heatmap.call_args_list,
+            [
+                call(
+                    metadata=component_metadata[0],
+                    x_measure="keepx_block-a",
+                    y_measure="keepx_block-b",
+                    gradient_measure="mean",
+                    title="block sPLS-DA (DIABLO) keepX error rates: component 1",
+                ),
+                call(
+                    metadata=component_metadata[1],
+                    x_measure="keepx_block-a",
+                    y_measure="keepx_block-b",
+                    gradient_measure="mean",
+                    title="block sPLS-DA (DIABLO) keepX error rates: component 2",
+                ),
+            ],
+        )
+        self.assertEqual(context.make_report.call_count, 2)
+        self.assertIs(observed, combined_report)
+
+    def test_feature_selection_visualiser_returns_tables_for_three_blocks(self):
+        """Calls only the tabulate action when there are more than two blocks."""
+        error_rates = MagicMock()
+        selected_features = MagicMock()
+        error_rate_data = MagicMock()
+        error_rate_data.columns = [
+            "keepx_block-a",
+            "keepx_block-b",
+            "keepx_block-c",
+            "component",
+            "mean",
+            "sd",
+        ]
+        error_rates.to_dataframe.return_value = error_rate_data
+        feature_selection = MagicMock()
+        feature_selection.view.return_value.error_rate.view.return_value = error_rates
+        feature_selection.view.return_value.selected_features.view.return_value = (
+            selected_features
+        )
+        error_rate_table = MagicMock()
+        selected_features_table = MagicMock()
+        tabulate = MagicMock(
+            side_effect=[(error_rate_table,), (selected_features_table,)]
+        )
+        report = MagicMock()
+        context = MagicMock()
+        context.get_action.return_value = tabulate
+        context.make_report.return_value = report
+
+        observed = _feature_selection_block_splsda_visualiser(
+            ctx=context,
+            feature_selection=feature_selection,
+        )
+
+        self.assertEqual(
+            context.get_action.call_args_list, [call("metadata", "tabulate")]
+        )
+        self.assertEqual(
+            tabulate.call_args_list,
+            [call(input=error_rates), call(input=selected_features)],
+        )
+        context.make_report.assert_called_once_with(
+            matryoshka_template,
+            {
+                "Error rates": error_rate_table,
+                "Selected features": selected_features_table,
+            },
+        )
+        self.assertIs(observed, report)
 
     def test_error_rate_table_converts_mixomics_statistics(self):
         """Converts the mixOmics mean and standard-deviation matrices to rows."""
@@ -174,11 +419,11 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         )
         expected = pd.DataFrame(
             {
+                "keepx_block-a": [1, 3],
+                "keepx_block-b": [2, 4],
                 "component": [1, 1],
                 "mean": [0.2, 0.4],
                 "sd": [0.01, 0.02],
-                "keepx_block-a": [1, 3],
-                "keepx_block-b": [2, 4],
             },
         ).astype({"component": "Int64"})
 

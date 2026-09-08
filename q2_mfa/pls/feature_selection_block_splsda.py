@@ -9,8 +9,10 @@ import secrets
 
 import numpy as np
 import pandas as pd
-from rachis import CategoricalMetadataColumn, Metadata
+from q2templates.reports import matryoshka_template
+from rachis import Artifact, CategoricalMetadataColumn, Metadata, Visualization
 from rachis.plugin import CaptureHolder
+from rachis.plugin.context import IContext
 from rpy2.robjects import ListVector, r
 
 from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
@@ -23,7 +25,7 @@ from q2_mfa.pls.utils import (
 )
 
 
-def feature_selection_block_splsda(
+def _feature_selection_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
     keepx: dict,
@@ -56,7 +58,7 @@ def feature_selection_block_splsda(
 
     Args:
         tables (ResultCollection): Named feature-table artifacts used as
-            DIABLO blocks.
+            blocks for block sPLS-DA (DIABLO).
         y (CategoricalMetadataColumn): Categorical response labels for the
             samples.
         keepx (dict): Named comma-separated keepX candidate counts for each
@@ -149,6 +151,183 @@ def feature_selection_block_splsda(
     return _serialize_feature_selection(
         error_rates,
         selected_features,
+    )
+
+
+def feature_selection_block_splsda(
+    ctx: IContext,
+    tables: dict[str, Artifact],
+    y: CategoricalMetadataColumn,
+    keepx: dict,
+    already_tested_x: dict = None,
+    design_matrix: Metadata = None,
+    design_weight: float = None,
+    tuned_ncomp: Artifact = None,
+    ncomp: CaptureHolder[int] = None,
+    scale: bool = True,
+    tol: float = 1e-6,
+    max_iter: int = 100,
+    near_zero_var: bool = False,
+    validation: str = "Mfold",
+    folds: int = 10,
+    nrepeat: int = 3,
+    signif_threshold: float = 0.01,
+    distance: str = "max.dist",
+    measure: str = "BER",
+    weighted: bool = True,
+    seed: int = None,
+    threads: int = 1,
+) -> tuple[Artifact, Visualization]:
+    """
+    Selects block sPLS-DA (DIABLO) features and creates visualizations.
+
+    Aligns the input feature tables and categorical response, resolves the
+    number of components from either a manual value or a component-tuning
+    artifact, runs the private feature-selection action, and delegates report
+    generation to the private feature-selection visualization pipeline.
+
+    Args:
+        ctx (Context): Pipeline execution context used to retrieve actions.
+        tables (ResultCollection): Named feature-table artifacts used as
+            blocks for block sPLS-DA (DIABLO).
+        y (CategoricalMetadataColumn): Categorical response labels for the
+            samples.
+        keepx (dict): Named comma-separated keepX candidate counts for each
+            input block.
+        already_tested_x (dict, optional): Named comma-separated selected
+            keepX counts for earlier components.
+        design_matrix (Metadata, optional): Explicit block-relationship design
+            matrix.
+        design_weight (float, optional): Shared off-diagonal relationship
+            weight used when no design matrix is supplied.
+        tuned_ncomp (Artifact, optional): Component-tuning artifact used when
+            ``ncomp`` is not provided.
+        ncomp (CaptureHolder[int], optional): Manual number of components to
+            tune or holder for the value resolved from ``tuned_ncomp``.
+        scale (bool): Whether to standardize features within every block.
+        tol (float): Convergence tolerance for the iterative model fit.
+        max_iter (int): Maximum iterations for each model fit.
+        near_zero_var (bool): Whether to remove zero or near-zero variance
+            predictors before fitting.
+        validation (str): Cross-validation strategy accepted by mixOmics.
+        folds (int): Number of folds used for M-fold cross-validation.
+        nrepeat (int): Number of cross-validation repetitions.
+        signif_threshold (float): Minimum error-rate improvement required to
+            retain an additional component.
+        distance (str): Prediction distance used for classification.
+        measure (str): Classification error measure used to select keepX.
+        weighted (bool): Whether to use weighted rather than majority voting.
+        seed (int, optional): Random seed used for reproducible
+            cross-validation.
+        threads (int): Number of BiocParallel workers to use.
+
+    Returns:
+        tuple[Artifact, Visualization]: The feature-selection artifact and its
+            diagnostic visualization.
+    """
+    select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
+    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
+    visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
+
+    aligned_tables, aligned_metadata = align_samples(
+        tables=tables,
+        metadata_column=y,
+    )
+    selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
+    (feature_selection,) = select_features(
+        tables=aligned_tables,
+        y=aligned_metadata.view(Metadata).get_column(y.name),
+        keepx=keepx,
+        already_tested_x=already_tested_x,
+        design_matrix=design_matrix,
+        design_weight=design_weight,
+        ncomp=selected_ncomp,
+        scale=scale,
+        tol=tol,
+        max_iter=max_iter,
+        near_zero_var=near_zero_var,
+        validation=validation,
+        folds=folds,
+        nrepeat=nrepeat,
+        signif_threshold=signif_threshold,
+        distance=distance,
+        measure=measure,
+        weighted=weighted,
+        seed=seed,
+        threads=threads,
+    )
+    (visualization,) = visualise(feature_selection=feature_selection)
+    return feature_selection, visualization
+
+
+def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
+    """
+    Creates block sPLS-DA (DIABLO) feature-selection visualizations.
+
+    Always tabulates all cross-validated error rates and selected feature
+    counts. When the artifact contains exactly two input blocks, it
+    additionally creates one heatmap per component using the two blocks'
+    keepX values as axes and mean error rate as the gradient, then combines the
+    plots and tables into a nested report.
+
+    Args:
+        ctx (Context): Pipeline execution context used to retrieve actions and
+            create reports.
+        feature_selection (Artifact): Block sPLS-DA (DIABLO)
+            feature-selection results.
+
+    Returns:
+        Visualization: A report containing both tables and, for exactly two
+            blocks, the component heatmaps.
+    """
+    tabulate = ctx.get_action("metadata", "tabulate")
+    feature_selection_data = feature_selection.view(PLSFeatureSelectionDirFmt)
+    error_rates = feature_selection_data.error_rate.view(Metadata)
+    selected_features = feature_selection_data.selected_features.view(Metadata)
+    (error_rate_table,) = tabulate(input=error_rates)
+    (selected_features_table,) = tabulate(input=selected_features)
+
+    error_rate_table_data = error_rates.to_dataframe()
+    block_columns = [
+        column
+        for column in error_rate_table_data.columns
+        if column.startswith("keepx_")
+    ]
+    if len(block_columns) != 2:
+        return ctx.make_report(
+            matryoshka_template,
+            {
+                "Error rates": error_rate_table,
+                "Selected features": selected_features_table,
+            },
+        )
+
+    heatmap = ctx.get_action("vizard", "heatmap")
+    heatmaps = {}
+    for component_value in sorted(error_rate_table_data["component"].unique()):
+        component = int(component_value)
+        component_error_rates = error_rate_table_data.loc[
+            error_rate_table_data["component"] == component_value
+        ]
+        (component_heatmap,) = heatmap(
+            metadata=Metadata(component_error_rates),
+            x_measure=block_columns[0],
+            y_measure=block_columns[1],
+            gradient_measure="mean",
+            title=(
+                "block sPLS-DA (DIABLO) keepX error rates: " f"component {component}"
+            ),
+        )
+        heatmaps[f"Component {component}"] = component_heatmap
+
+    heatmap_report = ctx.make_report(matryoshka_template, heatmaps)
+    return ctx.make_report(
+        matryoshka_template,
+        {
+            "Error-rate heatmaps": heatmap_report,
+            "Error rates": error_rate_table,
+            "Selected features": selected_features_table,
+        },
     )
 
 
@@ -254,9 +433,9 @@ def _r_feature_selection_error_rate_to_dataframe(
             blocks.
 
     Returns:
-        pd.DataFrame: Component, mean, standard deviation, and one keepX
-            column per input block. Each row represents one tested combination
-            for one component.
+        pd.DataFrame: One keepX column per input block, followed by component,
+            mean, and standard deviation. Each row represents one tested
+            combination for one component.
     """
     statistic_tables = {}
     for statistic, error_rates in (
@@ -287,7 +466,7 @@ def _r_feature_selection_error_rate_to_dataframe(
     result = result.drop(columns="keepx")
     result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
     result["component"] = result["component"].astype("Int64")
-    return result[["component", "mean", "sd", *keepx_columns]]
+    return result[[*keepx_columns, "component", "mean", "sd"]]
 
 
 def _serialize_feature_selection(
@@ -297,9 +476,9 @@ def _serialize_feature_selection(
     """
     Serializes feature-selection tables as Table JSONL files.
 
-    Attaches table descriptions that identify the mixOmics sources for the
-    cross-validated error rates and selected keepX counts, then writes both
-    tables into the feature-selection directory format.
+    Adds stable IDs to both tables, attaches descriptions that identify the
+    mixOmics sources, and writes both tables into the feature-selection
+    directory format.
 
     Args:
         error_rate (pd.DataFrame): Cross-validated error rates for every tested
@@ -316,6 +495,11 @@ def _serialize_feature_selection(
     selected_features = selected_features.reset_index()
     error_rate.insert(
         0, "id", [f"row{index}" for index in range(1, len(error_rate) + 1)]
+    )
+    selected_features.insert(
+        0,
+        "id",
+        [f"row{index}" for index in range(1, len(selected_features) + 1)],
     )
     error_rate.attrs["description"] = jsonl_descriptions["feature_selection_error_rate"]
     selected_features.attrs["description"] = jsonl_descriptions[

@@ -35,6 +35,8 @@ from q2_mfa.pls import (
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
     _align_samples_metadata,
+    _feature_selection_block_splsda,
+    _feature_selection_block_splsda_visualiser,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
     feature_selection_block_splsda,
@@ -374,14 +376,19 @@ feature_selection_parameter_descriptions = {
 
 feature_selection_input_descriptions = {
     **component_tuning_input_descriptions,
-    "tables": (
-        "Named feature tables used as sPLS-DA blocks. The blocks and response "
-        "must already have identical sample IDs in the same order. Table names "
-        "identify the corresponding design-matrix rows and columns."
-    ),
     "tuned_ncomp": (
         "Component-tuning artifact used to determine ncomp. Provide exactly "
         "one of this artifact or ncomp."
+    ),
+}
+
+feature_selection_action_input_descriptions = {
+    **feature_selection_input_descriptions,
+    "tables": (
+        "Named, sample-aligned feature tables used as blocks for block "
+        "sPLS-DA (DIABLO). The blocks and response must have identical sample "
+        "IDs in the same order. Table names identify the corresponding "
+        "design-matrix rows and columns."
     ),
 }
 
@@ -474,33 +481,89 @@ plugin.pipelines.register_function(
 )
 
 plugin.methods.register_function(
+    function=_feature_selection_block_splsda,
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "tuned_ncomp": PLSTuneComponents,
+    },
+    parameters=feature_selection_parameters,
+    outputs=[("feature_selection", PLSFeatureSelection)],
+    input_descriptions=feature_selection_action_input_descriptions,
+    parameter_descriptions=feature_selection_parameter_descriptions,
+    output_descriptions={
+        "feature_selection": (
+            "Cross-validated keepX error rates and selected feature counts for "
+            "block sPLS-DA (DIABLO) feature selection."
+        )
+    },
+    name="Internal block sPLS-DA (DIABLO) feature selection",
+    description=(
+        "Internal feature-selection action used by the public block sPLS-DA "
+        "(DIABLO) feature-selection pipeline."
+    ),
+    citations=[citations["rohart2017mixomics"]],
+)
+
+plugin.pipelines.register_function(
+    function=_feature_selection_block_splsda_visualiser,
+    inputs={"feature_selection": PLSFeatureSelection},
+    parameters={},
+    outputs=[("visualization", Visualization)],
+    input_descriptions={
+        "feature_selection": (
+            "Cross-validated keepX error rates and selected feature counts "
+            "for block sPLS-DA (DIABLO) feature selection."
+        )
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "visualization": (
+            "Tabulated feature-selection error rates and selected feature "
+            "counts and, for exactly two blocks, one mean-error heatmap per "
+            "component."
+        )
+    },
+    name="Visualize block sPLS-DA (DIABLO) feature selection",
+    description=(
+        "Creates tables of block sPLS-DA (DIABLO) feature-selection error "
+        "rates and selected feature counts and adds per-component heatmaps "
+        "when exactly two input blocks were tuned."
+    ),
+    citations=[citations["rohart2017mixomics"]],
+)
+
+plugin.pipelines.register_function(
     function=feature_selection_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
         "tuned_ncomp": PLSTuneComponents,
     },
     parameters=feature_selection_parameters,
-    outputs=[("tuning", PLSFeatureSelection)],
+    outputs=[
+        ("feature_selection", PLSFeatureSelection),
+        ("visualization", Visualization),
+    ],
     input_descriptions=feature_selection_input_descriptions,
     parameter_descriptions=feature_selection_parameter_descriptions,
     output_descriptions={
-        "tuning": (
+        "feature_selection": (
             "Cross-validated keepX error rates and selected feature counts for "
-            "DIABLO feature selection."
-        )
+            "block sPLS-DA (DIABLO) feature selection."
+        ),
+        "visualization": (
+            "Tabulated feature-selection error rates and selected feature "
+            "counts and, for exactly two blocks, one mean-error heatmap per "
+            "component."
+        ),
     },
     name="Select block sPLS-DA (DIABLO) features",
     description=(
-        "Tunes sparse feature counts for a block sPLS-DA (DIABLO) model with "
-        "mixOmics. The action evaluates a user-supplied keepX candidate grid "
-        "for every component and reports the resulting cross-validated error "
-        "rates and selected feature counts. Reported error rates use weighted "
-        "voting when the weighted parameter is enabled and majority voting "
-        "otherwise. The measure parameter determines whether they report "
-        "overall error rate (ER) or balanced error rate (BER). For questions "
-        "about the implementation or parameters, consult the mixOmics "
-        "documentation: "
-        "https://mixomics.org/methods/diablo/"
+        "Aligns input blocks and the response, tunes sparse feature counts for "
+        "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "
+        "visualizations. Reported error rates use weighted voting when "
+        "weighted is enabled and majority voting otherwise. The measure "
+        "parameter determines whether overall error rate (ER) or balanced "
+        "error rate (BER) is used."
     ),
     citations=[citations["rohart2017mixomics"]],
 )

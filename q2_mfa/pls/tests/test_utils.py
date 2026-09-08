@@ -199,8 +199,12 @@ class TestPLSUtils(TestPluginBase):
         blocks = {name: table.loc[sample_ids] for name, table in self.blocks.items()}
         target = self.response.to_series().loc[sample_ids]
 
-        r_blocks, r_target, r_design = utils._to_r_inputs(
-            blocks, target, self.designs["valid"].to_dataframe()
+        r_blocks, r_target, r_design, r_keep_x, r_already_tested_x = utils._to_r_inputs(
+            blocks,
+            target,
+            self.designs["valid"].to_dataframe(),
+            {"block-a": [1, 2], "block-b": [3, 4]},
+            {"block-a": [1], "block-b": [3]},
         )
 
         self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
@@ -209,6 +213,12 @@ class TestPLSUtils(TestPluginBase):
         self.assertEqual(list(utils.r["as.character"](r_target)), ["case", "control"])
         self.assertEqual(list(utils.r["rownames"](r_design)), ["block-b", "block-a"])
         self.assertEqual(list(utils.r["colnames"](r_design)), ["block-b", "block-a"])
+        self.assertEqual(list(r_keep_x.names), ["block-a", "block-b"])
+        self.assertEqual(list(r_keep_x.rx2("block-a")), [1, 2])
+        self.assertEqual(list(r_keep_x.rx2("block-b")), [3, 4])
+        self.assertEqual(list(r_already_tested_x.names), ["block-a", "block-b"])
+        self.assertEqual(list(r_already_tested_x.rx2("block-a")), [1])
+        self.assertEqual(list(r_already_tested_x.rx2("block-b")), [3])
 
     def test_vote_error_rates_combines_mean_and_standard_deviation(self):
         perf_result = utils.r("""
@@ -233,11 +243,12 @@ class TestPLSUtils(TestPluginBase):
             {
                 "distance": ["max.dist"] * 4,
                 "class": ["Overall.BER", "Overall.BER", "Overall.ER", "Overall.ER"],
-                "component": [0, 1, 0, 1],
+                "component": [1, 2, 1, 2],
                 "mean": [0.1, 0.2, 0.3, 0.4],
                 "sd": [0.01, 0.02, 0.03, 0.04],
             }
         )
+        expected["component"] = expected["component"].astype("Int64")
         pd.testing.assert_frame_equal(observed, expected)
 
     def test_vote_error_rates_rejects_missing_standard_deviation(self):

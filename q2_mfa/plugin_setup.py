@@ -36,7 +36,9 @@ from q2_mfa.pls import (
     PLSTuneComponentsDirFmt,
     _align_samples_metadata,
     _feature_selection_block_splsda,
+    _feature_selection_block_splsda_visualiser,
     _tune_components_block_splsda,
+    _tune_components_block_visualisation,
     feature_selection_block_splsda,
     tune_components_block_splsda,
 )
@@ -119,7 +121,7 @@ plugin.pipelines.register_function(
     },
     output_descriptions={
         "aligned_tables": "Feature tables restricted to their shared sample IDs.",
-        "aligned_metadata": "The aligned metadata column.",
+        "aligned_metadata": ("The aligned metadata column."),
     },
     name="Align samples and metadata column",
     description=(
@@ -128,47 +130,70 @@ plugin.pipelines.register_function(
     ),
 )
 
+ordination_parameters = {
+    "n_components": Int % Range(2, None),
+    "rescale_with_mean": Bool,
+    "rescale_with_std": Bool,
+    "filter_zero_variance": Bool,
+    "engine": Str % Choices(["sklearn", "scipy"]),
+    "n_iter": Int % Range(0, None),
+    "random_state": Int,
+}
+ordination_parameter_descriptions = {
+    "n_components": "Number of principal components to compute.",
+    "rescale_with_mean": (
+        "Whether to center each feature by subtracting its mean before SVD (Singular "
+        "Value Decomposition)."
+    ),
+    "rescale_with_std": (
+        "Whether to standardize each feature to unit variance before SVD."
+    ),
+    "filter_zero_variance": (
+        "Whether to remove columns with zero variance before SVD."
+    ),
+    "engine": (
+        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "uses deterministic SciPy SVD."
+    ),
+    "n_iter": (
+        "Number of iterations used by the 'sklearn' randomized SVD "
+        "engine. This parameter is ignored by the 'scipy' engine."
+    ),
+    "random_state": (
+        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "reproducible results across multiple function calls. This "
+        "parameter is ignored by the 'scipy' engine."
+    ),
+}
+
+mfa_parameters = {
+    "sample_metadata": Metadata,
+    "metadata_groups": Collection[Str],
+    **ordination_parameters,
+}
+mfa_parameter_descriptions = {
+    "sample_metadata": (
+        "Optional sample metadata to include as additional MFA groups."
+    ),
+    "metadata_groups": (
+        "Optional mapping from metadata group names to comma-separated metadata "
+        "column strings. Pass a collection/dict such as "
+        "{'group': 'column1,column2'} to define explicit groups. If a single "
+        "string is provided, all metadata columns are included in a group with "
+        "that string as the group name. If sample metadata is provided without "
+        "this parameter, all metadata columns are included in a group named "
+        "'metadata'. Groups must contain only numeric or only categorical columns."
+    ),
+    **ordination_parameter_descriptions,
+}
+
 plugin.methods.register_function(
     function=pca,
     inputs={"table": FeatureTable[Unconstrained]},
-    parameters={
-        "rescale_with_mean": Bool,
-        "rescale_with_std": Bool,
-        "n_components": Int % Range(1, None),
-        "n_iter": Int % Range(0, None),
-        "random_state": Int,
-        "engine": Str % Choices(["sklearn", "scipy"]),
-        "filter_zero_variance": Bool,
-    },
+    parameters=ordination_parameters,
     outputs=[("pca_results", ComponentAnalysis)],
     input_descriptions={"table": "The frequency table."},
-    parameter_descriptions={
-        "n_components": "Number of principal components to compute.",
-        "rescale_with_mean": (
-            "Whether to center each feature by subtracting its mean before "
-            "performing SVD."
-        ),
-        "rescale_with_std": (
-            "Whether to standardize each feature to unit variance before "
-            "performing SVD."
-        ),
-        "n_iter": (
-            "Number of iterations used by the 'sklearn' randomized SVD "
-            "engine. This parameter is ignored by the 'scipy' engine."
-        ),
-        "engine": (
-            "SVD engine used by prince. 'sklearn' uses randomized SVD, 'scipy' "
-            "uses SciPy SVD."
-        ),
-        "random_state": (
-            "Random seed used by the 'sklearn' SVD engine. Pass an int for "
-            "reproducible results across multiple function calls. This "
-            "parameter is ignored by the 'scipy' engine."
-        ),
-        "filter_zero_variance": (
-            "Whether to remove columns with zero variance before analysis."
-        ),
-    },
+    parameter_descriptions=ordination_parameter_descriptions,
     output_descriptions={"pca_results": "The PCA results."},
     name="PCA",
     description=(
@@ -186,33 +211,6 @@ plugin.methods.register_function(
     ],
 )
 
-mfa_parameters = {
-    "sample_metadata": Metadata,
-    "metadata_groups": Collection[Str],
-    "n_components": Int % Range(2, None),
-    "rescale_with_mean": Bool,
-    "rescale_with_std": Bool,
-    "filter_zero_variance": Bool,
-    "engine": Str % Choices(["sklearn", "scipy"]),
-    "n_iter": Int % Range(0, None),
-    "random_state": Int,
-}
-
-mfa_parameter_descriptions = {
-    "sample_metadata": "Optional sample metadata to include as additional MFA groups.",
-    "metadata_groups": (
-        "Optional mapping from metadata group names to comma-separated metadata "
-        "column strings."
-    ),
-    "n_components": "Number of principal components to compute.",
-    "rescale_with_mean": "Whether to center each feature before SVD.",
-    "rescale_with_std": "Whether to standardize each feature to unit variance.",
-    "filter_zero_variance": "Whether to remove columns with zero variance before SVD.",
-    "engine": "SVD engine used for the analysis.",
-    "n_iter": "Number of iterations used by the randomized SVD engine.",
-    "random_state": "Random seed used by the randomized SVD engine.",
-}
-
 plugin.methods.register_function(
     function=mfa,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
@@ -220,18 +218,25 @@ plugin.methods.register_function(
     outputs=[("mfa_results", ComponentAnalysis)],
     input_descriptions={
         "tables": (
-            "Feature tables to include as MFA groups. At least two groups must "
-            "be provided across feature tables and sample metadata groups."
+            "Optional feature tables to include as MFA groups. At least two "
+            "groups must be provided across feature tables and sample metadata "
+            "groups."
         )
     },
     parameter_descriptions=mfa_parameter_descriptions,
-    output_descriptions={"mfa_results": "MFA results."},
+    output_descriptions={"mfa_results": "MFA results"},
     name="Multiple Factor Analysis (MFA)",
     description=(
-        "Performs Multiple Factor Analysis with each input table treated as a "
-        "separate group."
+        "Multiple Factor Analysis (MFA). Each table is treated as a separate group, "
+        "and the analysis is performed with the prince python package. Features with "
+        "missing values are automatically removed before analysis. Please check "
+        "the prince package documentation for more information: "
+        "https://maxhalford.github.io/prince/mfa/"
     ),
-    citations=[citations["escofier1994multiple"], citations["Halford_Prince"]],
+    citations=[
+        citations["escofier1994multiple"],
+        citations["Halford_Prince"],
+    ],
 )
 
 component_tuning_parameters = {
@@ -328,6 +333,7 @@ feature_selection_parameters = {
     **component_tuning_parameters,
     "ncomp": Int % Range(1, None),
     "keepx": Collection[Str],
+    "already_tested_x": Collection[Str],
     "distance": Str % Choices("max.dist", "centroids.dist", "mahalanobis.dist"),
     "measure": Str % Choices("overall", "BER"),
     "weighted": Bool,
@@ -341,8 +347,18 @@ feature_selection_parameter_descriptions = {
     ),
     "keepx": (
         "Named comma-separated candidate feature counts for every input "
-        "block. Every block must provide at least one positive integer; "
-        "mixOmics evaluates their Cartesian product for each component."
+        'block. For example, microbiome="5,10" and '
+        'metabolomics="20,40" test all four count pairs (5,20), '
+        "(5,40), (10,20), and (10,40) for each component. Every block must "
+        "provide at least one positive integer."
+    ),
+    "already_tested_x": (
+        "Named comma-separated selected keepX counts for previously tuned "
+        'components. For example, microbiome="10,8" and '
+        'metabolomics="40,30" fix component 1 at (10,40) and component '
+        "2 at (8,30), then tune the next component using keepx. Every block "
+        "must provide the same number of selections and the block names must "
+        "match the input tables."
     ),
     "distance": (
         "Prediction distance used to calculate cross-validated classification "
@@ -367,24 +383,26 @@ feature_selection_input_descriptions = {
 }
 
 feature_selection_action_input_descriptions = {
-    "tables": component_tuning_input_descriptions["tables"],
-}
-
-feature_selection_action_parameter_descriptions = {
-    **feature_selection_parameter_descriptions,
-    "ncomp": "Resolved number of components to tune.",
-    "seed": "Resolved random seed used for reproducible cross-validation.",
+    **feature_selection_input_descriptions,
+    "tables": (
+        "Named, sample-aligned feature tables used as blocks for block "
+        "sPLS-DA (DIABLO). The blocks and response must have identical sample "
+        "IDs in the same order. Table names identify the corresponding "
+        "design-matrix rows and columns."
+    ),
 }
 
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=component_tuning_parameters,
-    outputs=[("tuning", PLSTuneComponents)],
+    outputs=[("tune_components", PLSTuneComponents)],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        )
     },
     name="Tune block sPLS-DA (DIABLO) components",
     description=(
@@ -402,17 +420,46 @@ plugin.methods.register_function(
 )
 
 plugin.pipelines.register_function(
+    function=_tune_components_block_visualisation,
+    inputs={"tune_components": PLSTuneComponents},
+    parameters={},
+    outputs=[("visualization", Visualization)],
+    input_descriptions={
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        )
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "visualization": (
+            "Report containing weighted and majority-vote error-rate plots "
+            "and component-choice matrices."
+        ),
+    },
+    name="Visualize block sPLS-DA (DIABLO) component tuning",
+    description=(
+        "Creates a report of weighted and majority-vote component-tuning "
+        "diagnostics for block sPLS-DA (DIABLO)."
+    ),
+    citations=[
+        citations["rohart2017mixomics"],
+    ],
+)
+
+plugin.pipelines.register_function(
     function=tune_components_block_splsda,
     inputs={"tables": Collection[FeatureTable[Unconstrained]]},
     parameters=component_tuning_parameters,
     outputs=[
-        ("tuning", PLSTuneComponents),
+        ("tune_components", PLSTuneComponents),
         ("visualization", Visualization),
     ],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
-        "tuning": "sPLS-DA weighted- and majority-vote component-tuning metrics.",
+        "tune_components": (
+            "sPLS-DA weighted- and majority-vote component-tuning metrics."
+        ),
         "visualization": (
             "Report containing weighted and majority-vote error-rate plots "
             "and component-choice matrices."
@@ -435,24 +482,52 @@ plugin.pipelines.register_function(
 
 plugin.methods.register_function(
     function=_feature_selection_block_splsda,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters={
-        **feature_selection_parameters,
-        "already_tested_keepx": Collection[Str],
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "tuned_ncomp": PLSTuneComponents,
     },
-    outputs=[("tuning", PLSFeatureSelection)],
+    parameters=feature_selection_parameters,
+    outputs=[("feature_selection", PLSFeatureSelection)],
     input_descriptions=feature_selection_action_input_descriptions,
-    parameter_descriptions=feature_selection_action_parameter_descriptions,
+    parameter_descriptions=feature_selection_parameter_descriptions,
     output_descriptions={
-        "tuning": (
+        "feature_selection": (
             "Cross-validated keepX error rates and selected feature counts for "
-            "DIABLO feature selection."
+            "block sPLS-DA (DIABLO) feature selection."
         )
     },
     name="Internal block sPLS-DA (DIABLO) feature selection",
     description=(
-        "Internal grid-evaluation action used by the DIABLO feature-selection "
-        "pipeline."
+        "Internal feature-selection action used by the public block sPLS-DA "
+        "(DIABLO) feature-selection pipeline."
+    ),
+    citations=[citations["rohart2017mixomics"]],
+)
+
+plugin.pipelines.register_function(
+    function=_feature_selection_block_splsda_visualiser,
+    inputs={"feature_selection": PLSFeatureSelection},
+    parameters={},
+    outputs=[("visualization", Visualization)],
+    input_descriptions={
+        "feature_selection": (
+            "Cross-validated keepX error rates and selected feature counts "
+            "for block sPLS-DA (DIABLO) feature selection."
+        )
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "visualization": (
+            "Tabulated feature-selection error rates and selected feature "
+            "counts and, for exactly two blocks, one mean-error heatmap per "
+            "component."
+        )
+    },
+    name="Visualize block sPLS-DA (DIABLO) feature selection",
+    description=(
+        "Creates tables of block sPLS-DA (DIABLO) feature-selection error "
+        "rates and selected feature counts and adds per-component heatmaps "
+        "when exactly two input blocks were tuned."
     ),
     citations=[citations["rohart2017mixomics"]],
 )
@@ -463,36 +538,33 @@ plugin.pipelines.register_function(
         "tables": Collection[FeatureTable[Unconstrained]],
         "tuned_ncomp": PLSTuneComponents,
     },
-    parameters={
-        **feature_selection_parameters,
-        "auto_keepx": Bool,
-        "min_keepx": Int % Range(1, None),
-        "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
-        "grid_size": Int % Range(3, None),
-        "refinement_factor": Float % Range(1, None, inclusive_start=False),
-        "selection_rule": Str % Choices("one_se", "absolute_margin"),
-        "ber_margin": Float % Range(0, None),
-        "se_multiplier": Float % Range(1, None),
-    },
-    outputs=[("tuning", PLSFeatureSelection), ("visualization", Visualization)],
+    parameters=feature_selection_parameters,
+    outputs=[
+        ("feature_selection", PLSFeatureSelection),
+        ("visualization", Visualization),
+    ],
     input_descriptions=feature_selection_input_descriptions,
-    parameter_descriptions={
-        **feature_selection_parameter_descriptions,
-        "auto_keepx": "Whether to adaptively refine keepX candidate grids.",
-        "min_keepx": "Smallest retained-feature count considered automatically.",
-        "max_keepx_fraction": "Initial automatic keepX upper-bound fraction.",
-        "grid_size": "Candidate count in each automatic refinement grid.",
-        "refinement_factor": "Factor used to narrow or expand automatic grids.",
-        "selection_rule": "Rule used to select a near-optimal sparse grid point.",
-        "ber_margin": "Allowed BER increase for absolute-margin selection.",
-        "se_multiplier": "Standard-error allowance for one-SE selection.",
-    },
+    parameter_descriptions=feature_selection_parameter_descriptions,
     output_descriptions={
-        "tuning": "Cross-validated keepX error rates and selected feature counts.",
-        "visualization": "Feature-selection error-rate diagnostics.",
+        "feature_selection": (
+            "Cross-validated keepX error rates and selected feature counts for "
+            "block sPLS-DA (DIABLO) feature selection."
+        ),
+        "visualization": (
+            "Tabulated feature-selection error rates and selected feature "
+            "counts and, for exactly two blocks, one mean-error heatmap per "
+            "component."
+        ),
     },
     name="Select block sPLS-DA (DIABLO) features",
-    description="Runs manual or adaptive DIABLO sparse feature selection.",
+    description=(
+        "Aligns input blocks and the response, tunes sparse feature counts for "
+        "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "
+        "visualizations. Reported error rates use weighted voting when "
+        "weighted is enabled and majority voting otherwise. The measure "
+        "parameter determines whether overall error rate (ER) or balanced "
+        "error rate (BER) is used."
+    ),
     citations=[citations["rohart2017mixomics"]],
 )
 

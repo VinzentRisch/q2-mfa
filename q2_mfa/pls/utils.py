@@ -12,6 +12,7 @@ from q2_types.metadata import ImmutableMetadata
 from rachis import Metadata, ResultCollection
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
+    IntVector,
     ListVector,
     StrVector,
     conversion,
@@ -20,8 +21,6 @@ from rpy2.robjects import (
     r,
 )
 from rpy2.robjects.conversion import localconverter
-from rpy2.robjects.vectors import DataFrame as RDataFrame
-from rpy2.robjects.vectors import FactorVector
 
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 
@@ -77,22 +76,19 @@ def _align_samples_metadata(ctx, tables, metadata_column):
 def _resolve_design(
     design_matrix, design_weight: float | None, block_names: list[str]
 ) -> pd.DataFrame | float:
-    """
-    Validates an explicit block design matrix or returns a scalar weight.
-
-    Requires exactly one design specification. Explicit matrices must contain
-    the input block names on both axes, be numeric and symmetric, and have a
-    zero diagonal; scalar weights are returned unchanged.
+    """Validates explicit design metadata or passes through a scalar design.
 
     Args:
-        design_matrix (Metadata, optional): Explicit block-relationship matrix.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight.
-        block_names (list[str]): Ordered names of the feature-table blocks.
+        design_matrix: Optional Metadata-encoded matrix.
+        design_weight (float | None): Scalar design weight for mixOmics.
+        block_names (list[str]): Input-table collection keys.
 
     Returns:
-        pd.DataFrame | float: Validated and ordered design matrix, or the
-            supplied scalar design weight.
+        pd.DataFrame | float: Validated matrix or scalar weight for mixOmics.
+
+    Raises:
+        ValueError: If neither or both design representations are supplied, or
+            explicit metadata is not a valid block design matrix.
     """
     if (design_matrix is None) == (design_weight is None):
         raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
@@ -104,7 +100,7 @@ def _resolve_design(
     if set(matrix.index) != expected or set(matrix.columns) != expected:
         raise ValueError(
             "The row and column names in 'design-matrix' must exactly match "
-            "the input feature-table collection names."
+            "feature-table collection names."
         )
     matrix = matrix.loc[block_names, block_names]
     try:
@@ -126,16 +122,15 @@ def _build_bpparam(threads: int, seed: int):
     thread count of zero leaves worker selection to BiocParallel.
 
     Args:
-        threads (int): Requested worker count, where zero selects the
-            BiocParallel default.
-        seed (int): Random seed supplied to the backend.
+        threads (int): Requested workers, or 0 for BiocParallel's default.
+        seed (int): Reproducible BiocParallel random-number seed.
 
     Returns:
-        rpy2.robjects.RObject: Configured BiocParallel parameter object.
+        object: R SerialParam, SnowParam, or MulticoreParam backend.
     """
     r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"](RNGseed=seed)
+        return r["SerialParam"](**{"RNGseed": seed})
     kwargs = {"RNGseed": seed}
     if threads > 1:
         kwargs["workers"] = threads
@@ -143,35 +138,47 @@ def _build_bpparam(threads: int, seed: int):
 
 
 def _to_r_inputs(
-    blocks: dict[str, pd.DataFrame],
-    target: pd.Series,
-    design: pd.DataFrame | float,
-) -> tuple[ListVector, FactorVector, RDataFrame | float]:
-    """
-    Converts aligned Python inputs to labelled R objects.
-
-    Converts each block and an explicit design matrix through the pandas R
-    converter, and creates a named R factor for the categorical response.
+    blocks,
+    target,
+    design,
+    keep_x: dict[str, list[int]] | None = None,
+    already_tested_x: dict[str, list[int]] | None = None,
+):
+    """Converts aligned pandas inputs to named R objects with preserved labels.
 
     Args:
-        blocks (dict[str, pd.DataFrame]): Aligned named feature tables.
-        target (pd.Series): Aligned categorical response values.
-        design (pd.DataFrame | float): Explicit design matrix or scalar design
-            weight.
+        blocks: Named pandas input tables.
+        target: Aligned categorical target series.
+        design: Validated pandas design matrix.
+        keep_x: Optional parsed keepX candidate grids by block.
+        already_tested_x: Optional parsed selected keepX counts for
+            previously tuned components, by block.
 
     Returns:
-        tuple[rpy2.robjects.ListVector, rpy2.robjects.vectors.FactorVector,
-        rpy2.robjects.RObject]: Named R blocks, response factor, and design.
+        tuple: Named R block list, factor target, design matrix, and optional
+            named R keepX and already-tested keepX lists.
     """
     with localconverter(default_converter + pandas2ri.converter):
-        converter = conversion.get_conversion()
         r_blocks = ListVector(
-            {name: converter.py2rpy(table) for name, table in blocks.items()}
+            {
+                name: conversion.get_conversion().py2rpy(table)
+                for name, table in blocks.items()
+            }
         )
-        r_design = converter.py2rpy(design)
+        r_design = conversion.get_conversion().py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
-    return r_blocks, r_target, r_design
+    r_keep_x, r_already_tested_x = (
+        (
+            ListVector(
+                {name: IntVector(values) for name, values in candidate_grid.items()}
+            )
+            if candidate_grid is not None
+            else None
+        )
+        for candidate_grid in (keep_x, already_tested_x)
+    )
+    return r_blocks, r_target, r_design, r_keep_x, r_already_tested_x
 
 
 def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
@@ -209,19 +216,17 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
             values = np.asarray(rates, dtype=float)
             class_names = [str(name) for name in r["rownames"](rates)]
             for class_name, class_values in zip(class_names, values):
-                for component, value in enumerate(class_values):
+                for component, value in enumerate(class_values, start=1):
                     key = (str(distance), class_name, component)
                     record = records.setdefault(
                         key,
-                        {
-                            "distance": key[0],
-                            "class": key[1],
-                            "component": key[2],
-                        },
+                        {"distance": key[0], "class": key[1], "component": key[2]},
                     )
                     record[statistic] = value
 
-    return pd.DataFrame(records.values(), columns=columns)
+    error_rates = pd.DataFrame(records.values(), columns=columns)
+    error_rates["component"] = error_rates["component"].astype("Int64")
+    return error_rates
 
 
 def _resolve_ncomp(
@@ -231,21 +236,38 @@ def _resolve_ncomp(
     measure: str,
     distance: str,
 ) -> int:
-    """Captures a manual component count or derives it from tuning results."""
-    manual_ncomp = (
-        ncomp.is_set if isinstance(ncomp, CaptureHolder) else ncomp is not None
-    )
+    """
+    Captures a manual component count or derives it from a tuning artifact.
+
+    Uses a manually supplied ``ncomp`` when available; otherwise, reads the
+    count selected by the requested voting, measure, and distance criteria from
+    the component-tuning artifact. The resolved value is captured for action
+    provenance.
+
+    Args:
+        ncomp (CaptureHolder[int] | int | None): Manually supplied component
+            count or capture holder for the resolved value.
+        tuned_ncomp (PLSTuneComponentsDirFmt | None): Component-tuning artifact
+            used when no manual component count is supplied.
+        weighted (bool): Whether to use the weighted rather than majority vote.
+        measure (str): Requested prediction-error measure.
+        distance (str): Requested prediction distance.
+
+    Returns:
+        int: The selected number of components.
+
+    Raises:
+        ValueError: If exactly one of a manual count and tuning artifact is not
+            provided, or the artifact has no unique matching selection.
+    """
+    manual_ncomp = ncomp.is_set
     has_tuned_ncomp = tuned_ncomp is not None
     if manual_ncomp == has_tuned_ncomp:
         raise ValueError("Provide exactly one of ncomp or a tuned-ncomp artifact.")
-    if manual_ncomp:
-        return CaptureHolder.get_or_set(ncomp, lambda: None)
-    if isinstance(ncomp, CaptureHolder):
-        return CaptureHolder.get_or_set(
-            ncomp,
-            lambda: _ncomp_from_tuned_ncomp(tuned_ncomp, weighted, measure, distance),
-        )
-    return _ncomp_from_tuned_ncomp(tuned_ncomp, weighted, measure, distance)
+    return CaptureHolder.get_or_set(
+        ncomp,
+        lambda: _ncomp_from_tuned_ncomp(tuned_ncomp, weighted, measure, distance),
+    )
 
 
 def _ncomp_from_tuned_ncomp(
@@ -254,7 +276,26 @@ def _ncomp_from_tuned_ncomp(
     measure: str,
     distance: str,
 ) -> int:
-    """Reads the component count selected for a tuning criterion."""
+    """
+    Reads the component count chosen for a requested tuning criterion.
+
+    Reads the weighted- or majority-vote choice matrix from the current
+    component-tuning artifact.
+
+    Args:
+        tuned_ncomp (PLSTuneComponentsDirFmt): Component-tuning artifact
+            containing the selected component counts.
+        weighted (bool): Whether to use the weighted rather than majority vote.
+        measure (str): Requested prediction-error measure.
+        distance (str): Requested prediction distance.
+
+    Returns:
+        int: The uniquely selected number of components.
+
+    Raises:
+        ValueError: If the artifact has no selected component for the requested
+            vote, measure, and distance.
+    """
     requested_measure = "Overall.BER" if measure == "BER" else "Overall.ER"
     matrix_file = (
         tuned_ncomp.choice_matrix_weighted

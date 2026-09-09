@@ -64,12 +64,11 @@ def adaptive_keepx_refinement(
     Components are tuned sequentially. Each component receives its own
     coarse-to-fine grid; once all of its refinement rounds are complete, its
     selected counts are supplied through mixOmics' ``already.tested.X`` while
-    the next component is tuned. Rather than accepting mixOmics' numerical
-    minimum directly, each round identifies a near-optimal BER plateau and
-    chooses its most interpretable candidate. A later round narrows around
-    that sparse candidate or, optionally, the whole plateau. If an anchor
-    lies on a grid edge, the next grid expands in that direction, but never
-    beyond the number of features in its block.
+    the next component is tuned. Each round narrows around the numerical
+    minimum-BER combination from the full component cache. Once refinement
+    is complete, the selection rule chooses the final retained-feature counts.
+    If an anchor lies on a grid edge, the next grid expands in that direction,
+    but never beyond the number of features in its block.
 
     ``grid_size`` controls the initial candidate count per block and the
     number of local candidates around each selected component value in later
@@ -210,26 +209,26 @@ def adaptive_keepx_refinement(
                     [error_rates, round_error_rates[error_rate_columns]],
                     ignore_index=True,
                 )
-            current_selection = _select_near_optimal_keep_x(
+            refinement_anchor = _select_near_optimal_keep_x(
                 error_rates.loc[error_rates["component"] == component],
                 block_names,
                 nrepeat,
-                selection_rule,
+                "absolute_margin",
             )
             print(
-                "Chosen sparse keepX values " f"(rule={selection_rule}):",
+                "Lowest-BER keepX values used for refinement:",
                 flush=True,
             )
             print(
                 _keep_x_to_dataframe(
-                    current_selection, component_start=component
+                    refinement_anchor, component_start=component
                 ).to_string()
                 + "\n",
                 flush=True,
             )
             next_grid = _refine_grids(
                 grid,
-                current_selection,
+                refinement_anchor,
                 block_feature_counts,
                 min_keepx,
                 grid_size,
@@ -246,6 +245,23 @@ def adaptive_keepx_refinement(
                 break
             grid = next_grid
 
+        current_selection = _select_near_optimal_keep_x(
+            error_rates.loc[error_rates["component"] == component],
+            block_names,
+            nrepeat,
+            selection_rule,
+        )
+        print(
+            "Final selected keepX values " f"(rule={selection_rule}):",
+            flush=True,
+        )
+        print(
+            _keep_x_to_dataframe(
+                current_selection, component_start=component
+            ).to_string()
+            + "\n",
+            flush=True,
+        )
         fixed_keep_x = {
             name: fixed_keep_x[name] + current_selection[name]
             for name in block_feature_counts

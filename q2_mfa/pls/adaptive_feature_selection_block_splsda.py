@@ -133,8 +133,8 @@ def adaptive_feature_selection_block_splsda(
             (grid_result,) = select_features(
                 tables=aligned_tables,
                 y=aligned_y,
-                keepx=_format_keepx(request.keepx),
-                already_tested_x=_format_keepx(request.already_tested_keepx),
+                keepx=_to_keepx_collection(request.keepx),
+                already_tested_x=_to_keepx_collection(request.already_tested_keepx),
                 design_matrix=design_matrix,
                 design_weight=design_weight,
                 ncomp=request.component,
@@ -167,24 +167,17 @@ def adaptive_feature_selection_block_splsda(
         PLSFeatureSelection,
         _serialize_feature_selection(
             adaptive_result.error_rates,
-            _selected_features(adaptive_result.keep_x),
+            adaptive_result.selected_features,
         ),
     )
     (visualization,) = visualise(feature_selection=feature_selection)
     return feature_selection, visualization
 
 
-def _format_keepx(keepx: dict[str, list[int]] | None) -> dict[str, str] | None:
+def _to_keepx_collection(
+    keepx: dict[str, list[int]] | None,
+) -> dict[str, str] | None:
     """Converts parsed keepX values to QIIME collection strings."""
     if keepx is None:
         return None
     return {name: ",".join(map(str, values)) for name, values in keepx.items()}
-
-
-def _selected_features(keep_x: dict[str, list[int]]) -> pd.DataFrame:
-    """Builds a one-based component-by-block selected keepX table."""
-    selected = pd.DataFrame(keep_x)
-    selected.index = pd.Index(
-        range(1, len(selected) + 1), dtype="Int64", name="component"
-    )
-    return selected

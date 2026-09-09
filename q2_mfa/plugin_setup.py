@@ -435,7 +435,7 @@ adaptive_feature_selection_parameter_descriptions = {
     ),
     "selection_rule": (
         "Rule used to select near-optimal sparse grid points: one-SE or an "
-        "exact minimum BER."
+        "exact minimum error rate."
     ),
 }
 

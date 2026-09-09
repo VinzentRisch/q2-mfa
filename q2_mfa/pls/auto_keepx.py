@@ -26,13 +26,14 @@ class AdaptiveKeepXResult:
     """Selected counts and tuning results from adaptive grid refinement.
 
     Attributes:
-        keep_x: Selected retained-feature counts by block and component.
+        selected_features: Selected retained-feature counts with one row per
+            component and one column per block.
         block_names: Input-block names in the order used by mixOmics.
         error_rates: All unique component-wise keepX evaluations in the normal
             wide feature-selection error-rate format.
     """
 
-    keep_x: dict[str, list[int]]
+    selected_features: pd.DataFrame
     block_names: tuple[str, ...]
     error_rates: pd.DataFrame
 
@@ -65,15 +66,10 @@ def adaptive_keepx_refinement(
     coarse-to-fine grid; once all of its refinement rounds are complete, its
     selected counts are supplied through mixOmics' ``already.tested.X`` while
     the next component is tuned. Each round narrows around the numerical
-    minimum-BER combination from the full component cache. Once refinement
+    minimum-error combination from the full component cache. Once refinement
     is complete, the selection rule chooses the final retained-feature counts.
     If an anchor lies on a grid edge, the next grid expands in that direction,
     but never beyond the number of features in its block.
-
-    ``grid_size`` controls the initial candidate count per block and the
-    number of local candidates around each selected component value in later
-    rounds. A refinement grid can therefore contain more than ``grid_size``
-    values when components select different values.
 
     Args:
         block_feature_counts: Available feature count for each named input
@@ -91,8 +87,8 @@ def adaptive_keepx_refinement(
         refinement_factor: Finite factor greater than one used to shrink
             interior local intervals and expand intervals at a grid edge.
         selection_rule: ``one_se`` selects candidates within one standard
-            error of minimum BER; ``absolute_margin`` selects only the
-            numerical minimum BER.
+            error of the minimum error rate; ``absolute_margin`` selects only
+            the numerical minimum error rate.
         nrepeat: Cross-validation repeats.
         Yields: Tuples of grid requests that the pipeline executes through
             the registered private feature-selection action. Each resumed
@@ -216,7 +212,7 @@ def adaptive_keepx_refinement(
                 "absolute_margin",
             )
             print(
-                "Lowest-BER keepX values used for refinement:",
+                "Lowest-error keepX values used for refinement:",
                 flush=True,
             )
             print(
@@ -271,7 +267,7 @@ def adaptive_keepx_refinement(
     _print_final_selection_summary(fixed_keep_x)
 
     return AdaptiveKeepXResult(
-        keep_x=fixed_keep_x,
+        selected_features=_selected_features_table(fixed_keep_x),
         block_names=block_names,
         error_rates=error_rates,
     )
@@ -440,7 +436,7 @@ def _select_near_optimal_keep_x(
     nrepeat: int,
     selection_rule: str,
 ) -> dict[str, list[int]]:
-    """Ranks BER-equivalent candidates and returns the selected keepX values.
+    """Ranks near-equivalent candidates and returns the selected keepX values.
 
     The input must contain mean and SD records for one component. The final
     selection is deliberately made in Python so that
@@ -531,6 +527,15 @@ def _keep_x_to_dataframe(
         for component in range(component_start, component_start + len(table))
     ]
     return table
+
+
+def _selected_features_table(keep_x: dict[str, list[int]]) -> pd.DataFrame:
+    """Builds a one-based component-by-block selected keepX table."""
+    selected = pd.DataFrame(keep_x)
+    selected.index = pd.Index(
+        range(1, len(selected) + 1), dtype="Int64", name="component"
+    )
+    return selected
 
 
 def _print_final_selection_summary(keep_x: dict[str, list[int]]) -> None:

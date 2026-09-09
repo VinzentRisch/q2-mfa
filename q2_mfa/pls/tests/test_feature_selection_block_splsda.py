@@ -234,15 +234,36 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             list(report_index["Error-rate heatmaps"]["children"]), ["Component 1"]
         )
 
+    @patch("builtins.print")
     @patch("q2_mfa.pls.feature_selection_block_splsda._resolve_ncomp")
-    def test_feature_selection_pipeline_calls_its_actions(self, resolve_ncomp):
-        """Aligns inputs, resolves ncomp, selects features, and visualizes."""
+    def test_feature_selection_pipeline_calls_its_actions(
+        self, resolve_ncomp, mock_print
+    ):
+        """Aligns inputs, prints keepX values, and creates a visualization."""
         resolve_ncomp.return_value = 3
         aligned_metadata = Artifact.import_data(
             ImmutableMetadata, Metadata(self.response.to_dataframe())
         )
         align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
         feature_selection = MagicMock()
+        selected_features = pd.DataFrame(
+            {
+                "id": ["row1", "row2"],
+                "component": [1, 2],
+                "block-a": [3, 4],
+                "block-b": [5, 6],
+            }
+        )
+        expected_printed_features = pd.DataFrame(
+            {
+                "component": [1, 2],
+                "block-a": [3, 4],
+                "block-b": [5, 6],
+            }
+        )
+        feature_selection.view.return_value.selected_features.view.return_value = (
+            selected_features
+        )
         select_features = MagicMock(return_value=(feature_selection,))
         visualization = MagicMock()
         visualise = MagicMock(return_value=(visualization,))
@@ -279,6 +300,15 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         self.assertEqual(selection_args["y"].name, "group")
         self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})
         self.assertEqual(selection_args["ncomp"], 3)
+        feature_selection.view.assert_called_once_with(PLSFeatureSelectionDirFmt)
+        self.assertEqual(len(mock_print.call_args_list), 2)
+        self.assertEqual(
+            mock_print.call_args_list[0], call("Tuned keepX values:\n", flush=True)
+        )
+        assert_frame_equal(
+            mock_print.call_args_list[1].args[0], expected_printed_features
+        )
+        self.assertEqual(mock_print.call_args_list[1].kwargs, {"flush": True})
         visualise.assert_called_once_with(feature_selection=feature_selection)
         self.assertEqual(observed, (feature_selection, visualization))
 

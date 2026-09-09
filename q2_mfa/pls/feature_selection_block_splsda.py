@@ -146,8 +146,6 @@ def _feature_selection_block_splsda(
         tune_result, tuple(blocks)
     )
     selected_features = _selected_features_table(tune_result)
-    print("Tuned keepX values:\n", flush=True)
-    print(f"{selected_features.to_string()}\n", flush=True)
     return _serialize_feature_selection(
         error_rates,
         selected_features,
@@ -256,6 +254,13 @@ def feature_selection_block_splsda(
         seed=seed,
         threads=threads,
     )
+    selected_features = (
+        feature_selection.view(PLSFeatureSelectionDirFmt)
+        .selected_features.view(pd.DataFrame)
+        .drop(columns="id")
+    )
+    print("Tuned keepX values:\n", flush=True)
+    print(selected_features, flush=True)
     (visualization,) = visualise(feature_selection=feature_selection)
     return feature_selection, visualization
 

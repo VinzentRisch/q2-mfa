@@ -403,10 +403,9 @@ adaptive_feature_selection_parameters = {
     "min_keepx": Int % Range(1, None),
     "max_keepx_fraction": Float % Range(0, 1, inclusive_start=False),
     "grid_size": Int % Range(3, None),
+    "parallel_subgrids": Int % Range(1, None),
     "refinement_factor": Float % Range(1, None, inclusive_start=False),
     "selection_rule": Str % Choices("one_se", "absolute_margin"),
-    "ber_margin": Float % Range(0, None),
-    "se_multiplier": Float % Range(1, None),
 }
 
 adaptive_feature_selection_parameter_descriptions = {
@@ -426,19 +425,17 @@ adaptive_feature_selection_parameter_descriptions = {
         "keepX upper bound."
     ),
     "grid_size": "Candidate count in each automatic refinement grid.",
+    "parallel_subgrids": (
+        "Desired number of zero-repeat feature-selection action subgrids per "
+        "refinement round. More subgrids may be needed to avoid rerunning "
+        "cached keepX combinations."
+    ),
     "refinement_factor": (
         "Factor used to narrow interior grids or expand grids at an edge."
     ),
     "selection_rule": (
         "Rule used to select near-optimal sparse grid points: one-SE or an "
-        "absolute BER margin."
-    ),
-    "ber_margin": (
-        "Allowed BER increase above the minimum when selection-rule is "
-        "absolute-margin."
-    ),
-    "se_multiplier": (
-        "Standard-error allowance above the minimum when selection-rule is " "one-SE."
+        "exact minimum BER."
     ),
 }
 

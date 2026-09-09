@@ -28,13 +28,13 @@ class AdaptiveKeepXResult:
     Attributes:
         keep_x: Selected retained-feature counts by block and component.
         block_names: Input-block names in the order used by mixOmics.
-        evaluation_cache: Unique component-wise keepX evaluations, keyed by
-            component number and integer keepX tuples in ``block_names`` order.
+        error_rates: All unique component-wise keepX evaluations in the normal
+            wide feature-selection error-rate format.
     """
 
     keep_x: dict[str, list[int]]
     block_names: tuple[str, ...]
-    evaluation_cache: dict[int, dict[tuple[int, ...], dict[str, float | int]]]
+    error_rates: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -54,12 +54,11 @@ def adaptive_keepx_refinement(
     min_keepx: int = 5,
     max_keepx_fraction: float = 0.2,
     grid_size: int = 5,
+    parallel_subgrids: int = 1,
     refinement_factor: float = 2.0,
     selection_rule: Literal["one_se", "absolute_margin"] = "one_se",
-    ber_margin: float = 0.0,
-    se_multiplier: float = 1.0,
     nrepeat: int = 3,
-) -> Generator[GridRequest, pd.DataFrame, AdaptiveKeepXResult]:
+) -> Generator[tuple[GridRequest, ...], tuple[pd.DataFrame, ...], AdaptiveKeepXResult]:
     """Tunes DIABLO ``keepX`` with a coarse-to-fine adaptive grid.
 
     Components are tuned sequentially. Each component receives its own
@@ -87,18 +86,19 @@ def adaptive_keepx_refinement(
         min_keepx: Smallest retained-feature count considered during refinement.
         max_keepx_fraction: Initial upper-bound fraction per block.
         grid_size: Initial and per-component local candidate count.
+        parallel_subgrids: Desired number of zero-repeat action subgrids in
+            each refinement round. More subgrids may be required when cached
+            combinations leave holes in the proposed grid.
         refinement_factor: Finite factor greater than one used to shrink
             interior local intervals and expand intervals at a grid edge.
         selection_rule: ``one_se`` selects candidates within one standard
-            error of minimum BER; ``absolute_margin`` uses ``ber_margin``.
-        ber_margin: Non-negative acceptable absolute BER increase when using
-            ``absolute_margin``.
-        se_multiplier: Multiplier of the best model's SE accepted
-            by the ``one_se`` rule for selection and refinement.
+            error of minimum BER; ``absolute_margin`` selects only the
+            numerical minimum BER.
         nrepeat: Cross-validation repeats.
-        Yields: Grid requests that the pipeline executes through the
-            registered private feature-selection action. Each resumed value
-            must be the action's long-form mean/SD error-rate table.
+        Yields: Tuples of grid requests that the pipeline executes through
+            the registered private feature-selection action. Each resumed
+            value must be the matching tuple of wide mean/SD error-rate
+            tables.
 
     Returns:
         AdaptiveKeepXResult: Final component-wise counts and the unique
@@ -122,8 +122,17 @@ def adaptive_keepx_refinement(
         else None
     )
 
-    evaluation_cache = {}
-    final_component_decisions = {}
+    block_names = tuple(block_feature_counts)
+    keepx_columns = [f"keepx_{name}" for name in block_names]
+    error_rate_columns = [*keepx_columns, "component", "mean", "sd"]
+    error_rates = pd.DataFrame(
+        {
+            **{column: pd.Series(dtype="Int64") for column in keepx_columns},
+            "component": pd.Series(dtype="Int64"),
+            "mean": pd.Series(dtype="float64"),
+            "sd": pd.Series(dtype="float64"),
+        }
+    )
     fixed_keep_x = {name: [] for name in block_feature_counts}
 
     print("Sequential adaptive keepX grid refinement\n", flush=True)
@@ -142,12 +151,16 @@ def adaptive_keepx_refinement(
         if component > 1:
             print("Fixed keepX values from earlier components:\n", flush=True)
             print(f"{_keep_x_to_dataframe(fixed_keep_x).to_string()}\n", flush=True)
-        component_cache = {}
-
         round_number = 0
         while True:
             round_number += 1
-            subgrids = _unseen_subgrids(grid, component_cache)
+            component_cache = error_rates.loc[error_rates["component"] == component]
+            subgrids = _unseen_subgrids(
+                grid,
+                component_cache,
+                block_names,
+                parallel_subgrids,
+            )
             print(f"Component {component}, round {round_number}\n", flush=True)
             print("================================\n", flush=True)
             print("Current keepX grid:", flush=True)
@@ -170,16 +183,21 @@ def adaptive_keepx_refinement(
                 )
                 break
 
+            previous_keepx = fixed_keep_x if component > 1 else None
+            requests = []
             for subgrid in subgrids:
                 if len(subgrids) > 1:
                     print("Evaluating unseen keepX subgrid:\n", flush=True)
                     print(f"{_grid_to_dataframe(subgrid).to_string()}\n", flush=True)
-                previous_keepx = fixed_keep_x if component > 1 else None
-                round_error_rates = yield GridRequest(
-                    component=component,
-                    keepx=subgrid,
-                    already_tested_keepx=previous_keepx,
+                requests.append(
+                    GridRequest(
+                        component=component,
+                        keepx=subgrid,
+                        already_tested_keepx=previous_keepx,
+                    )
                 )
+            round_error_rate_tables = yield tuple(requests)
+            for round_error_rates in round_error_rate_tables:
                 round_error_rates = round_error_rates.loc[
                     round_error_rates["component"] == component
                 ].copy()
@@ -188,18 +206,15 @@ def adaptive_keepx_refinement(
                         "mixOmics did not return error rates for the current "
                         f"component ({component})."
                     )
-                _add_evaluations_to_cache(
-                    component_cache, round_error_rates, tuple(block_feature_counts)
+                error_rates = pd.concat(
+                    [error_rates, round_error_rates[error_rate_columns]],
+                    ignore_index=True,
                 )
-            round_decisions, current_selection, refinement_anchors = (
-                _select_near_optimal_keep_x(
-                    _cache_to_error_rates(component_cache, component),
-                    tuple(block_feature_counts),
-                    nrepeat,
-                    selection_rule,
-                    ber_margin,
-                    se_multiplier,
-                )
+            current_selection = _select_near_optimal_keep_x(
+                error_rates.loc[error_rates["component"] == component],
+                block_names,
+                nrepeat,
+                selection_rule,
             )
             print(
                 "Chosen sparse keepX values " f"(rule={selection_rule}):",
@@ -212,26 +227,16 @@ def adaptive_keepx_refinement(
                 + "\n",
                 flush=True,
             )
-            threshold = round_decisions["threshold"].iloc[0]
-            acceptable = round_decisions["within_plateau"].sum()
-            best_decision = round_decisions.loc[round_decisions["mean"].idxmin()]
-            print(
-                f"Best mean BER={best_decision['mean']:.6g}, "
-                f"SE={best_decision['standard_error']:.6g}; "
-                f"near-optimal plateau: {acceptable} candidate(s), "
-                f"BER threshold={threshold:.6g}.\n",
-                flush=True,
-            )
-
             next_grid = _refine_grids(
                 grid,
-                refinement_anchors,
+                current_selection,
                 block_feature_counts,
                 min_keepx,
                 grid_size,
                 refinement_factor,
             )
-            if not _unseen_subgrids(next_grid, component_cache):
+            component_cache = error_rates.loc[error_rates["component"] == component]
+            if not _unseen_subgrids(next_grid, component_cache, block_names):
                 print(
                     "The selected local grid contains only combinations "
                     "already evaluated; "
@@ -241,22 +246,18 @@ def adaptive_keepx_refinement(
                 break
             grid = next_grid
 
-        evaluation_cache[component] = component_cache
-        final_component_decisions[component] = round_decisions
         fixed_keep_x = {
             name: fixed_keep_x[name] + current_selection[name]
             for name in block_feature_counts
         }
         print(f"Fixed component {component} keepX values.\n", flush=True)
 
-    _print_final_selection_summary(
-        fixed_keep_x, final_component_decisions, se_multiplier
-    )
+    _print_final_selection_summary(fixed_keep_x)
 
     return AdaptiveKeepXResult(
         keep_x=fixed_keep_x,
-        block_names=tuple(block_feature_counts),
-        evaluation_cache=evaluation_cache,
+        block_names=block_names,
+        error_rates=error_rates,
     )
 
 
@@ -309,24 +310,25 @@ def _refine_grids(
     return refined
 
 
-def _keepx_label(values: tuple[int, ...]) -> str:
-    """Serialises one block-order-preserving keepX tuple for mixOmics."""
-    return "_".join(map(str, values))
-
-
 def _unseen_subgrids(
-    grid: dict[str, list[int]], cache: dict[tuple[int, ...], dict[str, object]]
+    grid: dict[str, list[int]],
+    error_rates: pd.DataFrame,
+    block_names: tuple[str, ...],
+    parallel_subgrids: int = 1,
 ) -> list[dict[str, list[int]]]:
-    """Partitions uncached grid tuples into disjoint rectangular subgrids.
+    """Partitions uncached tuples into balanced, disjoint rectangular grids.
 
     ``tune.block.splsda`` can only receive one Cartesian grid at a time. This
-    greedy cover therefore groups as many unseen tuples as possible into each
-    valid subgrid, so cached combinations are never sent to mixOmics again.
+    The zero-repeat greedy cover groups unseen tuples into valid subgrids,
+    then splits large rectangles to approach the requested parallelism.
+    Cached combinations are never sent to mixOmics.
     """
     names = tuple(grid)
     candidates = tuple(tuple(grid[name]) for name in names)
+    keepx_columns = [f"keepx_{name}" for name in block_names]
+    seen = set(error_rates[keepx_columns].itertuples(index=False, name=None))
     remaining = {
-        values for values in cartesian_product(*candidates) if values not in cache
+        values for values in cartesian_product(*candidates) if values not in seen
     }
     subgrids = []
     while remaining:
@@ -351,64 +353,69 @@ def _unseen_subgrids(
         subgrids.append(
             {name: sorted(values) for name, values in zip(names, rectangle)}
         )
+    return _split_subgrids(subgrids, names, parallel_subgrids)
+
+
+def _split_subgrids(
+    subgrids: list[dict[str, list[int]]], names: tuple[str, ...], target: int
+) -> list[dict[str, list[int]]]:
+    """Splits the largest rectangles until reaching the requested target."""
+    subgrids = _sort_subgrids(subgrids, names)
+    while len(subgrids) < target:
+        splittable = [
+            (index, subgrid)
+            for index, subgrid in enumerate(subgrids)
+            if _subgrid_size(subgrid) > 1
+        ]
+        if not splittable:
+            break
+        index, subgrid = max(
+            splittable,
+            key=lambda candidate: (_subgrid_size(candidate[1]), -candidate[0]),
+        )
+        left, right = _split_subgrid(subgrid, names)
+        subgrids[index : index + 1] = [left, right]
+        subgrids = _sort_subgrids(subgrids, names)
     return subgrids
 
 
-def _add_evaluations_to_cache(
-    cache: dict[tuple[int, ...], dict[str, float | int]],
-    error_rates: pd.DataFrame,
-    block_names: tuple[str, ...],
-) -> None:
-    """Adds unique mean/SD tuning records to one component's cache."""
-    summary = error_rates.loc[
-        error_rates["statistic"].isin(["mean", "sd"]),
-        ["keepx", "statistic", "value"],
-    ].pivot(index="keepx", columns="statistic", values="value")
-    if summary.empty or not {"mean", "sd"}.issubset(summary.columns):
-        raise ValueError(
-            "mixOmics must return mean and SD error rates for every unseen "
-            "keepX combination."
-        )
-    for keep_x, values in summary.iterrows():
-        keep_x = str(keep_x)
-        keep_x_values = tuple(_split_keep_x(keep_x, len(block_names)))
-        if keep_x_values in cache:
-            raise ValueError(f"Duplicate keepX evaluation returned: {keep_x}.")
-        mean, sd = float(values["mean"]), float(values["sd"])
-        if not np.isfinite([mean, sd]).all() or sd < 0:
-            raise ValueError(
-                "mixOmics returned missing, non-finite, or negative error " "rates."
+def _split_subgrid(
+    subgrid: dict[str, list[int]], names: tuple[str, ...]
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Bisects a subgrid along the axis with the most balanced child sizes."""
+    split_candidates = []
+    for dimension, name in enumerate(names):
+        values = subgrid[name]
+        other_size = prod(len(subgrid[other]) for other in names if other != name)
+        for split_index in range(1, len(values)):
+            left_size = split_index * other_size
+            right_size = (len(values) - split_index) * other_size
+            split_candidates.append(
+                (
+                    abs(left_size - right_size),
+                    dimension,
+                    split_index,
+                )
             )
-        cache[keep_x_values] = {
-            "mean": mean,
-            "sd": sd,
-        }
+    _, dimension, split_index = min(split_candidates)
+    name = names[dimension]
+    left = {block: values.copy() for block, values in subgrid.items()}
+    right = {block: values.copy() for block, values in subgrid.items()}
+    left[name] = subgrid[name][:split_index]
+    right[name] = subgrid[name][split_index:]
+    return left, right
 
 
-def _cache_to_error_rates(
-    cache: dict[tuple[int, ...], dict[str, float | int]], component: int
-) -> pd.DataFrame:
-    """Converts a component cache to long-form records for selection."""
-    records = []
-    for keep_x_values, entry in cache.items():
-        keep_x = _keepx_label(keep_x_values)
-        records.extend(
-            [
-                {
-                    "keepx": keep_x,
-                    "component": component,
-                    "statistic": "mean",
-                    "value": entry["mean"],
-                },
-                {
-                    "keepx": keep_x,
-                    "component": component,
-                    "statistic": "sd",
-                    "value": entry["sd"],
-                },
-            ]
-        )
-    return pd.DataFrame(records)
+def _subgrid_size(subgrid: dict[str, list[int]]) -> int:
+    """Returns the number of Cartesian keepX combinations in one subgrid."""
+    return prod(len(values) for values in subgrid.values())
+
+
+def _sort_subgrids(
+    subgrids: list[dict[str, list[int]]], names: tuple[str, ...]
+) -> list[dict[str, list[int]]]:
+    """Orders subgrids by their block-order-preserving candidate values."""
+    return sorted(subgrids, key=lambda subgrid: tuple(subgrid[name] for name in names))
 
 
 def _select_near_optimal_keep_x(
@@ -416,73 +423,33 @@ def _select_near_optimal_keep_x(
     block_names: tuple[str, ...],
     nrepeat: int,
     selection_rule: str,
-    ber_margin: float,
-    se_multiplier: float = 1.0,
-) -> tuple[pd.DataFrame, dict[str, list[int]], dict[str, list[int]]]:
-    """Ranks BER-equivalent candidates and returns selection/refinement anchors.
+) -> dict[str, list[int]]:
+    """Ranks BER-equivalent candidates and returns the selected keepX values.
 
     The input must contain mean and SD records for one component. The final
     selection is deliberately made in Python so that
     a plateau can favour a smaller, more interpretable DIABLO signature than
     mixOmics' numerical minimum.
     """
-    expected = {"keepx", "statistic", "value"}
-    missing = expected.difference(error_rates.columns)
-    if missing:
-        raise ValueError(
-            "Tuning error rates are missing required columns: "
-            f"{', '.join(sorted(missing))}."
-        )
-    summary = error_rates.loc[
-        error_rates["statistic"].isin(["mean", "sd"]),
-        ["keepx", "statistic", "value"],
-    ].pivot(index="keepx", columns="statistic", values="value")
-    if summary.empty or not {"mean", "sd"}.issubset(summary.columns):
-        raise ValueError(
-            "mixOmics must return finite mean and SD error rates for every "
-            "tested keepX combination."
-        )
-    summary = summary.reset_index()
-    if not np.isfinite(summary[["mean", "sd"]].to_numpy(dtype=float)).all():
-        raise ValueError("mixOmics returned missing or non-finite mean/SD error rates.")
-    if (summary["sd"] < 0).any():
-        raise ValueError("mixOmics returned a negative error-rate SD.")
-
-    parsed = summary["keepx"].apply(
-        lambda keep_x: _split_keep_x(keep_x, len(block_names))
-    )
-    value_columns = [f"keepx:{name}" for name in block_names]
-    summary[value_columns] = pd.DataFrame(parsed.tolist(), index=summary.index)
-    summary["standard_error"] = summary["sd"] / sqrt(nrepeat)
-    minimum = summary.loc[summary["mean"].idxmin()]
+    keepx_columns = [f"keepx_{name}" for name in block_names]
+    minimum = error_rates.loc[error_rates["mean"].idxmin()]
     threshold = minimum["mean"] + (
-        se_multiplier * minimum["standard_error"]
-        if selection_rule == "one_se"
-        else ber_margin
+        minimum["sd"] / sqrt(nrepeat) if selection_rule == "one_se" else 0
     )
-    summary["threshold"] = threshold
-    summary["ber_delta"] = summary["mean"] - minimum["mean"]
-    summary["within_plateau"] = summary["mean"] <= threshold
-    summary["total_keepx"] = summary[value_columns].sum(axis=1)
-
-    plateau = summary.loc[summary["within_plateau"]].sort_values(
-        ["total_keepx", "mean", *value_columns],
-        kind="stable",
+    acceptable = error_rates.loc[error_rates["mean"] <= threshold]
+    selected_index = (
+        acceptable.assign(_total_keepx=acceptable[keepx_columns].sum(axis=1))
+        .sort_values(
+            ["_total_keepx", "mean", *keepx_columns],
+            kind="stable",
+        )
+        .index[0]
     )
-    summary["selection_rank"] = pd.Series(pd.NA, index=summary.index, dtype="Int64")
-    summary.loc[plateau.index, "selection_rank"] = range(1, len(plateau) + 1)
-    selected_index = plateau.index[0]
-    summary["selected"] = summary.index == selected_index
-    anchor_indices = [selected_index]
-    summary["refinement_anchor"] = summary.index.isin(anchor_indices)
-
-    selected_values = summary.loc[selected_index, value_columns].astype(int).tolist()
+    selected_values = (
+        error_rates.loc[selected_index, keepx_columns].astype(int).tolist()
+    )
     selected = dict(zip(block_names, ([value] for value in selected_values)))
-    anchors = {
-        name: sorted(set(summary.loc[anchor_indices, column].astype(int).tolist()))
-        for name, column in zip(block_names, value_columns)
-    }
-    return summary, selected, anchors
+    return selected
 
 
 def _local_candidates(candidates, centre, lower_bound, upper_bound, grid_size, factor):
@@ -515,7 +482,7 @@ def _local_candidates(candidates, centre, lower_bound, upper_bound, grid_size, f
 
 
 def _spaced_integers(lower: int, upper: int, size: int, geometric: bool) -> list[int]:
-    """Creates unique bounded integer candidates with geometric or local spacing."""
+    """Creates unique bounded integer candidates with selected spacing."""
     if lower == upper:
         return [lower]
     values = (
@@ -524,13 +491,6 @@ def _spaced_integers(lower: int, upper: int, size: int, geometric: bool) -> list
         else np.linspace(lower, upper, num=size)
     )
     return sorted({int(round(value)) for value in values} | {lower, upper})
-
-
-def _has_new_candidates(current_grid, next_grid) -> bool:
-    """Returns whether refinement adds any untested per-block candidate value."""
-    return any(
-        not set(next_grid[name]).issubset(current_grid[name]) for name in current_grid
-    )
 
 
 def _grid_to_dataframe(grid: dict[str, list[int]]) -> pd.DataFrame:
@@ -557,79 +517,7 @@ def _keep_x_to_dataframe(
     return table
 
 
-def _print_final_selection_summary(
-    keep_x: dict[str, list[int]],
-    component_decisions: dict[int, pd.DataFrame],
-    se_multiplier: float,
-) -> None:
-    """Prints final selections and marginal one-SE plateau ranges by block."""
+def _print_final_selection_summary(keep_x: dict[str, list[int]]) -> None:
+    """Prints the final selected keepX values for every component."""
     print("Final adaptive keepX selection:\n", flush=True)
     print(f"{_keep_x_to_dataframe(keep_x).to_string()}\n", flush=True)
-    for component, decisions in component_decisions.items():
-        plateau = decisions.loc[decisions["within_plateau"]]
-        threshold = decisions["threshold"].iloc[0]
-        best = decisions.loc[decisions["mean"].idxmin()]
-        print(
-            f"\nComponent {component}: {len(plateau)} candidate(s) within "
-            f"the selection threshold (best mean BER={best['mean']:.6g}, "
-            f"SE={best['standard_error']:.6g}, threshold={threshold:.6g}).\n",
-            flush=True,
-        )
-        print(
-            _selection_comparison_to_dataframe(decisions, se_multiplier).to_string()
-            + "\n",
-            flush=True,
-        )
-
-
-def _selection_comparison_to_dataframe(
-    decisions: pd.DataFrame, se_multiplier: float
-) -> pd.DataFrame:
-    """Formats the numerical best and sparse models up to the SE allowance."""
-    best = decisions.loc[decisions["mean"].idxmin()]
-    keepx_columns = [
-        column for column in best.index if str(column).startswith("keepx:")
-    ]
-    records = []
-    candidates = [("lowest mean BER", best, 0)]
-    whole_multipliers = range(1, int(se_multiplier) + 1)
-    multipliers = [float(multiplier) for multiplier in whole_multipliers]
-    if se_multiplier not in multipliers:
-        multipliers.append(se_multiplier)
-    for multiplier in multipliers:
-        threshold = best["mean"] + multiplier * best["standard_error"]
-        eligible = decisions.loc[decisions["mean"] <= threshold].sort_values(
-            ["total_keepx", "mean", *keepx_columns],
-            kind="stable",
-        )
-        candidates.append(
-            (f"sparsest within {multiplier:g} SE", eligible.iloc[0], multiplier)
-        )
-    for label, candidate, multiplier in candidates:
-        record = {
-            "model": label,
-            "mean BER": candidate["mean"],
-            "SD": candidate["sd"],
-            "SE": candidate["standard_error"],
-            "BER above best": candidate["mean"] - best["mean"],
-            "SE allowance": multiplier,
-        }
-        record.update(
-            {
-                column.removeprefix("keepx:"): int(candidate[column])
-                for column in keepx_columns
-            }
-        )
-        records.append(record)
-    return pd.DataFrame(records).set_index("model")
-
-
-def _split_keep_x(keep_x: str, expected_blocks: int) -> list[int]:
-    """Parses mixOmics' underscore-separated keepX-combination row label."""
-    values = [int(value) for value in str(keep_x).split("_")]
-    if len(values) != expected_blocks:
-        raise ValueError(
-            "The tuning error-rate table does not match the expected number "
-            "of input blocks."
-        )
-    return values

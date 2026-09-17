@@ -12,7 +12,7 @@ import pandas as pd
 
 @dataclass
 class _PLSFitResult:
-    """Holds final mixOmics block sPLS-DA tables before artifact serialization."""
+    """Holds final mixOmics block sPLS-DA tables before serialization."""
 
     loadings: dict[str, pd.DataFrame]
     loadings_star: dict[str, pd.DataFrame]

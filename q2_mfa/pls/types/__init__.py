@@ -10,11 +10,11 @@ from ._result import _PLSFitResult
 from ._type import PLSFeatureSelection, PLSFit, PLSTuneComponents
 
 __all__ = [
-    "PLSFit",
-    "PLSFitDirFmt",
-    "PLSFeatureSelection",
-    "PLSFeatureSelectionDirFmt",
     "PLSTuneComponents",
     "PLSTuneComponentsDirFmt",
+    "PLSFeatureSelection",
+    "PLSFeatureSelectionDirFmt",
+    "PLSFit",
+    "PLSFitDirFmt",
     "_PLSFitResult",
 ]

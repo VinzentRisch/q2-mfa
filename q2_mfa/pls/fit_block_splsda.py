@@ -6,6 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 """QIIME-facing DIABLO block sPLS-DA fitting action."""
+
 import secrets
 
 import pandas as pd
@@ -16,7 +17,6 @@ from rpy2.robjects import IntVector, ListVector, r
 from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
 from q2_mfa.pls.types._result import _PLSFitResult
 from q2_mfa.pls.utils import (
-    _align_samples,
     _build_bpparam,
     _feature_component_correlation_to_dataframe,
     _r_auc_to_dataframe,
@@ -60,10 +60,12 @@ def fit_block_splsda(
 
     ``ncomp`` and ``tuned_components`` are mutually exclusive. Likewise,
     provide manual component-ordered ``keepx`` strings or a feature-selection
-    artifact, but not both.
+    artifact, but not both. The input tables and response must already have
+    identical sample IDs in the same order.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks, target = _align_samples(tables, y)
+    blocks = tables.collection
+    target = y.to_series()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     selected_ncomp = _resolve_ncomp(
         ncomp, tuned_components, weighted, measure, distance
@@ -95,7 +97,7 @@ def _fit_model(
     blocks, target, design, ncomp, keepx, scale, tol, max_iter, near_zero_var
 ):
     """Calls mixOmics block.splsda with final selected values."""
-    r_blocks, r_target, r_design = _to_r_inputs(blocks, target, design)
+    r_blocks, r_target, r_design, _, _ = _to_r_inputs(blocks, target, design)
     r_keepx = ListVector({name: IntVector(values) for name, values in keepx.items()})
     return r["block.splsda"](
         r_blocks,

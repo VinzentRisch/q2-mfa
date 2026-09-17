@@ -7,13 +7,12 @@
 # ----------------------------------------------------------------------------
 import platform
 import re
-import warnings
 
 import numpy as np
 import pandas as pd
-from q2_types.tabular import TableJSONLFileFormat
-from q2_types.tabular._deferred_setup._transformers import table_jsonl_to_df
-from rachis.core.exceptions import RachisWarning
+from q2_types.feature_table import FeatureTable, Unconstrained
+from q2_types.metadata import ImmutableMetadata
+from rachis import Metadata, ResultCollection
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
     IntVector,
@@ -27,54 +26,31 @@ from rpy2.robjects import (
 from rpy2.robjects.conversion import localconverter
 
 
-def _align_samples(tables: dict, y) -> tuple[dict[str, pd.DataFrame], pd.Series]:
-    """Intersects input-table and categorical-target sample IDs.
+def _align_samples_metadata(ctx, tables, metadata_column):
+    """Aligns feature tables and a metadata column to their shared samples."""
+    filter_ids = ctx.get_action("feature_table", "filter_ids")
+    metadata_column = metadata_column.drop_missing_values()
+    shared_ids = metadata_column.get_ids()
+    for table in tables.values():
+        shared_ids.intersection_update(table.view(pd.DataFrame).index)
+    if not shared_ids:
+        raise ValueError("The feature tables and metadata column have no shared IDs.")
+    shared_ids = [str(sample_id) for sample_id in shared_ids]
+    metadata_column = metadata_column.filter_ids(shared_ids)
+    aligned_metadata = Metadata(metadata_column.to_dataframe())
+    sample_ids = aligned_metadata.to_dataframe().index.tolist()
 
-    Args:
-        tables (dict): Named input tables from a QIIME collection.
-        y: Categorical metadata column.
-
-    Returns:
-        tuple[dict[str, pd.DataFrame], pd.Series]: Aligned blocks and target.
-
-    Raises:
-        ValueError: If the inputs have no shared samples or the target is missing.
-    """
-    blocks = dict(getattr(tables, "collection", tables))
-    target = y.to_series().copy()
-    if not blocks:
-        raise ValueError("block-splsda requires at least two named feature tables.")
-    if len(blocks) < 2:
-        raise ValueError("block-splsda requires at least two named feature tables.")
-    if target.isna().any():
-        raise ValueError("The categorical target contains missing values.")
-
-    shared = next(iter(blocks.values())).index
-    for table in list(blocks.values())[1:] + [target.to_frame()]:
-        shared = shared.intersection(table.index)
-    if shared.empty:
-        raise ValueError("DIABLO inputs do not share any sample IDs.")
-
-    aligned = {}
-    for name, table in blocks.items():
-        dropped = table.index.difference(shared)
-        if not dropped.empty:
-            warnings.warn(
-                f"Dropping samples from block '{name}' that are not shared "
-                f"across all DIABLO inputs:\n{', '.join(map(str, dropped))}",
-                RachisWarning,
-                stacklevel=2,
-            )
-        aligned[str(name)] = table.loc[shared].copy()
-    dropped = target.index.difference(shared)
-    if not dropped.empty:
-        warnings.warn(
-            "Dropping target metadata samples that are not shared across all "
-            f"DIABLO inputs:\n{', '.join(map(str, dropped))}",
-            RachisWarning,
-            stacklevel=2,
+    aligned_tables = {}
+    for name, table in tables.items():
+        (filtered_table,) = filter_ids(table=table, axis="sample", ids=shared_ids)
+        aligned_tables[name] = ctx.make_artifact(
+            FeatureTable[Unconstrained],
+            filtered_table.view(pd.DataFrame).loc[sample_ids],
         )
-    return aligned, target.loc[shared].copy()
+    return (
+        ResultCollection(aligned_tables),
+        ctx.make_artifact(ImmutableMetadata, aligned_metadata),
+    )
 
 
 def _resolve_design(
@@ -95,9 +71,7 @@ def _resolve_design(
             explicit metadata is not a valid block design matrix.
     """
     if (design_matrix is None) == (design_weight is None):
-        raise ValueError(
-            "Provide exactly one of design_matrix or design_weight for DIABLO."
-        )
+        raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
     if design_weight is not None:
         return design_weight
 
@@ -105,18 +79,18 @@ def _resolve_design(
     expected = set(block_names)
     if set(matrix.index) != expected or set(matrix.columns) != expected:
         raise ValueError(
-            "Design matrix row and column names must exactly match the input "
+            "The row and column names in 'design-matrix' must exactly match "
             "feature-table collection names."
         )
     matrix = matrix.loc[block_names, block_names]
     try:
         matrix = matrix.astype(float)
     except (TypeError, ValueError) as error:
-        raise ValueError("Design matrix values must be numeric.") from error
+        raise ValueError("Values in 'design-matrix' must be numeric.") from error
     if not np.allclose(matrix.to_numpy(), matrix.to_numpy().T):
-        raise ValueError("Design matrix must be symmetrical.")
+        raise ValueError("'design-matrix' must be symmetrical.")
     if not np.allclose(np.diag(matrix.to_numpy()), 0):
-        raise ValueError("Design matrix diagonal must contain only zeroes.")
+        raise ValueError("The diagonal of 'design-matrix' must contain only zeroes.")
     return matrix
 
 
@@ -167,43 +141,36 @@ def _parse_fit_keepx(keepx, block_names: list[str], ncomp: int) -> dict[str, lis
 
 
 def _resolve_ncomp(
-    ncomp: CaptureHolder[int], tuned_components, weighted, measure, distance
+    ncomp: CaptureHolder[int], tuned_ncomp, weighted, measure, distance
 ) -> int:
     """Captures a manual ncomp or derives it from a components artifact."""
     manual_ncomp = ncomp is not None and (
         not isinstance(ncomp, CaptureHolder) or ncomp.is_set
     )
-    if manual_ncomp and tuned_components is not None:
-        raise ValueError(
-            "Provide either ncomp or a tuned-components artifact, not both."
-        )
+    if manual_ncomp == (tuned_ncomp is not None):
+        raise ValueError("Provide exactly one of ncomp or a tuned-ncomp artifact.")
     return CaptureHolder.get_or_set(
         ncomp,
-        lambda: _ncomp_from_tuned_components(
-            tuned_components, weighted, measure, distance
-        ),
+        lambda: _ncomp_from_tuned_ncomp(tuned_ncomp, weighted, measure, distance),
     )
 
 
-def _ncomp_from_tuned_components(tuned_components, weighted, measure, distance) -> int:
-    """Reads the component count chosen for the requested criterion."""
-    if tuned_components is None:
-        raise ValueError("Provide ncomp or a tuned-components artifact.")
-    matrix = table_jsonl_to_df(
-        TableJSONLFileFormat(tuned_components.choice_matrix.path_maker(), mode="r")
+def _ncomp_from_tuned_ncomp(tuned_ncomp, weighted, measure, distance) -> int:
+    """Reads the component count from the current tuning-artifact schema."""
+    if tuned_ncomp is None:
+        raise ValueError("Provide exactly one of ncomp or a tuned-ncomp artifact.")
+    matrix_file = (
+        tuned_ncomp.choice_matrix_weighted
+        if weighted
+        else tuned_ncomp.choice_matrix_majority
     )
-    vote = "weighted" if weighted else "majority"
+    matrix = matrix_file.view(pd.DataFrame)
     requested_measure = "Overall.BER" if measure == "BER" else "Overall.ER"
-    selected = matrix.loc[
-        (matrix["vote"] == vote)
-        & (matrix["measure"] == requested_measure)
-        & (matrix["distance"] == distance),
-        "ncomp",
-    ]
-    if len(selected) != 1:
+    selected = matrix.loc[matrix["id"] == requested_measure, distance]
+    if len(selected) != 1 or pd.isna(selected.iloc[0]):
         raise ValueError(
-            "The component-tuning artifact has no unique choice for the "
-            "requested vote, measure, and distance."
+            "The component-tuning artifact has no selected number of components for "
+            "the requested vote, measure, and distance."
         )
     return int(selected.iloc[0])
 
@@ -234,9 +201,7 @@ def _component_keepx_from_feature_selection(
     """Reads selected keepX rows into the component-ordered parameter view."""
     if feature_selection is None:
         raise ValueError("Provide keepx or a feature-selection artifact.")
-    table = table_jsonl_to_df(
-        TableJSONLFileFormat(feature_selection.selected_features.path_maker(), mode="r")
-    )
+    table = feature_selection.selected_features.view(pd.DataFrame)
     expected = {
         (block, component) for block in block_names for component in range(ncomp)
     }
@@ -290,7 +255,13 @@ def _quiet_tune_block_splsda(*args, **kwargs):
     return quiet_tune(*args, **kwargs)
 
 
-def _to_r_inputs(blocks, target, design):
+def _to_r_inputs(
+    blocks,
+    target,
+    design,
+    keep_x: dict[str, list[int]] | None = None,
+    already_tested_x: dict[str, list[int]] | None = None,
+):
     """Converts aligned pandas inputs to named R objects with preserved labels.
 
     Args:
@@ -299,16 +270,30 @@ def _to_r_inputs(blocks, target, design):
         design: Validated pandas design matrix.
 
     Returns:
-        tuple: Named R block list, factor target, and design matrix.
+        tuple: Named R block list, factor target, design matrix, and optional
+            keepX lists.
     """
     with localconverter(default_converter + pandas2ri.converter):
         r_blocks = ListVector(
-            {name: conversion.py2rpy(table) for name, table in blocks.items()}
+            {
+                name: conversion.get_conversion().py2rpy(table)
+                for name, table in blocks.items()
+            }
         )
-        r_design = conversion.py2rpy(design)
+        r_design = conversion.get_conversion().py2rpy(design)
     r_target = r["factor"](StrVector(target.astype(str).tolist()))
     r_target.names = StrVector(target.index.astype(str).tolist())
-    return r_blocks, r_target, r_design
+    r_keep_x, r_already_tested_x = (
+        (
+            ListVector(
+                {name: IntVector(values) for name, values in candidate_grid.items()}
+            )
+            if candidate_grid is not None
+            else None
+        )
+        for candidate_grid in (keep_x, already_tested_x)
+    )
+    return r_blocks, r_target, r_design, r_keep_x, r_already_tested_x
 
 
 def _r_named_frames(values) -> dict[str, pd.DataFrame]:
@@ -480,33 +465,38 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
 
 
 def _r_vote_error_rate_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
-    """Converts one voting scheme's mean and SD error rates to records.
+    """Converts a tuning vote's mean and standard-deviation error rates.
 
     Args:
         perf_result: R ``perf`` result for the final block sPLS-DA model.
 
     Returns:
-        vote: mixOmics vote result prefix, such as ``WeightedVote``.
-
-    Returns:
-        pd.DataFrame: Vote, distance, class, component, statistic, and
-            error-rate records.
+        pd.DataFrame: Distance, class, component, mean, and standard deviation.
     """
-    columns = ["vote", "distance", "class", "component", "statistic", "value"]
-    tables = [
-        _r_vote_error_rate_statistic_to_dataframe(
-            perf_result.rx2(f"{vote}.error.rate"), "mean", vote
-        ),
-        _r_vote_error_rate_statistic_to_dataframe(
-            perf_result.rx2(f"{vote}.error.rate.sd"), "sd", vote
-        ),
-    ]
-    tables = [table for table in tables if not table.empty]
-    return (
-        pd.concat(tables, ignore_index=True)
-        if tables
-        else pd.DataFrame(columns=columns)
-    )
+    columns = ["distance", "class", "component", "mean", "sd"]
+    records = {}
+    for statistic, error_rates in (
+        ("mean", perf_result.rx2(f"{vote}.error.rate")),
+        ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
+    ):
+        if type(error_rates).__name__ == "NULLType":
+            raise ValueError(
+                f"mixOmics did not provide {statistic} error rates for {vote}."
+            )
+        for distance, rates in zip(error_rates.names, error_rates):
+            values = np.asarray(rates, dtype=float)
+            class_names = [str(name) for name in r["rownames"](rates)]
+            for class_name, class_values in zip(class_names, values):
+                for component, value in enumerate(class_values, start=1):
+                    key = (str(distance), class_name, component)
+                    record = records.setdefault(
+                        key,
+                        {"distance": key[0], "class": key[1], "component": key[2]},
+                    )
+                    record[statistic] = value
+    error_rates = pd.DataFrame(records.values(), columns=columns)
+    error_rates["component"] = error_rates["component"].astype("Int64")
+    return error_rates
 
 
 def _r_vote_error_rate_statistic_to_dataframe(

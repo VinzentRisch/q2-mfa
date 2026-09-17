@@ -14,7 +14,7 @@ from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import r
 
-from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
+from q2_mfa.pls.jsonl_descriptions import tune_components_descriptions
 from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
 from q2_mfa.pls.utils import (
     _build_bpparam,
@@ -403,12 +403,16 @@ def _serialize_tune_components(
         0, "id", [f"row{index}" for index in range(1, len(error_rate_majority) + 1)]
     )
 
-    error_rate_weighted.attrs["description"] = jsonl_descriptions["error_rate_weighted"]
-    error_rate_majority.attrs["description"] = jsonl_descriptions["error_rate_majority"]
-    choice_matrix_weighted.attrs["description"] = jsonl_descriptions[
+    error_rate_weighted.attrs["description"] = tune_components_descriptions[
+        "error_rate_weighted"
+    ]
+    error_rate_majority.attrs["description"] = tune_components_descriptions[
+        "error_rate_majority"
+    ]
+    choice_matrix_weighted.attrs["description"] = tune_components_descriptions[
         "choice_matrix_weighted"
     ]
-    choice_matrix_majority.attrs["description"] = jsonl_descriptions[
+    choice_matrix_majority.attrs["description"] = tune_components_descriptions[
         "choice_matrix_majority"
     ]
 

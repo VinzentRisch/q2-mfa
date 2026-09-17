@@ -5,7 +5,7 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-jsonl_descriptions = {
+tune_components_descriptions = {
     "error_rate_weighted": (
         "Cross-validated weighted-vote error-rate means and standard "
         "deviations from mixOmics perf() WeightedVote.error.rate and "
@@ -24,7 +24,11 @@ jsonl_descriptions = {
         "Component-choice matrix for majority voting from mixOmics "
         "perf() choice.ncomp$MajorityVote."
     ),
-    "feature_selection_error_rate": (
+}
+
+
+feature_selection_descriptions = {
+    "error_rate": (
         "Cross-validated mean and standard-deviation classification error "
         "rates for every tested keepX combination and component from mixOmics "
         "tune.block.splsda(). Reported error rates use weighted voting when "
@@ -33,7 +37,7 @@ jsonl_descriptions = {
         "(ER) or balanced error rate (BER). The keepx_<block> columns record "
         "the number of features retained for each input block."
     ),
-    "feature_selection_selected_features": (
+    "selected_features": (
         "Selected keepX feature-count matrix with one-based components as "
         "rows and input blocks as columns from mixOmics "
         "tune.block.splsda() choice.keepX."

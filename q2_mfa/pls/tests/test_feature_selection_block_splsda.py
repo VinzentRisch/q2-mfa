@@ -28,7 +28,7 @@ from q2_mfa.pls.feature_selection_block_splsda import (
     _serialize_feature_selection,
     feature_selection_block_splsda,
 )
-from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
+from q2_mfa.pls.jsonl_descriptions import feature_selection_descriptions
 
 
 class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
@@ -505,12 +505,12 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             (
                 error_rate_format,
                 expected_error_rates,
-                jsonl_descriptions["feature_selection_error_rate"],
+                feature_selection_descriptions["error_rate"],
             ),
             (
                 selected_features_format,
                 expected_selected_features,
-                jsonl_descriptions["feature_selection_selected_features"],
+                feature_selection_descriptions["selected_features"],
             ),
         ):
             with serialized.path_maker().open() as fh:

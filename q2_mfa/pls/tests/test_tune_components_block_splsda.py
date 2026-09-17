@@ -17,7 +17,7 @@ from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
 
 from q2_mfa.pls import PLSTuneComponentsDirFmt
-from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
+from q2_mfa.pls.jsonl_descriptions import tune_components_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
     _error_rate_metadata,
     _print_component_choice,
@@ -328,22 +328,22 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             (
                 directory_format.error_rate_weighted,
                 self.expected_weighted_error_rates.reset_index(),
-                jsonl_descriptions["error_rate_weighted"],
+                tune_components_descriptions["error_rate_weighted"],
             ),
             (
                 directory_format.error_rate_majority,
                 self.expected_majority_error_rates.reset_index(),
-                jsonl_descriptions["error_rate_majority"],
+                tune_components_descriptions["error_rate_majority"],
             ),
             (
                 directory_format.choice_matrix_weighted,
                 self.expected_weighted_choices.reset_index(),
-                jsonl_descriptions["choice_matrix_weighted"],
+                tune_components_descriptions["choice_matrix_weighted"],
             ),
             (
                 directory_format.choice_matrix_majority,
                 self.expected_majority_choices.reset_index(),
-                jsonl_descriptions["choice_matrix_majority"],
+                tune_components_descriptions["choice_matrix_majority"],
             ),
         )
 

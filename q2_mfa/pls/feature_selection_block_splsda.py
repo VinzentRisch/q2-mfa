@@ -15,7 +15,7 @@ from rachis.plugin import CaptureHolder
 from rachis.plugin.context import IContext
 from rpy2.robjects import ListVector, r
 
-from q2_mfa.pls.jsonl_descriptions import jsonl_descriptions
+from q2_mfa.pls.jsonl_descriptions import feature_selection_descriptions
 from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
 from q2_mfa.pls.utils import (
     _build_bpparam,
@@ -506,9 +506,9 @@ def _serialize_feature_selection(
         "id",
         [f"row{index}" for index in range(1, len(selected_features) + 1)],
     )
-    error_rate.attrs["description"] = jsonl_descriptions["feature_selection_error_rate"]
-    selected_features.attrs["description"] = jsonl_descriptions[
-        "feature_selection_selected_features"
+    error_rate.attrs["description"] = feature_selection_descriptions["error_rate"]
+    selected_features.attrs["description"] = feature_selection_descriptions[
+        "selected_features"
     ]
     directory_format.error_rate.write_data(error_rate, pd.DataFrame)
     directory_format.selected_features.write_data(selected_features, pd.DataFrame)

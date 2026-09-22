@@ -82,47 +82,24 @@ def _align_samples_metadata(ctx, tables, metadata_column):
 
 
 def _resolve_design(
-    design_matrix, design_weight: float | None, block_names: list[str]
+    design_matrix: pd.DataFrame | None,
+    design_weight: float | None,
+    block_names: list[str],
 ) -> pd.DataFrame | float:
-    """
-    Validates an explicit block design matrix or returns a scalar weight.
-
-    Requires exactly one design specification. Explicit matrices must contain
-    the input block names on both axes, be numeric and symmetric, and have a
-    zero diagonal; scalar weights are returned unchanged.
-
-    Args:
-        design_matrix (Metadata, optional): Explicit block-relationship matrix.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight.
-        block_names (list[str]): Ordered names of the feature-table blocks.
-
-    Returns:
-        pd.DataFrame | float: Validated and ordered design matrix, or the
-            supplied scalar design weight.
-    """
     if (design_matrix is None) == (design_weight is None):
         raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
     if design_weight is not None:
         return design_weight
 
-    matrix = design_matrix.to_dataframe().copy()
     expected = set(block_names)
-    if set(matrix.index) != expected or set(matrix.columns) != expected:
+    if set(design_matrix.index) != expected or set(design_matrix.columns) != expected:
         raise ValueError(
             "The row and column names in 'design-matrix' must exactly match "
             "the input feature-table collection names."
         )
-    matrix = matrix.loc[block_names, block_names]
-    try:
-        matrix = matrix.astype(float)
-    except (TypeError, ValueError) as error:
-        raise ValueError("Values in 'design-matrix' must be numeric.") from error
-    if not np.allclose(matrix.to_numpy(), matrix.to_numpy().T):
-        raise ValueError("'design-matrix' must be symmetrical.")
-    if not np.allclose(np.diag(matrix.to_numpy()), 0):
-        raise ValueError("The diagonal of 'design-matrix' must contain only zeroes.")
-    return matrix
+    # reorder the matrix by block order
+    design_matrix = design_matrix.loc[block_names, block_names]
+    return design_matrix
 
 
 def _build_bpparam(threads: int, seed: int):

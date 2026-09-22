@@ -238,7 +238,6 @@ plugin.methods.register_function(
 
 component_tuning_parameters = {
     "y": MetadataColumn[Categorical],
-    "design_matrix": Metadata,
     "design_weight": Float % Range(0, 1),
     "ncomp": Int % Range(2, None),
     "scale": Bool,
@@ -255,13 +254,6 @@ component_tuning_parameters = {
 
 component_tuning_parameter_descriptions = {
     "y": ("Categorical response variable to predict."),
-    "design_matrix": (
-        "Block-relationship matrix. Provide exactly one of 'design-matrix' or "
-        "'design-weight'. This square metadata table must have rows and columns "
-        "named exactly as the feature-table collection, zeros on its diagonal, "
-        "and symmetric numeric off-diagonal values from 0 (no modeled "
-        "relationship) to 1 (maximum modeled relationship)."
-    ),
     "design_weight": (
         "Single block-relationship weight. Provide exactly one of "
         "'design-weight' or 'design-matrix'. A value from 0 to 1 creates a "
@@ -323,12 +315,22 @@ component_tuning_input_descriptions = {
         "block and the response are restricted to their shared sample IDs; a "
         "sample missing from one or more blocks is dropped. Table names identify "
         "the corresponding design-matrix rows and columns."
-    )
+    ),
+    "design_matrix": (
+        "Block-relationship matrix. Provide exactly one of 'design-matrix' or "
+        "'design-weight'. This square table must have rows and columns named "
+        "exactly as the feature-table collection, zeroes on its diagonal, and "
+        "symmetric numeric off-diagonal values from 0 (no modeled relationship) "
+        "to 1 (maximum modeled relationship)."
+    ),
 }
 
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "design_matrix": AssociationMatrix,
+    },
     parameters=component_tuning_parameters,
     outputs=[("tune_components", PLSTuneComponents)],
     input_descriptions=component_tuning_input_descriptions,
@@ -382,7 +384,10 @@ plugin.pipelines.register_function(
 
 plugin.pipelines.register_function(
     function=tune_components_block_splsda,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "design_matrix": AssociationMatrix,
+    },
     parameters=component_tuning_parameters,
     outputs=[
         ("tune_components", PLSTuneComponents),

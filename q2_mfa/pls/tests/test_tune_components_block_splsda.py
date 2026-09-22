@@ -16,7 +16,7 @@ from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
 
-from q2_mfa.pls import PLSTuneComponentsDirFmt
+from q2_mfa.pls import AssociationMatrix, PLSTuneComponentsDirFmt
 from q2_mfa.pls.descriptions import jsonl_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
     _error_rate_metadata,
@@ -67,11 +67,19 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
 
     def test_tune_components_pipeline_matches_expected_values(self):
         tune_components = self.plugin.pipelines["tune_components_block_splsda"]
+        design_matrix = Artifact.import_data(
+            AssociationMatrix,
+            pd.DataFrame(
+                [[0.0, 0.1], [0.1, 0.0]],
+                index=pd.Index(["block-b", "block-a"], name="id"),
+                columns=["block-b", "block-a"],
+            ),
+        )
 
         results = tune_components(
             tables=self.tables,
             y=self.response,
-            design_weight=0.1,
+            design_matrix=design_matrix,
             ncomp=2,
             validation="Mfold",
             folds=3,

@@ -27,7 +27,7 @@ from q2_mfa.pls.utils import (
 def _tune_components_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
-    design_matrix: Metadata = None,
+    design_matrix: pd.DataFrame = None,
     design_weight: float | None = None,
     ncomp: int = 2,
     scale: bool = True,
@@ -64,7 +64,7 @@ def _tune_components_block_splsda(
 
     # Fit the dense model, as documented for component tuning in the mixOmics
     # block sPLS-DA (DIABLO) vignette.
-    perf_model = r["block.plsda"](
+    perf_model = r("function(...) suppressMessages(block.plsda(...))")(
         r_blocks,
         r_target,
         **{

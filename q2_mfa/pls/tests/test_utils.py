@@ -37,10 +37,7 @@ class TestPLSUtils(TestPluginBase):
             "block-b": read_table("block-b.tsv"),
         }
         cls.response = Metadata(read_table("response.tsv")).get_column("group")
-        cls.designs = {
-            name: Metadata(read_table(f"design-{name}.tsv"))
-            for name in ("valid", "nonnumeric", "nonsymmetric", "nonzero-diagonal")
-        }
+        cls.design = read_table("design-valid.tsv")
         cls.alignment_block_a = read_table("sample-alignment-table-a.tsv")
         cls.alignment_block_b = read_table("sample-alignment-table-b.tsv")
         cls.alignment_tables = ResultCollection(
@@ -133,41 +130,21 @@ class TestPLSUtils(TestPluginBase):
         with self.assertRaisesRegex(
             ValueError, "Provide exactly one of 'design-matrix' or 'design-weight'."
         ):
-            utils._resolve_design(self.designs["valid"], 0.1, list(self.blocks))
+            utils._resolve_design(self.design, 0.1, list(self.blocks))
 
     def test_resolve_design_returns_scalar_weight(self):
         self.assertEqual(utils._resolve_design(None, 0.1, list(self.blocks)), 0.1)
 
     def test_resolve_design_rejects_mismatched_block_names(self):
-        invalid = (
-            self.designs["valid"].to_dataframe().rename(index={"block-a": "other"})
-        )
+        invalid = self.design.rename(index={"block-a": "other"})
         with self.assertRaisesRegex(
             ValueError,
             "The row and column names in 'design-matrix' must exactly match ",
         ):
-            utils._resolve_design(Metadata(invalid), None, list(self.blocks))
-
-    def test_resolve_design_rejects_non_numeric_values(self):
-        with self.assertRaisesRegex(
-            ValueError, "Values in 'design-matrix' must be numeric."
-        ):
-            utils._resolve_design(self.designs["nonnumeric"], None, list(self.blocks))
-
-    def test_resolve_design_rejects_non_symmetric_matrix(self):
-        with self.assertRaisesRegex(ValueError, "'design-matrix' must be symmetrical."):
-            utils._resolve_design(self.designs["nonsymmetric"], None, list(self.blocks))
-
-    def test_resolve_design_rejects_nonzero_diagonal(self):
-        with self.assertRaisesRegex(
-            ValueError, "The diagonal of 'design-matrix' must contain only zeroes."
-        ):
-            utils._resolve_design(
-                self.designs["nonzero-diagonal"], None, list(self.blocks)
-            )
+            utils._resolve_design(invalid, None, list(self.blocks))
 
     def test_resolve_design_reorders_valid_matrix_to_block_order(self):
-        observed = utils._resolve_design(self.designs["valid"], None, list(self.blocks))
+        observed = utils._resolve_design(self.design, None, list(self.blocks))
         expected = pd.DataFrame(
             [[0.0, 0.2], [0.2, 0.0]],
             index=pd.Index(["block-a", "block-b"], name="id"),
@@ -204,9 +181,7 @@ class TestPLSUtils(TestPluginBase):
         blocks = {name: table.loc[sample_ids] for name, table in self.blocks.items()}
         target = self.response.to_series().loc[sample_ids]
 
-        r_blocks, r_target, r_design = utils._to_r_inputs(
-            blocks, target, self.designs["valid"].to_dataframe()
-        )
+        r_blocks, r_target, r_design = utils._to_r_inputs(blocks, target, self.design)
 
         self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
         self.assertEqual(list(utils.r["rownames"](r_blocks.rx2("block-a"))), sample_ids)

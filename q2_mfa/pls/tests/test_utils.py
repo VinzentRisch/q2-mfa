@@ -207,7 +207,7 @@ class TestPLSUtils(TestPluginBase):
               )
             )
             """)
-        observed = utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
+        observed = utils._r_perf_error_rate_to_df(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
             {

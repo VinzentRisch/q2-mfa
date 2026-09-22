@@ -18,7 +18,7 @@ from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
 from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 from q2_mfa.pls.utils import (
     _build_bpparam,
-    _r_vote_error_rate_to_dataframe,
+    _r_perf_error_rate_to_df,
     _resolve_design,
     _to_r_inputs,
 )
@@ -90,8 +90,8 @@ def _tune_components_block_splsda(
     )
     weighted_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
     majority_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "MajorityVote")
-    weighted_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")
-    majority_error_rate = _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote")
+    weighted_error_rate = _r_perf_error_rate_to_df(perf_result, "WeightedVote")
+    majority_error_rate = _r_perf_error_rate_to_df(perf_result, "MajorityVote")
     _print_component_choice(weighted_choice_matrix, "WeightedVote")
     _print_component_choice(majority_choice_matrix, "MajorityVote")
     return _serialize_tune_components(

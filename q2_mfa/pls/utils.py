@@ -155,7 +155,7 @@ def _to_r_inputs(
     return r_blocks, r_target, r_design
 
 
-def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
+def _r_perf_error_rate_to_df(perf_result: ListVector, vote: str) -> pd.DataFrame:
     """
     Converts mixOmics vote error-rate means and standard deviations to rows.
 
@@ -171,30 +171,32 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
 
     Returns:
         pd.DataFrame: Error-rate records for the requested vote.
-
     """
-    columns = ["distance", "class", "component", "mean", "sd"]
-    records = {}
-    for statistic, error_rates in (
-        ("mean", perf_result.rx2(f"{vote}.error.rate")),
-        ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
-    ):
-        for distance, rates in zip(error_rates.names, error_rates):
-            values = np.asarray(rates, dtype=float)
-            class_names = [str(name) for name in r["rownames"](rates)]
-            for class_name, class_values in zip(class_names, values):
-                for component, value in enumerate(class_values, start=1):
-                    key = (str(distance), class_name, component)
-                    record = records.setdefault(
-                        key,
-                        {
-                            "distance": key[0],
-                            "class": key[1],
-                            "component": key[2],
-                        },
-                    )
-                    record[statistic] = value
+    mean_error_rates = perf_result.rx2(f"{vote}.error.rate")
+    sd_error_rates = perf_result.rx2(f"{vote}.error.rate.sd")
+    tables = []
 
-    error_rates = pd.DataFrame(records.values(), columns=columns)
+    for distance, mean_rates, sd_rates in zip(
+        mean_error_rates.names, mean_error_rates, sd_error_rates
+    ):
+        means = np.asarray(mean_rates, dtype=float)
+        standard_deviations = np.asarray(sd_rates, dtype=float)
+        class_names = [str(name) for name in r["rownames"](mean_rates)]
+        component_count = means.shape[1]
+        tables.append(
+            pd.DataFrame(
+                {
+                    "distance": str(distance),
+                    "class": np.repeat(class_names, component_count),
+                    "component": np.tile(
+                        np.arange(1, component_count + 1), len(class_names)
+                    ),
+                    "mean": means.ravel(),
+                    "sd": standard_deviations.ravel(),
+                }
+            )
+        )
+
+    error_rates = pd.concat(tables, ignore_index=True)
     error_rates["component"] = error_rates["component"].astype("Int64")
     return error_rates

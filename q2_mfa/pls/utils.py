@@ -175,9 +175,6 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
     Returns:
         pd.DataFrame: Error-rate records for the requested vote.
 
-    Raises:
-        ValueError: If mixOmics did not provide either the mean or standard
-            deviation error-rate matrix for the requested vote.
     """
     columns = ["distance", "class", "component", "mean", "sd"]
     records = {}
@@ -185,10 +182,6 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
         ("mean", perf_result.rx2(f"{vote}.error.rate")),
         ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
     ):
-        if type(error_rates).__name__ == "NULLType":
-            raise ValueError(
-                f"mixOmics did not provide {statistic} error rates for {vote}."
-            )
         for distance, rates in zip(error_rates.names, error_rates):
             values = np.asarray(rates, dtype=float)
             class_names = [str(name) for name in r["rownames"](rates)]

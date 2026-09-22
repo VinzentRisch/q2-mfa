@@ -297,16 +297,6 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         ).astype("Int64")
         assert_frame_equal(actual, expected)
 
-    def test_r_choice_matrix_to_dataframe_rejects_r_null(self):
-        perf_result = r("list(choice.ncomp = list(WeightedVote = NULL))")
-
-        with self.assertRaisesRegex(
-            ValueError,
-            "^mixOmics did not provide a component-choice matrix for "
-            "WeightedVote\\.$",
-        ):
-            _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
-
     @patch("builtins.print")
     def test_print_component_choice_prints_labelled_table(self, mock_print):
         choice_table = pd.DataFrame(

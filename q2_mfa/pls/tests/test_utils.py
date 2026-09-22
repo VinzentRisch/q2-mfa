@@ -220,21 +220,3 @@ class TestPLSUtils(TestPluginBase):
         )
         expected["component"] = expected["component"].astype("Int64")
         pd.testing.assert_frame_equal(observed, expected)
-
-    def test_vote_error_rates_rejects_missing_standard_deviation(self):
-        perf_result = utils.r("""
-            list(
-              `WeightedVote.error.rate` = list(
-                `max.dist` = matrix(
-                  c(0.1, 0.3), nrow = 2,
-                  dimnames = list(c("Overall.BER", "Overall.ER"), "comp1")
-                )
-              ),
-              `WeightedVote.error.rate.sd` = NULL
-            )
-            """)
-        with self.assertRaisesRegex(
-            ValueError,
-            "^mixOmics did not provide sd error rates for WeightedVote\\.$",
-        ):
-            utils._r_vote_error_rate_to_dataframe(perf_result, "WeightedVote")

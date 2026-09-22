@@ -285,15 +285,8 @@ def _r_choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Component-choice matrix.
 
-    Raises:
-        ValueError: If mixOmics did not provide a component-choice matrix for
-            the requested vote.
     """
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
-    if type(matrix).__name__ == "NULLType":
-        raise ValueError(
-            f"mixOmics did not provide a component-choice matrix for {vote}."
-        )
     values = np.asarray(matrix)
     return pd.DataFrame(
         values,

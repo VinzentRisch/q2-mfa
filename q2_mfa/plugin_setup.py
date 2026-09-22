@@ -67,19 +67,19 @@ plugin.methods.register_function(
     parameter_descriptions={
         "pseudocount": (
             "Value used to replace zeros before CLR. If not provided, a "
-            "pseudocount of 1 is used. This parameter is only used when "
-            "replacement_method is 'pseudocount'."
+            "`pseudocount` value of 1 is used. This parameter is only used "
+            "when `replacement-method` is `pseudocount`."
         ),
         "replacement_method": (
-            "Method used to handle zeros before CLR. 'multiplicative' replaces "
+            "Method used to handle zeros before CLR. `multiplicative` replaces "
             "zeros while rescaling the remaining values to preserve the "
-            "composition. 'pseudocount' adds the pseudocount to all values in "
-            "the table."
+            "composition. `pseudocount` adds the `pseudocount` value to all "
+            "values in the table."
         ),
         "delta": (
             "Replacement value used for multiplicative replacement. This "
-            "parameter is only used when replacement_method is "
-            "'multiplicative'."
+            "parameter is only used when `replacement-method` is "
+            "`multiplicative`."
         ),
     },
     output_descriptions={"transformed_table": "The CLR transformed table."},
@@ -149,17 +149,17 @@ ordination_parameter_descriptions = {
         "Whether to remove columns with zero variance before SVD."
     ),
     "engine": (
-        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "SVD engine used. `sklearn` uses faster randomized SVD, while `scipy` "
         "uses deterministic SciPy SVD."
     ),
     "n_iter": (
-        "Number of iterations used by the 'sklearn' randomized SVD "
-        "engine. This parameter is ignored by the 'scipy' engine."
+        "Number of iterations used by the `sklearn` randomized SVD "
+        "engine. This parameter is ignored by the `scipy` engine."
     ),
     "random_state": (
-        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "Random seed used by the `sklearn` SVD engine. Pass an int for "
         "reproducible results across multiple function calls. This "
-        "parameter is ignored by the 'scipy' engine."
+        "parameter is ignored by the `scipy` engine."
     ),
 }
 
@@ -175,11 +175,11 @@ mfa_parameter_descriptions = {
     "metadata_groups": (
         "Optional mapping from metadata group names to comma-separated metadata "
         "column strings. Pass a collection/dict such as "
-        "{'group': 'column1,column2'} to define explicit groups. If a single "
+        "`{'group': 'column1,column2'}` to define explicit groups. If a single "
         "string is provided, all metadata columns are included in a group with "
-        "that string as the group name. If sample metadata is provided without "
-        "this parameter, all metadata columns are included in a group named "
-        "'metadata'. Groups must contain only numeric or only categorical columns."
+        "that string as the group name. If `sample-metadata` is provided without "
+        "`metadata-groups`, all metadata columns are included in a group named "
+        "`metadata`. Groups must contain only numeric or only categorical columns."
     ),
     **ordination_parameter_descriptions,
 }
@@ -253,15 +253,14 @@ component_tuning_parameters = {
 }
 
 component_tuning_parameter_descriptions = {
-    "y": ("Categorical response variable to predict."),
+    "y": "Categorical response variable to predict.",
     "design_weight": (
         "Single block-relationship weight. Provide exactly one of "
-        "'design-weight' or 'design-matrix'. A value from 0 to 1 creates a "
-        "fully "
-        "connected design matrix with this value in every off-diagonal cell; "
+        "`design-weight` or `design-matrix`. A value from 0 to 1 creates a "
+        "fully connected design matrix with this value in every off-diagonal cell; "
         "0 means no modeled block relationships and 1 is the maximum."
     ),
-    "ncomp": ("Number of components to fit and evaluate by cross-validation."),
+    "ncomp": "Number of components to fit and evaluate by cross-validation.",
     "scale": (
         "Whether to standardize every feature within each input block to zero "
         "mean and unit variance before fitting."
@@ -282,29 +281,28 @@ component_tuning_parameter_descriptions = {
     ),
     "validation": (
         "Internal cross-validation strategy used to estimate classification "
-        "error rates: Mfold repeatedly holds out folds, while loo leaves out "
+        "error rates: `Mfold` repeatedly holds out folds, while `loo` leaves out "
         "one sample at a time."
     ),
     "folds": (
         "Number of sample folds for M-fold cross-validation. Ignored when "
-        "'validation' is 'loo'. Each fold should contain enough samples from "
-        "every "
-        "response class for model fitting and evaluation."
+        "`validation` is `loo`. Each fold should contain enough samples from "
+        "every response class for model fitting and evaluation."
     ),
     "nrepeat": (
         "Number of independent M-fold cross-validation repetitions. More "
         "repetitions reduce sensitivity to random fold assignments but increase "
-        "runtime; it is not needed when 'validation' is 'loo'."
+        "runtime; it is not needed when `validation` is `loo`."
     ),
     "signif_threshold": (
         "Minimum improvement in cross-validated error rate required before an "
         "additional latent component is considered beneficial."
     ),
-    "seed": ("Random seed used for reproducible cross-validation fold assignments."),
+    "seed": "Random seed used for reproducible cross-validation fold assignments.",
     "threads": (
         "Number of BiocParallel workers used for cross-validation model fits. "
-        "Use 1 for serial execution. The Rachis/QIIME value 'auto' is "
-        "converted to 0; both 0 and 'auto' omit 'workers' and let "
+        "Use 1 for serial execution. The Rachis/QIIME value `auto` is "
+        "converted to 0; both 0 and `auto` omit `workers` and let "
         "BiocParallel select its default."
     ),
 }
@@ -317,8 +315,8 @@ component_tuning_input_descriptions = {
         "the corresponding design-matrix rows and columns."
     ),
     "design_matrix": (
-        "Block-relationship matrix. Provide exactly one of 'design-matrix' or "
-        "'design-weight'. This square table must have rows and columns named "
+        "Block-relationship matrix. Provide exactly one of `design-matrix` or "
+        "`design-weight`. This square table must have rows and columns named "
         "exactly as the feature-table collection, zeroes on its diagonal, and "
         "symmetric numeric off-diagonal values from 0 (no modeled relationship) "
         "to 1 (maximum modeled relationship)."

@@ -10,12 +10,19 @@ from .tune_components_block_splsda import (
     _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
-from .types import PLSTuneComponents, PLSTuneComponentsDirFmt
+from .types import (
+    AssociationMatrix,
+    AssociationMatrixDirFmt,
+    PLSTuneComponents,
+    PLSTuneComponentsDirFmt,
+)
 from .utils import _align_samples_metadata
 
 __all__ = [
     "PLSTuneComponents",
     "PLSTuneComponentsDirFmt",
+    "AssociationMatrix",
+    "AssociationMatrixDirFmt",
     "_align_samples_metadata",
     "_tune_components_block_splsda",
     "_tune_components_block_visualisation",

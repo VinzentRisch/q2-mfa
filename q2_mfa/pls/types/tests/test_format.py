@@ -7,16 +7,26 @@ from pathlib import Path
 
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import PLSTuneComponentsDirFmt
+from q2_mfa.pls import AssociationMatrixDirFmt, PLSTuneComponentsDirFmt
 
 
-class TestPLSTuneComponentsDirFmt(TestPluginBase):
+class TestPLSFormats(TestPluginBase):
     package = "q2_mfa.pls.types.tests"
 
     @classmethod
     def setUpClass(cls):
         helper = cls()
-        cls.fixture_dir = Path(helper.get_data_path("pls-tune-components/complete"))
+        cls.tune_components_fixture_dir = Path(
+            helper.get_data_path("pls-tune-components")
+        )
+        cls.association_matrix_fixture_dir = Path(
+            helper.get_data_path("association-matrix")
+        )
 
-    def test_complete_fixture_validates(self):
-        PLSTuneComponentsDirFmt(self.fixture_dir, mode="r").validate()
+    def test_tune_components_complete_fixture_validates(self):
+        PLSTuneComponentsDirFmt(self.tune_components_fixture_dir, mode="r").validate()
+
+    def test_association_matrix_complete_fixture_validates(self):
+        AssociationMatrixDirFmt(
+            self.association_matrix_fixture_dir, mode="r"
+        ).validate()

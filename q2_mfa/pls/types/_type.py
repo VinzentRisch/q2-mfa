@@ -8,3 +8,4 @@
 from rachis.core.type import SemanticType
 
 PLSTuneComponents = SemanticType("PLSTuneComponents")
+AssociationMatrix = SemanticType("AssociationMatrix")

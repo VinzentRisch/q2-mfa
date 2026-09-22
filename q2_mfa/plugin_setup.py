@@ -30,6 +30,8 @@ from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.component_analysis.mfa import mfa
 from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
+    AssociationMatrix,
+    AssociationMatrixDirFmt,
     PLSTuneComponents,
     PLSTuneComponentsDirFmt,
     _align_samples_metadata,
@@ -415,10 +417,12 @@ plugin.pipelines.register_function(
 plugin.register_formats(
     ComponentAnalysisDirFmt,
     PLSTuneComponentsDirFmt,
+    AssociationMatrixDirFmt,
 )
 plugin.register_semantic_types(
     ComponentAnalysis,
     PLSTuneComponents,
+    AssociationMatrix,
 )
 plugin.register_artifact_class(
     ComponentAnalysis,
@@ -432,6 +436,12 @@ plugin.register_artifact_class(
     PLSTuneComponents,
     directory_format=PLSTuneComponentsDirFmt,
     description="Represents PLS component tuning results produced by mixOmics.",
+)
+plugin.register_artifact_class(
+    AssociationMatrix,
+    directory_format=AssociationMatrixDirFmt,
+    description="Represents a matrix that denotes the association between multiple "
+    "omics feature tables.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")

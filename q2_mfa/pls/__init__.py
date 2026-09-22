@@ -13,14 +13,14 @@ from .tune_components_block_splsda import (
 from .types import (
     AssociationMatrix,
     AssociationMatrixDirFmt,
-    PLSTuneComponents,
-    PLSTuneComponentsDirFmt,
+    PLSComponentSelection,
+    PLSComponentSelectionDirFmt,
 )
 from .utils import _align_samples_metadata
 
 __all__ = [
-    "PLSTuneComponents",
-    "PLSTuneComponentsDirFmt",
+    "PLSComponentSelection",
+    "PLSComponentSelectionDirFmt",
     "AssociationMatrix",
     "AssociationMatrixDirFmt",
     "_align_samples_metadata",

@@ -15,7 +15,7 @@ from rachis.plugin import CaptureHolder
 from rpy2.robjects import r
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
-from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
+from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 from q2_mfa.pls.utils import (
     _build_bpparam,
     _r_vote_error_rate_to_dataframe,
@@ -40,7 +40,7 @@ def _tune_components_block_splsda(
     signif_threshold: float = 0.01,
     seed: CaptureHolder[int] = None,
     threads: int = 1,
-) -> PLSTuneComponentsDirFmt:
+) -> PLSComponentSelectionDirFmt:
     """
     Tunes block sPLS-DA (DIABLO) component counts with mixOmics.
 
@@ -51,7 +51,7 @@ def _tune_components_block_splsda(
     format.
 
     Returns:
-        PLSTuneComponentsDirFmt: Serialized weighted- and majority-vote error
+        PLSComponentSelectionDirFmt: Serialized weighted- and majority-vote error
             rates and component-choice matrices.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
@@ -181,7 +181,7 @@ def _tune_components_block_visualisation(ctx, tune_components):
     """
     lineplot = ctx.get_action("vizard", "lineplot")
     tabulate = ctx.get_action("metadata", "tabulate")
-    tuning_data = tune_components.view(PLSTuneComponentsDirFmt)
+    tuning_data = tune_components.view(PLSComponentSelectionDirFmt)
 
     weighted_error_rates = _error_rate_metadata(
         tuning_data.error_rate_weighted.view(Metadata)
@@ -313,7 +313,7 @@ def _serialize_tune_components(
     error_rate_majority: pd.DataFrame,
     choice_matrix_weighted: pd.DataFrame,
     choice_matrix_majority: pd.DataFrame,
-) -> PLSTuneComponentsDirFmt:
+) -> PLSComponentSelectionDirFmt:
     """
     Serializes component-tuning tables as Table JSONL files.
 
@@ -333,10 +333,10 @@ def _serialize_tune_components(
             matrix.
 
     Returns:
-        PLSTuneComponentsDirFmt: Directory format containing the four JSONL
+        PLSComponentSelectionDirFmt: Directory format containing the four JSONL
             component-tuning tables.
     """
-    directory_format = PLSTuneComponentsDirFmt()
+    directory_format = PLSComponentSelectionDirFmt()
     error_rate_weighted = error_rate_weighted.copy()
     error_rate_majority = error_rate_majority.copy()
     choice_matrix_weighted = choice_matrix_weighted.reset_index()

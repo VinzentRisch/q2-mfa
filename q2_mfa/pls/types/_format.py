@@ -10,7 +10,7 @@ from q2_types.distance_matrix import LSMatFormat
 from q2_types.tabular import TableJSONLFileFormat
 
 
-class PLSTuneComponentsDirFmt(model.DirectoryFormat):
+class PLSComponentSelectionDirFmt(model.DirectoryFormat):
     """Stores DIABLO component-selection diagnostics."""
 
     error_rate_weighted = model.File(

@@ -5,12 +5,12 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from ._format import AssociationMatrixDirFmt, PLSTuneComponentsDirFmt
-from ._type import AssociationMatrix, PLSTuneComponents
+from ._format import AssociationMatrixDirFmt, PLSComponentSelectionDirFmt
+from ._type import AssociationMatrix, PLSComponentSelection
 
 __all__ = [
-    "PLSTuneComponents",
-    "PLSTuneComponentsDirFmt",
+    "PLSComponentSelection",
+    "PLSComponentSelectionDirFmt",
     "AssociationMatrix",
     "AssociationMatrixDirFmt",
 ]

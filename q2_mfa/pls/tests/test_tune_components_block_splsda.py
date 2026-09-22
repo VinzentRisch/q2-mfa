@@ -16,7 +16,7 @@ from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
 
-from q2_mfa.pls import AssociationMatrix, PLSTuneComponentsDirFmt
+from q2_mfa.pls import AssociationMatrix, PLSComponentSelectionDirFmt
 from q2_mfa.pls.descriptions import jsonl_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
     _error_rate_metadata,
@@ -89,7 +89,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         )
 
         tuning = results.tune_components
-        tuning_data = tuning.view(PLSTuneComponentsDirFmt)
+        tuning_data = tuning.view(PLSComponentSelectionDirFmt)
         actual_tables = (
             (
                 tuning_data.error_rate_weighted.view(Metadata).to_dataframe(),

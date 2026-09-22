@@ -7,7 +7,7 @@ from pathlib import Path
 
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import AssociationMatrixDirFmt, PLSTuneComponentsDirFmt
+from q2_mfa.pls import AssociationMatrixDirFmt, PLSComponentSelectionDirFmt
 
 
 class TestPLSFormats(TestPluginBase):
@@ -24,7 +24,9 @@ class TestPLSFormats(TestPluginBase):
         )
 
     def test_tune_components_complete_fixture_validates(self):
-        PLSTuneComponentsDirFmt(self.tune_components_fixture_dir, mode="r").validate()
+        PLSComponentSelectionDirFmt(
+            self.tune_components_fixture_dir, mode="r"
+        ).validate()
 
     def test_association_matrix_complete_fixture_validates(self):
         AssociationMatrixDirFmt(

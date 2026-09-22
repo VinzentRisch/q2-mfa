@@ -32,8 +32,8 @@ from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
     AssociationMatrix,
     AssociationMatrixDirFmt,
-    PLSTuneComponents,
-    PLSTuneComponentsDirFmt,
+    PLSComponentSelection,
+    PLSComponentSelectionDirFmt,
     _align_samples_metadata,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
@@ -332,7 +332,7 @@ plugin.methods.register_function(
         "design_matrix": AssociationMatrix,
     },
     parameters=component_tuning_parameters,
-    outputs=[("tune_components", PLSTuneComponents)],
+    outputs=[("tune_components", PLSComponentSelection)],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
@@ -357,7 +357,7 @@ plugin.methods.register_function(
 
 plugin.pipelines.register_function(
     function=_tune_components_block_visualisation,
-    inputs={"tune_components": PLSTuneComponents},
+    inputs={"tune_components": PLSComponentSelection},
     parameters={},
     outputs=[("visualization", Visualization)],
     input_descriptions={
@@ -390,7 +390,7 @@ plugin.pipelines.register_function(
     },
     parameters=component_tuning_parameters,
     outputs=[
-        ("tune_components", PLSTuneComponents),
+        ("tune_components", PLSComponentSelection),
         ("visualization", Visualization),
     ],
     input_descriptions=component_tuning_input_descriptions,
@@ -421,12 +421,12 @@ plugin.pipelines.register_function(
 
 plugin.register_formats(
     ComponentAnalysisDirFmt,
-    PLSTuneComponentsDirFmt,
+    PLSComponentSelectionDirFmt,
     AssociationMatrixDirFmt,
 )
 plugin.register_semantic_types(
     ComponentAnalysis,
-    PLSTuneComponents,
+    PLSComponentSelection,
     AssociationMatrix,
 )
 plugin.register_artifact_class(
@@ -438,8 +438,8 @@ plugin.register_artifact_class(
     ),
 )
 plugin.register_artifact_class(
-    PLSTuneComponents,
-    directory_format=PLSTuneComponentsDirFmt,
+    PLSComponentSelection,
+    directory_format=PLSComponentSelectionDirFmt,
     description="Represents PLS component tuning results produced by mixOmics.",
 )
 plugin.register_artifact_class(

@@ -5,7 +5,8 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-error_rate_criteria_description = """### Error-rate criteria
+error_rate_criteria_description = """\
+### Error-rate criteria
 
 - **Overall.ER** is the fraction of all held-out samples classified incorrectly.
 - **Overall.BER** is the average of the error rates calculated separately for
@@ -16,7 +17,8 @@ the mixOmics vignette recommends considering **Overall.BER**, which weights
 each class equally. **Overall.ER** weights errors by their observed sample
 frequencies."""
 
-prediction_distance_description = """### Prediction distances
+prediction_distance_description = """\
+### Prediction distances
 
 **max.dist**, **centroids.dist**, and **mahalanobis.dist** are alternative rules for
 turning a sample's predicted values into a class assignment. The mixOmics
@@ -26,7 +28,8 @@ change classification performance and suggests increasing distance complexity
 from maximum to Mahalanobis as separating the classes becomes more
 challenging."""
 
-voting_scheme_description = """### Voting schemes
+voting_scheme_description = """\
+### Voting schemes
 
 In multiblock classification, every data block produces a class prediction for
 a held-out sample.
@@ -38,17 +41,17 @@ Use majority voting when every block should have equal influence. Use weighted
 voting when blocks whose components are more strongly correlated with the
 outcome should have greater influence."""
 
-curve_usage_description = """Use the curves as a diagnostic: inspect how
-cross-validated error changes as components are added and compare the voting
-schemes, error criteria, and prediction distances. Select a component count
-from the matching **choice.ncomp** table entry, which applies the repeated
-cross-validation *t*-test rule rather than choosing the lowest plotted point.
+curve_usage_description = """\
+Use the curves as a diagnostic: inspect how cross-validated error changes as
+components are added, then compare the voting schemes, error criteria, and
+prediction distances. Select a component count from the matching
+**choice.ncomp** table entry, which applies the repeated cross-validation
+*t*-test rule rather than choosing the lowest plotted point.
 
 For more information, consult the mixOmics documentation.
 """
 
-component_selection_description = """#### Choosing a component count
-
+component_selection_description = """\
 The reported value is **not** simply the component with the smallest observed
 error. mixOmics compares mean cross-validation error as components are added
 with one-sided *t*-tests. An additional component is kept

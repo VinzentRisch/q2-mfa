@@ -102,7 +102,7 @@ def _resolve_design(
     return design_matrix
 
 
-def _build_bpparam(threads: int, seed: int):
+def _build_bpparam(threads: int):
     """
     Creates a BiocParallel backend.
 
@@ -112,18 +112,15 @@ def _build_bpparam(threads: int, seed: int):
     Args:
         threads (int): Requested worker count, where zero selects the
             BiocParallel default.
-        seed (int): Random seed supplied to the backend.
-
     Returns:
         rpy2.robjects.RObject: Configured BiocParallel parameter object.
     """
     r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"](RNGseed=seed)
-    kwargs = {"RNGseed": seed}
+        return r["SerialParam"]()
     if threads > 1:
-        kwargs["workers"] = threads
-    return r["MulticoreParam"](**kwargs)
+        return r["MulticoreParam"](workers=threads)
+    return r["MulticoreParam"]()
 
 
 def _to_r_inputs(

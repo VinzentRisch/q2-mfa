@@ -8,7 +8,6 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from q2_types.metadata import ImmutableMetadata
 from rachis import Citations
 from rachis.core.type import (
     Bool,
@@ -19,7 +18,6 @@ from rachis.core.type import (
     Int,
     Metadata,
     MetadataColumn,
-    Numeric,
     Range,
     Str,
 )
@@ -34,7 +32,6 @@ from q2_mfa.pls import (
     AssociationMatrixDirFmt,
     PLSComponentSelection,
     PLSComponentSelectionDirFmt,
-    _align_samples_metadata,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
     tune_components_block_splsda,
@@ -97,34 +94,6 @@ plugin.methods.register_function(
         citations["aitchison1982statistical"],
         citations["aton2025scikit"],
     ],
-)
-
-plugin.pipelines.register_function(
-    function=_align_samples_metadata,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters={"metadata_column": MetadataColumn[Categorical | Numeric]},
-    outputs=[
-        ("aligned_tables", Collection[FeatureTable[Unconstrained]]),
-        ("aligned_metadata", ImmutableMetadata),
-    ],
-    input_descriptions={
-        "tables": "Named feature tables to restrict to their shared sample IDs."
-    },
-    parameter_descriptions={
-        "metadata_column": (
-            "Metadata column to align with the feature tables. Samples "
-            "with missing values in this column are excluded."
-        )
-    },
-    output_descriptions={
-        "aligned_tables": "Feature tables restricted to their shared sample IDs.",
-        "aligned_metadata": "The aligned metadata column.",
-    },
-    name="Align samples and metadata column",
-    description=(
-        "Restricts every input feature table and a metadata column to "
-        "their shared sample IDs."
-    ),
 )
 
 ordination_parameters = {

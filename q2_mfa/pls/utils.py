@@ -5,80 +5,66 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import warnings
+
 import numpy as np
 import pandas as pd
-from q2_types.feature_table import FeatureTable, Unconstrained
-from q2_types.metadata import ImmutableMetadata
-from rachis import Metadata, ResultCollection
-from rpy2.robjects import (
-    ListVector,
-    StrVector,
-    conversion,
-    default_converter,
-    pandas2ri,
-    r,
-)
+from rachis.core.exceptions import RachisWarning
+from rpy2.robjects import ListVector, conversion, default_converter, pandas2ri, r
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.vectors import DataFrame as RDataFrame
 from rpy2.robjects.vectors import FactorVector
 
 
-def _align_samples_metadata(ctx, tables, metadata_column):
+def _align_samples(
+    tables: dict[str, pd.DataFrame], target: pd.Series
+) -> tuple[dict[str, pd.DataFrame], pd.Series]:
     """
-    Aligns feature tables and a metadata column to shared samples.
+    Aligns feature tables and a categorical response to shared samples.
 
-    Requires at least two feature tables, removes missing metadata values, and
-    restricts every remaining input to the sample IDs they share.
-
-    - Removes missing metadata values.
-    - Identifies IDs shared by the remaining column and every feature table
-    - Filters the metadata column to those IDs.
-    - Filters and reorders every feature table to the metadata sample order.
+    Drops missing response values, retains only sample IDs shared by every
+    block and the response, and warns for each block or response row that is
+    excluded.
 
     Args:
-        ctx (Context): Pipeline execution context used to retrieve actions.
-        tables (ResultCollection): Named unconstrained feature tables.
-        metadata_column (MetadataColumn): Metadata column to align.
+        tables (dict[str, pd.DataFrame]): Named feature tables indexed by
+            sample ID.
+        target (pd.Series): Categorical response values indexed by sample ID.
 
     Returns:
-        tuple[ResultCollection, Metadata]: A tuple containing:
-            - ResultCollection: Tables filtered to the shared sample IDs.
-            - Metadata: Aligned metadata containing the supplied column.
+        tuple[dict[str, pd.DataFrame], pd.Series]: A tuple containing:
+            - dict[str, pd.DataFrame]: Aligned named feature tables.
+            - pd.Series: Aligned response values.
 
     Raises:
         ValueError: If fewer than two feature tables are supplied or no samples
-            are shared by the feature tables and metadata column.
+            are shared by the feature tables and response.
     """
     if len(tables) < 2:
-        raise ValueError("At least two feature tables are required.")
+        raise ValueError("At least two named feature tables are required.")
+    target = target.dropna()
+    blocks = {**tables, "y": target.to_frame()}
 
-    filter_ids = ctx.get_action("feature_table", "filter_ids")
-    metadata_column = metadata_column.drop_missing_values()
-    shared_ids = metadata_column.get_ids()
-    for table in tables.values():
-        shared_ids.intersection_update(table.view(pd.DataFrame).index)
-    if not shared_ids:
-        raise ValueError("The feature tables and metadata column have no shared IDs.")
-    shared_ids = [str(sample_id) for sample_id in shared_ids]
-    metadata_column = metadata_column.filter_ids(shared_ids)
-    aligned_metadata = Metadata(metadata_column.to_dataframe())
-    sample_ids = aligned_metadata.to_dataframe().index.tolist()
+    shared = next(iter(blocks.values())).index
+    for table in list(blocks.values())[1:]:
+        shared = shared.intersection(table.index)
+    if shared.empty:
+        raise ValueError("The input feature tables and response share no sample IDs.")
 
-    aligned_tables = {}
-    for name, table in tables.items():
-        (filtered_table,) = filter_ids(
-            table=table,
-            axis="sample",
-            ids=shared_ids,
-        )
-        aligned_tables[name] = ctx.make_artifact(
-            FeatureTable[Unconstrained],
-            filtered_table.view(pd.DataFrame).loc[sample_ids],
-        )
-    return (
-        ResultCollection(aligned_tables),
-        ctx.make_artifact(ImmutableMetadata, aligned_metadata),
-    )
+    aligned = {}
+    for name, table in blocks.items():
+        dropped = table.index.difference(shared)
+        if not dropped.empty:
+            warnings.warn(
+                f"Dropping samples from block '{name}' that are not shared "
+                f"across all blocks:\n"
+                f"{', '.join(map(str, dropped))}",
+                RachisWarning,
+                stacklevel=2,
+            )
+        aligned[str(name)] = table.loc[shared].copy()
+    target = aligned.pop("y").iloc[:, 0]
+    return aligned, target
 
 
 def _resolve_design(
@@ -150,8 +136,8 @@ def _to_r_inputs(
             {name: converter.py2rpy(table) for name, table in blocks.items()}
         )
         r_design = converter.py2rpy(design)
-    r_target = r["factor"](StrVector(target.astype(str).tolist()))
-    r_target.names = StrVector(target.index.astype(str).tolist())
+        r_target = converter.py2rpy(target)
+    r_target = r["factor"](r_target)
     return r_blocks, r_target, r_design
 
 

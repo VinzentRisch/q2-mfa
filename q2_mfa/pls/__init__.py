@@ -16,14 +16,12 @@ from .types import (
     PLSComponentSelection,
     PLSComponentSelectionDirFmt,
 )
-from .utils import _align_samples_metadata
 
 __all__ = [
     "PLSComponentSelection",
     "PLSComponentSelectionDirFmt",
     "AssociationMatrix",
     "AssociationMatrixDirFmt",
-    "_align_samples_metadata",
     "_tune_components_block_splsda",
     "_tune_components_block_visualisation",
     "tune_components_block_splsda",

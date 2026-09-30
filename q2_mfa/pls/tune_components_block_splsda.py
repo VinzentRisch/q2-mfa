@@ -7,16 +7,16 @@
 # ----------------------------------------------------------------------------
 import secrets
 
-import numpy as np
 import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import r
+from rpy2.robjects import pandas2ri, r
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
 from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 from q2_mfa.pls.utils import (
+    _align_samples,
     _build_bpparam,
     _r_perf_error_rate_to_df,
     _resolve_design,
@@ -55,7 +55,7 @@ def _tune_components_block_splsda(
             rates and component-choice matrices.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    target = y.to_series()
+    tables, target = _align_samples(tables, y.to_series())
     design = _resolve_design(design_matrix, design_weight, tables.keys())
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads)
@@ -88,8 +88,8 @@ def _tune_components_block_splsda(
             "progressBar": False,
         },
     )
-    weighted_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
-    majority_choice_matrix = _r_choice_matrix_to_dataframe(perf_result, "MajorityVote")
+    weighted_choice_matrix = _r_choice_matrix_to_df(perf_result, "WeightedVote")
+    majority_choice_matrix = _r_choice_matrix_to_df(perf_result, "MajorityVote")
     weighted_error_rate = _r_perf_error_rate_to_df(perf_result, "WeightedVote")
     majority_error_rate = _r_perf_error_rate_to_df(perf_result, "MajorityVote")
     _print_component_choice(weighted_choice_matrix, "WeightedVote")
@@ -132,16 +132,11 @@ def tune_components_block_splsda(
             report containing error-rate plots and choice-matrix tables.
     """
     tune_components_action = ctx.get_action("mfa", "_tune_components_block_splsda")
-    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
     visualisation = ctx.get_action("mfa", "_tune_components_block_visualisation")
 
-    aligned_tables, aligned_metadata = align_samples(
-        tables=tables,
-        metadata_column=y,
-    )
     (tune_components,) = tune_components_action(
-        tables=aligned_tables,
-        y=aligned_metadata.view(Metadata).get_column(y.name),
+        tables=tables,
+        y=y,
         design_matrix=design_matrix,
         design_weight=design_weight,
         ncomp=ncomp,
@@ -269,30 +264,13 @@ def _error_rate_metadata(error_rates: Metadata) -> Metadata:
     return Metadata(error_rates)
 
 
-def _r_choice_matrix_to_dataframe(perf_result, vote: str) -> pd.DataFrame:
-    """
-    Converts one mixOmics component-choice matrix to a DataFrame.
-
-    Extracts the requested vote matrix from a mixOmics ``perf()`` result and
-    preserves its distance-measure columns and overall-error-rate row labels.
-
-    Args:
-        perf_result (rpy2.robjects.vectors.ListVector): Result returned by
-            mixOmics ``perf()``.
-        vote (str): Vote type to extract, such as ``WeightedVote`` or
-            ``MajorityVote``.
-
-    Returns:
-        pd.DataFrame: Component-choice matrix.
-
-    """
+def _r_choice_matrix_to_df(perf_result, vote: str) -> pd.DataFrame:
+    # Extract the R matrix
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
-    values = np.asarray(matrix)
-    return pd.DataFrame(
-        values,
-        index=pd.Index(r["rownames"](matrix), name="id"),
-        columns=r["colnames"](matrix),
-    ).astype("Int64")
+    # Convert to R data frame
+    choice_matrix = pandas2ri.rpy2py_dataframe(r["as.data.frame"](matrix))
+    # Index for rachis metadata compatability
+    return choice_matrix.rename_axis("id").astype("Int64")
 
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:
@@ -335,10 +313,10 @@ def _serialize_tune_components(
     choice_matrix_majority = choice_matrix_majority.reset_index()
 
     error_rate_weighted.insert(
-        0, "id", [f"row{index}" for index in range(1, len(error_rate_weighted) + 1)]
+        0, "id", [f"_{index}" for index in range(1, len(error_rate_weighted) + 1)]
     )
     error_rate_majority.insert(
-        0, "id", [f"row{index}" for index in range(1, len(error_rate_majority) + 1)]
+        0, "id", [f"_{index}" for index in range(1, len(error_rate_majority) + 1)]
     )
 
     error_rate_weighted.attrs["description"] = jsonl_descriptions["error_rate_weighted"]

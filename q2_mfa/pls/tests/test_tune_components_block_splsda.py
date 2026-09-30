@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, call, patch
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
-from q2_types.metadata import ImmutableMetadata
 from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
@@ -21,7 +20,7 @@ from q2_mfa.pls.descriptions import jsonl_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
     _error_rate_metadata,
     _print_component_choice,
-    _r_choice_matrix_to_dataframe,
+    _r_choice_matrix_to_df,
     _serialize_tune_components,
     _tune_components_block_visualisation,
     tune_components_block_splsda,
@@ -135,16 +134,11 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
 
     def test_tune_components_pipeline_calls_its_actions(self):
         tuning = MagicMock()
-        aligned_metadata = Artifact.import_data(
-            ImmutableMetadata, Metadata(self.response.to_dataframe())
-        )
-        align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
         tune_components = MagicMock(return_value=(tuning,))
         visualisation = MagicMock(return_value=(MagicMock(),))
         mock_context = MagicMock()
         mock_context.get_action.side_effect = [
             tune_components,
-            align_samples,
             visualisation,
         ]
 
@@ -159,17 +153,12 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             mock_context.get_action.call_args_list,
             [
                 call("mfa", "_tune_components_block_splsda"),
-                call("mfa", "_align_samples_metadata"),
                 call("mfa", "_tune_components_block_visualisation"),
             ],
         )
-        align_samples.assert_called_once_with(
-            tables=self.tables,
-            metadata_column=self.response,
-        )
         tune_components.assert_called_once_with(
             tables=self.tables,
-            y=aligned_metadata.view(Metadata).get_column("group"),
+            y=self.response,
             design_matrix=None,
             design_weight=0.1,
             ncomp=2,
@@ -249,18 +238,18 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         self.assertEqual(
             actual.index.tolist(),
             [
-                "row5",
-                "row6",
-                "row7",
-                "row8",
-                "row13",
-                "row14",
-                "row15",
-                "row16",
-                "row21",
-                "row22",
-                "row23",
-                "row24",
+                "_5",
+                "_6",
+                "_7",
+                "_8",
+                "_13",
+                "_14",
+                "_15",
+                "_16",
+                "_21",
+                "_22",
+                "_23",
+                "_24",
             ],
         )
         self.assertEqual(
@@ -281,7 +270,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             ],
         )
 
-    def test_r_choice_matrix_to_dataframe_converts_r_matrix_labels_and_values(self):
+    def test_r_choice_matrix_to_df_converts_r_matrix_labels_and_values(self):
         perf_result = r(
             "list(choice.ncomp = list(WeightedVote = structure("
             "c(2, 1, 4, 3), dim = c(2L, 2L), "
@@ -289,7 +278,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             "c('max.dist', 'centroids.dist')))))"
         )
 
-        actual = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
+        actual = _r_choice_matrix_to_df(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
             {"max.dist": [2, 1], "centroids.dist": [4, 3]},

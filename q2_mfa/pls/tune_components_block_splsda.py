@@ -11,7 +11,7 @@ import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import pandas2ri
+from rpy2.robjects import pandas2ri, r
 from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
@@ -26,6 +26,7 @@ from q2_mfa.pls.utils import (
 
 base = importr("base")
 mixomics = importr("mixOmics")
+_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _tune_components_block_splsda(
@@ -66,15 +67,18 @@ def _tune_components_block_splsda(
 
     # Fit the dense model, as documented for component tuning in the mixOmics
     # block sPLS-DA (DIABLO) vignette.
-    perf_model = mixomics.block_plsda(
-        r_blocks,
-        r_target,
+    perf_model = _call_without_messages(
+        mixomics.block_plsda,
+        X=r_blocks,
+        Y=r_target,
         ncomp=ncomp,
         design=r_design,
         scale=scale,
         tol=tol,
-        max_iter=max_iter,
-        near_zero_var=near_zero_var,
+        **{
+            "max.iter": max_iter,
+            "near.zero.var": near_zero_var,
+        },
     )
     perf_result = mixomics.perf(
         perf_model,

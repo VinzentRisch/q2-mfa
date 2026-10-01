@@ -10,10 +10,14 @@ import warnings
 import numpy as np
 import pandas as pd
 from rachis.core.exceptions import RachisWarning
-from rpy2.robjects import ListVector, conversion, default_converter, pandas2ri, r
+from rpy2.robjects import ListVector, conversion, default_converter, pandas2ri
 from rpy2.robjects.conversion import localconverter
+from rpy2.robjects.packages import importr
 from rpy2.robjects.vectors import DataFrame as RDataFrame
 from rpy2.robjects.vectors import FactorVector
+
+base = importr("base")
+biocparallel = importr("BiocParallel")
 
 
 def _align_samples(
@@ -101,12 +105,11 @@ def _build_bpparam(threads: int):
     Returns:
         rpy2.robjects.RObject: Configured BiocParallel parameter object.
     """
-    r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"]()
+        return biocparallel.SerialParam()
     if threads > 1:
-        return r["MulticoreParam"](workers=threads)
-    return r["MulticoreParam"]()
+        return biocparallel.MulticoreParam(workers=threads)
+    return biocparallel.MulticoreParam()
 
 
 def _to_r_inputs(
@@ -137,7 +140,7 @@ def _to_r_inputs(
         )
         r_design = converter.py2rpy(design)
         r_target = converter.py2rpy(target)
-    r_target = r["factor"](r_target)
+    r_target = base.factor(r_target)
     return r_blocks, r_target, r_design
 
 
@@ -167,7 +170,7 @@ def _r_perf_error_rate_to_df(perf_result: ListVector, vote: str) -> pd.DataFrame
     ):
         means = np.asarray(mean_rates, dtype=float)
         standard_deviations = np.asarray(sd_rates, dtype=float)
-        class_names = [str(name) for name in r["rownames"](mean_rates)]
+        class_names = [str(name) for name in base.rownames(mean_rates)]
         component_count = means.shape[1]
         tables.append(
             pd.DataFrame(

@@ -6,12 +6,13 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import warnings
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pandas as pd
 from rachis import Metadata
 from rachis.core.exceptions import RachisWarning
 from rachis.plugin.testing import TestPluginBase
+from rpy2.robjects import FloatVector, ListVector, StrVector
 
 from q2_mfa.pls import utils
 
@@ -116,28 +117,22 @@ class TestPLSUtils(TestPluginBase):
         pd.testing.assert_frame_equal(observed, expected)
 
     def test_build_bpparam_uses_serial_backend_for_one_thread(self):
-        r = Mock()
-        r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r):
+        with patch.object(utils, "biocparallel") as biocparallel:
             utils._build_bpparam(1)
-        r.__getitem__.assert_called_once_with("SerialParam")
-        r.__getitem__.return_value.assert_called_once_with()
+        biocparallel.SerialParam.assert_called_once_with()
+        biocparallel.MulticoreParam.assert_not_called()
 
     def test_build_bpparam_uses_multicore_workers(self):
-        r = Mock()
-        r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r):
+        with patch.object(utils, "biocparallel") as biocparallel:
             utils._build_bpparam(3)
-        r.__getitem__.assert_called_once_with("MulticoreParam")
-        r.__getitem__.return_value.assert_called_once_with(workers=3)
+        biocparallel.MulticoreParam.assert_called_once_with(workers=3)
+        biocparallel.SerialParam.assert_not_called()
 
     def test_build_bpparam_delegates_worker_count_for_zero_threads(self):
-        r = Mock()
-        r.__getitem__ = Mock(return_value=Mock())
-        with patch.object(utils, "r", r):
+        with patch.object(utils, "biocparallel") as biocparallel:
             utils._build_bpparam(0)
-        r.__getitem__.assert_called_once_with("MulticoreParam")
-        r.__getitem__.return_value.assert_called_once_with()
+        biocparallel.MulticoreParam.assert_called_once_with()
+        biocparallel.SerialParam.assert_not_called()
 
     def test_to_r_inputs_preserves_block_and_sample_labels(self):
         sample_ids = ["s2", "s3"]
@@ -147,29 +142,31 @@ class TestPLSUtils(TestPluginBase):
         r_blocks, r_target, r_design = utils._to_r_inputs(blocks, target, self.design)
 
         self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
-        self.assertEqual(list(utils.r["rownames"](r_blocks.rx2("block-a"))), sample_ids)
+        self.assertEqual(list(utils.base.rownames(r_blocks.rx2("block-a"))), sample_ids)
         self.assertEqual(list(r_target.names), sample_ids)
-        self.assertEqual(list(utils.r["as.character"](r_target)), ["case", "control"])
-        self.assertEqual(list(utils.r["rownames"](r_design)), ["block-b", "block-a"])
-        self.assertEqual(list(utils.r["colnames"](r_design)), ["block-b", "block-a"])
+        self.assertEqual(list(utils.base.as_character(r_target)), ["case", "control"])
+        self.assertEqual(list(utils.base.rownames(r_design)), ["block-b", "block-a"])
+        self.assertEqual(list(utils.base.colnames(r_design)), ["block-b", "block-a"])
 
     def test_vote_error_rates_combines_mean_and_standard_deviation(self):
-        perf_result = utils.r("""
-            list(
-              `WeightedVote.error.rate` = list(
-                `max.dist` = matrix(
-                  c(0.1, 0.2, 0.3, 0.4), nrow = 2, byrow = TRUE,
-                  dimnames = list(c("Overall.BER", "Overall.ER"), c("comp1", "comp2"))
-                )
-              ),
-              `WeightedVote.error.rate.sd` = list(
-                `max.dist` = matrix(
-                  c(0.01, 0.02, 0.03, 0.04), nrow = 2, byrow = TRUE,
-                  dimnames = list(c("Overall.BER", "Overall.ER"), c("comp1", "comp2"))
-                )
-              )
-            )
-            """)
+        dimnames = utils.base.list(
+            StrVector(["Overall.BER", "Overall.ER"]),
+            StrVector(["comp1", "comp2"]),
+        )
+        mean_rates = utils.base.matrix(
+            FloatVector([0.1, 0.3, 0.2, 0.4]), nrow=2, dimnames=dimnames
+        )
+        standard_deviations = utils.base.matrix(
+            FloatVector([0.01, 0.03, 0.02, 0.04]), nrow=2, dimnames=dimnames
+        )
+        perf_result = ListVector(
+            {
+                "WeightedVote.error.rate": ListVector({"max.dist": mean_rates}),
+                "WeightedVote.error.rate.sd": ListVector(
+                    {"max.dist": standard_deviations}
+                ),
+            }
+        )
         observed = utils._r_perf_error_rate_to_df(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(

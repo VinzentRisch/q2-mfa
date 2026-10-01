@@ -11,7 +11,8 @@ import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import pandas2ri, r
+from rpy2.robjects import pandas2ri
+from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
 from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
@@ -22,6 +23,9 @@ from q2_mfa.pls.utils import (
     _resolve_design,
     _to_r_inputs,
 )
+
+base = importr("base")
+mixomics = importr("mixOmics")
 
 
 def _tune_components_block_splsda(
@@ -54,7 +58,6 @@ def _tune_components_block_splsda(
         PLSComponentSelectionDirFmt: Serialized weighted- and majority-vote error
             rates and component-choice matrices.
     """
-    r("suppressPackageStartupMessages(library(mixOmics))")
     tables, target = _align_samples(tables, y.to_series())
     design = _resolve_design(design_matrix, design_weight, tables.keys())
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
@@ -63,30 +66,26 @@ def _tune_components_block_splsda(
 
     # Fit the dense model, as documented for component tuning in the mixOmics
     # block sPLS-DA (DIABLO) vignette.
-    perf_model = r("function(...) suppressMessages(block.plsda(...))")(
+    perf_model = mixomics.block_plsda(
         r_blocks,
         r_target,
-        **{
-            "ncomp": ncomp,
-            "design": r_design,
-            "scale": scale,
-            "tol": tol,
-            "max.iter": max_iter,
-            "near.zero.var": near_zero_var,
-        },
+        ncomp=ncomp,
+        design=r_design,
+        scale=scale,
+        tol=tol,
+        max_iter=max_iter,
+        near_zero_var=near_zero_var,
     )
-    perf_result = r["perf"](
+    perf_result = mixomics.perf(
         perf_model,
-        **{
-            "dist": "all",
-            "validation": validation,
-            "folds": folds,
-            "nrepeat": nrepeat,
-            "signif.threshold": signif_threshold,
-            "BPPARAM": bpparam,
-            "seed": resolved_seed,
-            "progressBar": False,
-        },
+        dist="all",
+        validation=validation,
+        folds=folds,
+        nrepeat=nrepeat,
+        signif_threshold=signif_threshold,
+        BPPARAM=bpparam,
+        seed=resolved_seed,
+        progressBar=False,
     )
     weighted_choice_matrix = _r_choice_matrix_to_df(perf_result, "WeightedVote")
     majority_choice_matrix = _r_choice_matrix_to_df(perf_result, "MajorityVote")
@@ -268,7 +267,7 @@ def _r_choice_matrix_to_df(perf_result, vote: str) -> pd.DataFrame:
     # Extract the R matrix
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
     # Convert to R data frame
-    choice_matrix = pandas2ri.rpy2py_dataframe(r["as.data.frame"](matrix))
+    choice_matrix = pandas2ri.rpy2py_dataframe(base.as_data_frame(matrix))
     # Index for rachis metadata compatability
     return choice_matrix.rename_axis("id").astype("Int64")
 

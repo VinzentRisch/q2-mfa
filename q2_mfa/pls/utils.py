@@ -5,126 +5,103 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import warnings
+
 import numpy as np
 import pandas as pd
-from q2_types.feature_table import FeatureTable, Unconstrained
-from q2_types.metadata import ImmutableMetadata
-from rachis import Metadata, ResultCollection
+from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import (
     IntVector,
     ListVector,
-    StrVector,
     conversion,
     default_converter,
     pandas2ri,
-    r,
 )
 from rpy2.robjects.conversion import localconverter
+from rpy2.robjects.packages import importr
+from rpy2.robjects.vectors import DataFrame as RDataFrame
+from rpy2.robjects.vectors import FactorVector
 
-from q2_mfa.pls.types._format import PLSTuneComponentsDirFmt
+from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
+
+base = importr("base")
+biocparallel = importr("BiocParallel")
 
 
-def _align_samples_metadata(ctx, tables, metadata_column):
+def _align_samples(
+    tables: dict[str, pd.DataFrame], target: pd.Series
+) -> tuple[dict[str, pd.DataFrame], pd.Series]:
     """
-    Aligns feature tables and a metadata column to shared samples.
+    Aligns feature tables and a categorical response to shared samples.
 
-    Requires at least two feature tables, removes missing metadata values, and
-    restricts every remaining input to the sample IDs they share.
-
-    - Removes missing metadata values.
-    - Identifies IDs shared by the remaining column and every feature table
-    - Filters the metadata column to those IDs.
-    - Filters and reorders every feature table to the metadata sample order.
+    Drops missing response values, retains only sample IDs shared by every
+    block and the response, and warns for each block or response row that is
+    excluded.
 
     Args:
-        ctx (Context): Pipeline execution context used to retrieve actions.
-        tables (ResultCollection): Named unconstrained feature tables.
-        metadata_column (MetadataColumn): Metadata column to align.
+        tables (dict[str, pd.DataFrame]): Named feature tables indexed by
+            sample ID.
+        target (pd.Series): Categorical response values indexed by sample ID.
 
     Returns:
-        tuple[ResultCollection, Metadata]: A tuple containing:
-            - ResultCollection: Tables filtered to the shared sample IDs.
-            - Metadata: Aligned metadata containing the supplied column.
+        tuple[dict[str, pd.DataFrame], pd.Series]: A tuple containing:
+            - dict[str, pd.DataFrame]: Aligned named feature tables.
+            - pd.Series: Aligned response values.
 
     Raises:
         ValueError: If fewer than two feature tables are supplied or no samples
-            are shared by the feature tables and metadata column.
+            are shared by the feature tables and response.
     """
     if len(tables) < 2:
-        raise ValueError("At least two feature tables are required.")
+        raise ValueError("At least two named feature tables are required.")
+    target = target.dropna()
+    blocks = {**tables, "y": target.to_frame()}
 
-    filter_ids = ctx.get_action("feature_table", "filter_ids")
-    metadata_column = metadata_column.drop_missing_values()
-    shared_ids = metadata_column.get_ids()
-    for table in tables.values():
-        shared_ids.intersection_update(table.view(pd.DataFrame).index)
-    if not shared_ids:
-        raise ValueError("The feature tables and metadata column have no shared IDs.")
-    shared_ids = [str(sample_id) for sample_id in shared_ids]
-    metadata_column = metadata_column.filter_ids(shared_ids)
-    aligned_metadata = Metadata(metadata_column.to_dataframe())
-    sample_ids = aligned_metadata.to_dataframe().index.tolist()
+    shared = next(iter(blocks.values())).index
+    for table in list(blocks.values())[1:]:
+        shared = shared.intersection(table.index)
+    if shared.empty:
+        raise ValueError("The input feature tables and response share no sample IDs.")
 
-    aligned_tables = {}
-    for name, table in tables.items():
-        (filtered_table,) = filter_ids(
-            table=table,
-            axis="sample",
-            ids=shared_ids,
-        )
-        aligned_tables[name] = ctx.make_artifact(
-            FeatureTable[Unconstrained],
-            filtered_table.view(pd.DataFrame).loc[sample_ids],
-        )
-    return (
-        ResultCollection(aligned_tables),
-        ctx.make_artifact(ImmutableMetadata, aligned_metadata),
-    )
+    aligned = {}
+    for name, table in blocks.items():
+        dropped = table.index.difference(shared)
+        if not dropped.empty:
+            warnings.warn(
+                f"Dropping samples from block '{name}' that are not shared "
+                f"across all blocks:\n"
+                f"{', '.join(map(str, dropped))}",
+                RachisWarning,
+                stacklevel=2,
+            )
+        aligned[str(name)] = table.loc[shared].copy()
+    target = aligned.pop("y").iloc[:, 0]
+    return aligned, target
 
 
 def _resolve_design(
-    design_matrix, design_weight: float | None, block_names: list[str]
+    design_matrix: pd.DataFrame | None,
+    design_weight: float | None,
+    block_names: list[str],
 ) -> pd.DataFrame | float:
-    """Validates explicit design metadata or passes through a scalar design.
-
-    Args:
-        design_matrix: Optional Metadata-encoded matrix.
-        design_weight (float | None): Scalar design weight for mixOmics.
-        block_names (list[str]): Input-table collection keys.
-
-    Returns:
-        pd.DataFrame | float: Validated matrix or scalar weight for mixOmics.
-
-    Raises:
-        ValueError: If neither or both design representations are supplied, or
-            explicit metadata is not a valid block design matrix.
-    """
     if (design_matrix is None) == (design_weight is None):
         raise ValueError("Provide exactly one of 'design-matrix' or 'design-weight'.")
     if design_weight is not None:
         return design_weight
 
-    matrix = design_matrix.to_dataframe().copy()
     expected = set(block_names)
-    if set(matrix.index) != expected or set(matrix.columns) != expected:
+    if set(design_matrix.index) != expected or set(design_matrix.columns) != expected:
         raise ValueError(
             "The row and column names in 'design-matrix' must exactly match "
-            "feature-table collection names."
+            "the input feature-table collection names."
         )
-    matrix = matrix.loc[block_names, block_names]
-    try:
-        matrix = matrix.astype(float)
-    except (TypeError, ValueError) as error:
-        raise ValueError("Values in 'design-matrix' must be numeric.") from error
-    if not np.allclose(matrix.to_numpy(), matrix.to_numpy().T):
-        raise ValueError("'design-matrix' must be symmetrical.")
-    if not np.allclose(np.diag(matrix.to_numpy()), 0):
-        raise ValueError("The diagonal of 'design-matrix' must contain only zeroes.")
-    return matrix
+    # reorder the matrix by block order
+    design_matrix = design_matrix.loc[block_names, block_names]
+    return design_matrix
 
 
-def _build_bpparam(threads: int, seed: int):
+def _build_bpparam(threads: int):
     """
     Creates a BiocParallel backend.
 
@@ -132,66 +109,67 @@ def _build_bpparam(threads: int, seed: int):
     thread count of zero leaves worker selection to BiocParallel.
 
     Args:
-        threads (int): Requested workers, or 0 for BiocParallel's default.
-        seed (int): Reproducible BiocParallel random-number seed.
-
+        threads (int): Requested worker count, where zero selects the
+            BiocParallel default.
     Returns:
-        object: R SerialParam, SnowParam, or MulticoreParam backend.
+        rpy2.robjects.RObject: Configured BiocParallel parameter object.
     """
-    r("suppressPackageStartupMessages(library(BiocParallel))")
     if threads == 1:
-        return r["SerialParam"](**{"RNGseed": seed})
-    kwargs = {"RNGseed": seed}
+        return biocparallel.SerialParam()
     if threads > 1:
-        kwargs["workers"] = threads
-    return r["MulticoreParam"](**kwargs)
+        return biocparallel.MulticoreParam(workers=threads)
+    return biocparallel.MulticoreParam()
 
 
 def _to_r_inputs(
-    blocks,
-    target,
-    design,
+    blocks: dict[str, pd.DataFrame],
+    target: pd.Series,
+    design: pd.DataFrame | float,
     keep_x: dict[str, list[int]] | None = None,
     already_tested_x: dict[str, list[int]] | None = None,
-):
-    """Converts aligned pandas inputs to named R objects with preserved labels.
+) -> tuple[
+    ListVector, FactorVector, RDataFrame | float, ListVector | None, ListVector | None
+]:
+    """
+    Converts aligned Python inputs to labelled R objects.
+
+    Converts each block and an explicit design matrix through the pandas R
+    converter, and creates a named R factor for the categorical response.
 
     Args:
-        blocks: Named pandas input tables.
-        target: Aligned categorical target series.
-        design: Validated pandas design matrix.
-        keep_x: Optional parsed keepX candidate grids by block.
-        already_tested_x: Optional parsed selected keepX counts for
-            previously tuned components, by block.
+        blocks (dict[str, pd.DataFrame]): Aligned named feature tables.
+        target (pd.Series): Aligned categorical response values.
+        design (pd.DataFrame | float): Explicit design matrix or scalar design
+            weight.
+        keep_x (dict, optional): Candidate keepX counts by block.
+        already_tested_x (dict, optional): Selected keepX counts for prior
+            components.
 
     Returns:
-        tuple: Named R block list, factor target, design matrix, and optional
-            named R keepX and already-tested keepX lists.
+        tuple[rpy2.robjects.ListVector, rpy2.robjects.vectors.FactorVector,
+        rpy2.robjects.RObject, ListVector | None, ListVector | None]: Named R
+        blocks, response factor, design, and optional keepX and prior selections.
     """
     with localconverter(default_converter + pandas2ri.converter):
+        converter = conversion.get_conversion()
         r_blocks = ListVector(
-            {
-                name: conversion.get_conversion().py2rpy(table)
-                for name, table in blocks.items()
-            }
+            {name: converter.py2rpy(table) for name, table in blocks.items()}
         )
-        r_design = conversion.get_conversion().py2rpy(design)
-    r_target = r["factor"](StrVector(target.astype(str).tolist()))
-    r_target.names = StrVector(target.index.astype(str).tolist())
+        r_design = converter.py2rpy(design)
+        r_target = converter.py2rpy(target)
+    r_target = base.factor(r_target)
     r_keep_x, r_already_tested_x = (
         (
-            ListVector(
-                {name: IntVector(values) for name, values in candidate_grid.items()}
-            )
-            if candidate_grid is not None
+            ListVector({name: IntVector(values) for name, values in counts.items()})
+            if counts is not None
             else None
         )
-        for candidate_grid in (keep_x, already_tested_x)
+        for counts in (keep_x, already_tested_x)
     )
     return r_blocks, r_target, r_design, r_keep_x, r_already_tested_x
 
 
-def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.DataFrame:
+def _r_perf_error_rate_to_df(perf_result: ListVector, vote: str) -> pd.DataFrame:
     """
     Converts mixOmics vote error-rate means and standard deviations to rows.
 
@@ -207,41 +185,40 @@ def _r_vote_error_rate_to_dataframe(perf_result: ListVector, vote: str) -> pd.Da
 
     Returns:
         pd.DataFrame: Error-rate records for the requested vote.
-
-    Raises:
-        ValueError: If mixOmics did not provide either the mean or standard
-            deviation error-rate matrix for the requested vote.
     """
-    columns = ["distance", "class", "component", "mean", "sd"]
-    records = {}
-    for statistic, error_rates in (
-        ("mean", perf_result.rx2(f"{vote}.error.rate")),
-        ("sd", perf_result.rx2(f"{vote}.error.rate.sd")),
-    ):
-        if type(error_rates).__name__ == "NULLType":
-            raise ValueError(
-                f"mixOmics did not provide {statistic} error rates for {vote}."
-            )
-        for distance, rates in zip(error_rates.names, error_rates):
-            values = np.asarray(rates, dtype=float)
-            class_names = [str(name) for name in r["rownames"](rates)]
-            for class_name, class_values in zip(class_names, values):
-                for component, value in enumerate(class_values, start=1):
-                    key = (str(distance), class_name, component)
-                    record = records.setdefault(
-                        key,
-                        {"distance": key[0], "class": key[1], "component": key[2]},
-                    )
-                    record[statistic] = value
+    mean_error_rates = perf_result.rx2(f"{vote}.error.rate")
+    sd_error_rates = perf_result.rx2(f"{vote}.error.rate.sd")
+    tables = []
 
-    error_rates = pd.DataFrame(records.values(), columns=columns)
+    for distance, mean_rates, sd_rates in zip(
+        mean_error_rates.names, mean_error_rates, sd_error_rates
+    ):
+        means = np.asarray(mean_rates, dtype=float)
+        standard_deviations = np.asarray(sd_rates, dtype=float)
+        class_names = [str(name) for name in base.rownames(mean_rates)]
+        component_count = means.shape[1]
+        tables.append(
+            pd.DataFrame(
+                {
+                    "distance": str(distance),
+                    "class": np.repeat(class_names, component_count),
+                    "component": np.tile(
+                        np.arange(1, component_count + 1), len(class_names)
+                    ),
+                    "mean": means.ravel(),
+                    "sd": standard_deviations.ravel(),
+                }
+            )
+        )
+
+    error_rates = pd.concat(tables, ignore_index=True)
     error_rates["component"] = error_rates["component"].astype("Int64")
     return error_rates
 
 
 def _resolve_ncomp(
     ncomp: CaptureHolder[int],
-    tuned_ncomp: PLSTuneComponentsDirFmt | None,
+    tuned_ncomp: PLSComponentSelectionDirFmt | None,
     weighted: bool,
     measure: str,
     distance: str,
@@ -257,7 +234,7 @@ def _resolve_ncomp(
     Args:
         ncomp (CaptureHolder[int] | int | None): Manually supplied component
             count or capture holder for the resolved value.
-        tuned_ncomp (PLSTuneComponentsDirFmt | None): Component-tuning artifact
+        tuned_ncomp (PLSComponentSelectionDirFmt | None): Component-tuning artifact
             used when no manual component count is supplied.
         weighted (bool): Whether to use the weighted rather than majority vote.
         measure (str): Requested prediction-error measure.
@@ -281,7 +258,7 @@ def _resolve_ncomp(
 
 
 def _ncomp_from_tuned_ncomp(
-    tuned_ncomp: PLSTuneComponentsDirFmt,
+    tuned_ncomp: PLSComponentSelectionDirFmt,
     weighted: bool,
     measure: str,
     distance: str,
@@ -293,7 +270,7 @@ def _ncomp_from_tuned_ncomp(
     component-tuning artifact.
 
     Args:
-        tuned_ncomp (PLSTuneComponentsDirFmt): Component-tuning artifact
+        tuned_ncomp (PLSComponentSelectionDirFmt): Component-tuning artifact
             containing the selected component counts.
         weighted (bool): Whether to use the weighted rather than majority vote.
         measure (str): Requested prediction-error measure.

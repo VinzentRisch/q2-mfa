@@ -14,15 +14,24 @@ from rachis import Artifact, CategoricalMetadataColumn, Metadata, Visualization
 from rachis.plugin import CaptureHolder
 from rachis.plugin.context import IContext
 from rpy2.robjects import ListVector, r
+from rpy2.robjects.packages import importr
 
-from q2_mfa.pls.jsonl_descriptions import feature_selection_descriptions
-from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
+from q2_mfa.pls.descriptions import feature_selection_descriptions
+from q2_mfa.pls.types._format import (
+    PLSComponentSelectionDirFmt,
+    PLSFeatureSelectionDirFmt,
+)
 from q2_mfa.pls.utils import (
+    _align_samples,
     _build_bpparam,
     _resolve_design,
     _resolve_ncomp,
     _to_r_inputs,
 )
+
+base = importr("base")
+mixomics = importr("mixOmics")
+_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _feature_selection_block_splsda(
@@ -30,9 +39,9 @@ def _feature_selection_block_splsda(
     y: CategoricalMetadataColumn,
     keepx: dict,
     already_tested_x: dict | None = None,
-    design_matrix: Metadata = None,
+    design_matrix: pd.DataFrame = None,
     design_weight: float | None = None,
-    tuned_ncomp: PLSTuneComponentsDirFmt = None,
+    tuned_ncomp: PLSComponentSelectionDirFmt = None,
     ncomp: CaptureHolder[int] = None,
     scale: bool = True,
     tol: float = 1e-6,
@@ -51,8 +60,8 @@ def _feature_selection_block_splsda(
     """
     Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
-    Assumes the input blocks and categorical response have already been sample
-    aligned, determines the component count from either ``ncomp`` or a
+    Aligns the input blocks and categorical response, determines the component
+    count from either ``ncomp`` or a
     component-tuning artifact, evaluates the supplied manual keepX candidate
     grid, and serializes error rates and the selected sparse-feature counts.
 
@@ -66,11 +75,10 @@ def _feature_selection_block_splsda(
         already_tested_x (dict, optional): Named comma-separated selected
             keepX counts for earlier components. Each block must provide the
             same number of prior component selections.
-        design_matrix (Metadata, optional): Explicit block-relationship design
-            matrix.
+        design_matrix (pd.DataFrame, optional): Explicit association matrix.
         design_weight (float, optional): Shared off-diagonal relationship
             weight used when no design matrix is supplied.
-        tuned_ncomp (PLSTuneComponentsDirFmt, optional): Component-tuning
+        tuned_ncomp (PLSComponentSelectionDirFmt, optional): Component-tuning
             artifact used when ``ncomp`` is not provided.
         ncomp (CaptureHolder[int], optional): Manual number of components to
             tune.
@@ -95,21 +103,16 @@ def _feature_selection_block_splsda(
         PLSFeatureSelectionDirFmt: Serialized keepX error rates and selected
             feature counts.
     """
-    r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks = tables.collection
-    target = y.to_series()
+    blocks, target = _align_samples(tables, y.to_series())
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
-    bpparam = _build_bpparam(threads, resolved_seed)
+    bpparam = _build_bpparam(threads)
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
 
-    keepx_collection = dict(getattr(keepx, "collection", keepx))
-    parsed_keepx = _parse_keepx_collection(
-        keepx_collection, list(blocks), selected_ncomp
-    )
+    parsed_keepx = _parse_keepx_collection(keepx, list(blocks), selected_ncomp)
     if already_tested_x is not None:
         already_tested_x = _parse_keepx_collection(
-            dict(getattr(already_tested_x, "collection", already_tested_x)),
+            already_tested_x,
             list(blocks),
             selected_ncomp,
             already_tested=True,
@@ -139,9 +142,9 @@ def _feature_selection_block_splsda(
     }
     if r_already_tested_x is not None:
         tune_parameters["already.tested.X"] = r_already_tested_x
-    tune_result = r(
-        "function(...) suppressWarnings(suppressMessages(tune.block.splsda(...)))"
-    )(r_blocks, r_target, **tune_parameters)
+    tune_result = _call_without_messages(
+        mixomics.tune_block_splsda, r_blocks, r_target, **tune_parameters
+    )
     error_rates = _r_feature_selection_error_rate_to_dataframe(
         tune_result, tuple(blocks)
     )
@@ -158,7 +161,7 @@ def feature_selection_block_splsda(
     y: CategoricalMetadataColumn,
     keepx: dict,
     already_tested_x: dict = None,
-    design_matrix: Metadata = None,
+    design_matrix: Artifact = None,
     design_weight: float = None,
     tuned_ncomp: Artifact = None,
     ncomp: CaptureHolder[int] = None,
@@ -194,8 +197,7 @@ def feature_selection_block_splsda(
             input block.
         already_tested_x (dict, optional): Named comma-separated selected
             keepX counts for earlier components.
-        design_matrix (Metadata, optional): Explicit block-relationship design
-            matrix.
+        design_matrix (Artifact, optional): AssociationMatrix artifact.
         design_weight (float, optional): Shared off-diagonal relationship
             weight used when no design matrix is supplied.
         tuned_ncomp (Artifact, optional): Component-tuning artifact used when
@@ -224,17 +226,12 @@ def feature_selection_block_splsda(
             diagnostic visualization.
     """
     select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
-    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
     visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
 
-    aligned_tables, aligned_metadata = align_samples(
-        tables=tables,
-        metadata_column=y,
-    )
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
     (feature_selection,) = select_features(
-        tables=aligned_tables,
-        y=aligned_metadata.view(Metadata).get_column(y.name),
+        tables=tables,
+        y=y,
         keepx=keepx,
         already_tested_x=already_tested_x,
         design_matrix=design_matrix,
@@ -259,8 +256,8 @@ def feature_selection_block_splsda(
         .selected_features.view(pd.DataFrame)
         .drop(columns="id")
     )
-    print("Tuned keepX values:\n", flush=True)
-    print(selected_features, flush=True)
+    print("\nTuned keepX values:\n", flush=True)
+    print(selected_features, end="\n\n", flush=True)
     (visualization,) = visualise(feature_selection=feature_selection)
     return feature_selection, visualization
 
@@ -448,8 +445,8 @@ def _r_feature_selection_error_rate_to_dataframe(
         ("sd", tune_result.rx2("error.rate.sd")),
     ):
         values = np.asarray(error_rates, dtype=float)
-        keepx_values = [str(value) for value in r["dimnames"](error_rates)[0]]
-        component_names = [str(value) for value in r["dimnames"](error_rates)[1]]
+        keepx_values = [str(value) for value in base.dimnames(error_rates)[0]]
+        component_names = [str(value) for value in base.dimnames(error_rates)[1]]
         component_numbers = [int(name.removeprefix("comp")) for name in component_names]
         statistic_table = (
             pd.DataFrame(

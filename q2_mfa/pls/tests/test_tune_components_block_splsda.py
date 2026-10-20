@@ -11,21 +11,23 @@ from unittest.mock import MagicMock, call, patch
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
-from q2_types.metadata import ImmutableMetadata
 from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
-from rpy2.robjects import r
+from rpy2.robjects import IntVector, ListVector, StrVector
+from rpy2.robjects.packages import importr
 
-from q2_mfa.pls import PLSTuneComponentsDirFmt
-from q2_mfa.pls.jsonl_descriptions import tune_components_descriptions
+from q2_mfa.pls import AssociationMatrix, PLSComponentSelectionDirFmt
+from q2_mfa.pls.descriptions import jsonl_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
     _error_rate_metadata,
     _print_component_choice,
-    _r_choice_matrix_to_dataframe,
+    _r_choice_matrix_to_df,
     _serialize_tune_components,
     _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
+
+base = importr("base")
 
 
 class TestTuneComponentsBlockSPLSDA(TestPluginBase):
@@ -67,11 +69,19 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
 
     def test_tune_components_pipeline_matches_expected_values(self):
         tune_components = self.plugin.pipelines["tune_components_block_splsda"]
+        design_matrix = Artifact.import_data(
+            AssociationMatrix,
+            pd.DataFrame(
+                [[0.0, 0.1], [0.1, 0.0]],
+                index=pd.Index(["block-b", "block-a"], name="id"),
+                columns=["block-b", "block-a"],
+            ),
+        )
 
         results = tune_components(
             tables=self.tables,
             y=self.response,
-            design_weight=0.1,
+            design_matrix=design_matrix,
             ncomp=2,
             validation="Mfold",
             folds=3,
@@ -81,7 +91,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         )
 
         tuning = results.tune_components
-        tuning_data = tuning.view(PLSTuneComponentsDirFmt)
+        tuning_data = tuning.view(PLSComponentSelectionDirFmt)
         actual_tables = (
             (
                 tuning_data.error_rate_weighted.view(Metadata).to_dataframe(),
@@ -127,16 +137,11 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
 
     def test_tune_components_pipeline_calls_its_actions(self):
         tuning = MagicMock()
-        aligned_metadata = Artifact.import_data(
-            ImmutableMetadata, Metadata(self.response.to_dataframe())
-        )
-        align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
         tune_components = MagicMock(return_value=(tuning,))
         visualisation = MagicMock(return_value=(MagicMock(),))
         mock_context = MagicMock()
         mock_context.get_action.side_effect = [
             tune_components,
-            align_samples,
             visualisation,
         ]
 
@@ -151,17 +156,12 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             mock_context.get_action.call_args_list,
             [
                 call("mfa", "_tune_components_block_splsda"),
-                call("mfa", "_align_samples_metadata"),
                 call("mfa", "_tune_components_block_visualisation"),
             ],
         )
-        align_samples.assert_called_once_with(
-            tables=self.tables,
-            metadata_column=self.response,
-        )
         tune_components.assert_called_once_with(
             tables=self.tables,
-            y=aligned_metadata.view(Metadata).get_column("group"),
+            y=self.response,
             design_matrix=None,
             design_weight=0.1,
             ncomp=2,
@@ -241,18 +241,18 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         self.assertEqual(
             actual.index.tolist(),
             [
-                "row5",
-                "row6",
-                "row7",
-                "row8",
-                "row13",
-                "row14",
-                "row15",
-                "row16",
-                "row21",
-                "row22",
-                "row23",
-                "row24",
+                "_5",
+                "_6",
+                "_7",
+                "_8",
+                "_13",
+                "_14",
+                "_15",
+                "_16",
+                "_21",
+                "_22",
+                "_23",
+                "_24",
             ],
         )
         self.assertEqual(
@@ -273,31 +273,26 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             ],
         )
 
-    def test_r_choice_matrix_to_dataframe_converts_r_matrix_labels_and_values(self):
-        perf_result = r(
-            "list(choice.ncomp = list(WeightedVote = structure("
-            "c(2, 1, 4, 3), dim = c(2L, 2L), "
-            "dimnames = list(c('Overall.ER', 'Overall.BER'), "
-            "c('max.dist', 'centroids.dist')))))"
+    def test_r_choice_matrix_to_df_converts_r_matrix_labels_and_values(self):
+        choice_matrix = base.matrix(
+            IntVector([2, 1, 4, 3]),
+            nrow=2,
+            dimnames=base.list(
+                StrVector(["Overall.ER", "Overall.BER"]),
+                StrVector(["max.dist", "centroids.dist"]),
+            ),
+        )
+        perf_result = ListVector(
+            {"choice.ncomp": ListVector({"WeightedVote": choice_matrix})}
         )
 
-        actual = _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
+        actual = _r_choice_matrix_to_df(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
             {"max.dist": [2, 1], "centroids.dist": [4, 3]},
             index=pd.Index(["Overall.ER", "Overall.BER"], name="id"),
         ).astype("Int64")
         assert_frame_equal(actual, expected)
-
-    def test_r_choice_matrix_to_dataframe_rejects_r_null(self):
-        perf_result = r("list(choice.ncomp = list(WeightedVote = NULL))")
-
-        with self.assertRaisesRegex(
-            ValueError,
-            "^mixOmics did not provide a component-choice matrix for "
-            "WeightedVote\\.$",
-        ):
-            _r_choice_matrix_to_dataframe(perf_result, "WeightedVote")
 
     @patch("builtins.print")
     def test_print_component_choice_prints_labelled_table(self, mock_print):
@@ -328,22 +323,22 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
             (
                 directory_format.error_rate_weighted,
                 self.expected_weighted_error_rates.reset_index(),
-                tune_components_descriptions["error_rate_weighted"],
+                jsonl_descriptions["error_rate_weighted"],
             ),
             (
                 directory_format.error_rate_majority,
                 self.expected_majority_error_rates.reset_index(),
-                tune_components_descriptions["error_rate_majority"],
+                jsonl_descriptions["error_rate_majority"],
             ),
             (
                 directory_format.choice_matrix_weighted,
                 self.expected_weighted_choices.reset_index(),
-                tune_components_descriptions["choice_matrix_weighted"],
+                jsonl_descriptions["choice_matrix_weighted"],
             ),
             (
                 directory_format.choice_matrix_majority,
                 self.expected_majority_choices.reset_index(),
-                tune_components_descriptions["choice_matrix_majority"],
+                jsonl_descriptions["choice_matrix_majority"],
             ),
         )
 

@@ -12,14 +12,15 @@ from unittest.mock import MagicMock, call, patch
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
-from q2_types.metadata import ImmutableMetadata
 from q2_types.tabular import TableJSONLFileFormat
 from q2templates.reports import matryoshka_template
 from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
-from rpy2.robjects import r
+from rpy2.robjects import conversion, default_converter, pandas2ri, r
+from rpy2.robjects.conversion import localconverter
 
-from q2_mfa.pls import PLSFeatureSelectionDirFmt
+from q2_mfa.pls import AssociationMatrix, PLSFeatureSelectionDirFmt
+from q2_mfa.pls.descriptions import feature_selection_descriptions
 from q2_mfa.pls.feature_selection_block_splsda import (
     _feature_selection_block_splsda_visualiser,
     _parse_keepx_collection,
@@ -28,7 +29,6 @@ from q2_mfa.pls.feature_selection_block_splsda import (
     _serialize_feature_selection,
     feature_selection_block_splsda,
 )
-from q2_mfa.pls.jsonl_descriptions import feature_selection_descriptions
 
 
 class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
@@ -56,6 +56,14 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             }
         )
         cls.response = Metadata(read_table("response.tsv")).get_column("group")
+        cls.design_matrix = Artifact.import_data(
+            AssociationMatrix,
+            pd.read_csv(
+                instance.get_data_path("utils/design-valid.tsv"),
+                sep="\t",
+                index_col="id",
+            ),
+        )
         cls.expected_error_rates = pd.read_csv(
             instance.get_data_path("feature-selection/pipeline-error-rates.tsv"),
             sep="\t",
@@ -135,8 +143,10 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 already_tested=True,
             )
 
-    @patch("q2_mfa.pls.feature_selection_block_splsda.r")
-    def test_private_feature_selection_calls_mixomics_and_serializes(self, mock_r):
+    @patch("q2_mfa.pls.feature_selection_block_splsda._call_without_messages")
+    def test_private_feature_selection_calls_mixomics_and_serializes(
+        self, call_without_messages
+    ):
         """Passes converted inputs to mixOmics and serializes its result."""
         tune_result = r(
             "list("
@@ -146,9 +156,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             "nrow = 4, dimnames = list(c('1_1', '2_1', '1_2', '2_2'), "
             "'comp1'))), choice.keepX = list(`block-a` = 1, `block-b` = 2))"
         )
-        tune = MagicMock(return_value=tune_result)
-        mock_r.side_effect = [None, tune]
-        mock_r.__getitem__.side_effect = r.__getitem__
+        call_without_messages.return_value = tune_result
         select_features = self.plugin.methods["_feature_selection_block_splsda"]
 
         (observed,) = select_features(
@@ -161,23 +169,25 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             threads=1,
         )
 
-        self.assertEqual(
-            mock_r.call_args_list,
-            [
-                call("suppressPackageStartupMessages(library(mixOmics))"),
-                call(
-                    "function(...) suppressWarnings(suppressMessages("
-                    "tune.block.splsda(...)))"
-                ),
-            ],
-        )
-        r_blocks, r_target = tune.call_args.args
+        from q2_mfa.pls.feature_selection_block_splsda import mixomics
+
+        call_without_messages.assert_called_once()
+        tune_function, r_blocks, r_target = call_without_messages.call_args.args
+        self.assertIs(tune_function, mixomics.tune_block_splsda)
         self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
         self.assertEqual(
             list(r_target.names),
             self.response.to_series().index.astype(str).tolist(),
         )
-        tune_parameters = tune.call_args.kwargs
+        from q2_mfa.pls.feature_selection_block_splsda import base
+
+        with localconverter(default_converter + pandas2ri.converter):
+            for name, table in self.tables.items():
+                converted = conversion.get_conversion().rpy2py(
+                    base.as_data_frame(r_blocks.rx2(name))
+                )
+                assert_frame_equal(converted, table.view(pd.DataFrame))
+        tune_parameters = call_without_messages.call_args.kwargs
         self.assertEqual(tune_parameters["ncomp"], 1)
         self.assertEqual(tune_parameters["seed"], 1)
         self.assertEqual(
@@ -239,12 +249,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
     def test_feature_selection_pipeline_calls_its_actions(
         self, resolve_ncomp, mock_print
     ):
-        """Aligns inputs, prints keepX values, and creates a visualization."""
+        """Forwards inputs, prints keepX values, and creates a visualization."""
         resolve_ncomp.return_value = 3
-        aligned_metadata = Artifact.import_data(
-            ImmutableMetadata, Metadata(self.response.to_dataframe())
-        )
-        align_samples = MagicMock(return_value=(self.tables, aligned_metadata))
         feature_selection = MagicMock()
         selected_features = pd.DataFrame(
             {
@@ -268,7 +274,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         visualization = MagicMock()
         visualise = MagicMock(return_value=(visualization,))
         context = MagicMock()
-        context.get_action.side_effect = [select_features, align_samples, visualise]
+        context.get_action.side_effect = [select_features, visualise]
         tuned_ncomp = MagicMock()
 
         observed = feature_selection_block_splsda(
@@ -278,19 +284,15 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             keepx={"block-a": "1,2", "block-b": "1,2"},
             design_weight=0.1,
             tuned_ncomp=tuned_ncomp,
+            design_matrix=self.design_matrix,
         )
 
         self.assertEqual(
             context.get_action.call_args_list,
             [
                 call("mfa", "_feature_selection_block_splsda"),
-                call("mfa", "_align_samples_metadata"),
                 call("mfa", "_feature_selection_block_splsda_visualiser"),
             ],
-        )
-        align_samples.assert_called_once_with(
-            tables=self.tables,
-            metadata_column=self.response,
         )
         resolve_ncomp.assert_called_once_with(
             None, tuned_ncomp, True, "BER", "max.dist"
@@ -300,15 +302,19 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         self.assertEqual(selection_args["y"].name, "group")
         self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})
         self.assertEqual(selection_args["ncomp"], 3)
+        self.assertIs(selection_args["design_matrix"], self.design_matrix)
+        self.assertIs(selection_args["y"], self.response)
         feature_selection.view.assert_called_once_with(PLSFeatureSelectionDirFmt)
         self.assertEqual(len(mock_print.call_args_list), 2)
         self.assertEqual(
-            mock_print.call_args_list[0], call("Tuned keepX values:\n", flush=True)
+            mock_print.call_args_list[0], call("\nTuned keepX values:\n", flush=True)
         )
         assert_frame_equal(
             mock_print.call_args_list[1].args[0], expected_printed_features
         )
-        self.assertEqual(mock_print.call_args_list[1].kwargs, {"flush": True})
+        self.assertEqual(
+            mock_print.call_args_list[1].kwargs, {"end": "\n\n", "flush": True}
+        )
         visualise.assert_called_once_with(feature_selection=feature_selection)
         self.assertEqual(observed, (feature_selection, visualization))
 
@@ -519,3 +525,64 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             assert_frame_equal(
                 serialized.view(pd.DataFrame), expected, check_dtype=False
             )
+
+    def test_feature_selection_preserves_prior_keepx_with_association_matrix(self):
+        """Runs real R tuning with an association matrix and prior selections."""
+        (selection,) = self.plugin.methods["_feature_selection_block_splsda"](
+            tables=self.tables,
+            y=self.response,
+            design_matrix=self.design_matrix,
+            ncomp=2,
+            keepx={"block-a": "1,2", "block-b": "1,2"},
+            already_tested_x={"block-a": "1", "block-b": "2"},
+            folds=3,
+            nrepeat=3,
+            seed=1,
+            threads=1,
+        )
+        selected = (
+            selection.view(PLSFeatureSelectionDirFmt)
+            .selected_features.view(Metadata)
+            .to_dataframe()
+            .set_index("component")
+        )
+        self.assertEqual(selected.index.tolist(), [1, 2])
+        self.assertEqual(selected.loc[1].tolist(), [1, 2])
+        for count in selected.loc[2]:
+            self.assertIn(count, [1, 2])
+
+    def test_tuning_wrappers_suppress_messages_and_preserve_warnings(self):
+        """Verifies both R wrappers hide messages without swallowing warnings."""
+        from rpy2.rinterface_lib import callbacks
+
+        from q2_mfa.pls.feature_selection_block_splsda import (
+            _call_without_messages as feature_call,
+        )
+        from q2_mfa.pls.tune_components_block_splsda import (
+            _call_without_messages as component_call,
+        )
+
+        observe_warning = r("""
+            function(call) {
+                seen <- FALSE
+                value <- withCallingHandlers(
+                    call(function() {
+                        message("hidden tuning message")
+                        warning("visible tuning warning")
+                        7
+                    }),
+                    warning = function(w) {
+                        seen <<- conditionMessage(w) == "visible tuning warning"
+                        invokeRestart("muffleWarning")
+                    }
+                )
+                list(value = value, warned = seen)
+            }
+        """)
+        for wrapper in (feature_call, component_call):
+            with self.subTest(wrapper=wrapper):
+                with patch.object(callbacks, "consolewrite_warnerror") as console:
+                    observed = observe_warning(wrapper)
+                console.assert_not_called()
+                self.assertEqual(list(observed.rx2("value")), [7])
+                self.assertEqual(list(observed.rx2("warned")), [True])

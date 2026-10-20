@@ -61,47 +61,9 @@ def _feature_selection_block_splsda(
     Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
 
     Aligns the input blocks and categorical response, determines the component
-    count from either ``ncomp`` or a
-    component-tuning artifact, evaluates the supplied manual keepX candidate
-    grid, and serializes error rates and the selected sparse-feature counts.
-
-    Args:
-        tables (ResultCollection): Named feature-table artifacts used as
-            blocks for block sPLS-DA (DIABLO).
-        y (CategoricalMetadataColumn): Categorical response labels for the
-            samples.
-        keepx (dict): Named comma-separated keepX candidate counts for each
-            input block.
-        already_tested_x (dict, optional): Named comma-separated selected
-            keepX counts for earlier components. Each block must provide the
-            same number of prior component selections.
-        design_matrix (pd.DataFrame, optional): Explicit association matrix.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight used when no design matrix is supplied.
-        tuned_ncomp (PLSComponentSelectionDirFmt, optional): Component-tuning
-            artifact used when ``ncomp`` is not provided.
-        ncomp (CaptureHolder[int], optional): Manual number of components to
-            tune.
-        scale (bool): Whether to standardize features within every block.
-        tol (float): Convergence tolerance for the iterative model fit.
-        max_iter (int): Maximum iterations for each model fit.
-        near_zero_var (bool): Whether to remove zero or near-zero variance
-            predictors before fitting.
-        validation (str): Cross-validation strategy accepted by mixOmics.
-        folds (int): Number of folds used for M-fold cross-validation.
-        nrepeat (int): Number of cross-validation repetitions.
-        signif_threshold (float): Minimum error-rate improvement required to
-            retain an additional component.
-        distance (str): Prediction distance used for classification.
-        measure (str): Classification error measure used to select keepX.
-        weighted (bool): Whether to use weighted rather than majority voting.
-        seed (CaptureHolder[int], optional): Random seed holder used for
-            reproducible cross-validation.
-        threads (int): Number of BiocParallel workers to use.
-
-    Returns:
-        PLSFeatureSelectionDirFmt: Serialized keepX error rates and selected
-            feature counts.
+    count from either ``ncomp`` or a component-tuning artifact, evaluates the
+    supplied manual keepX candidate grid, and serializes error rates and the
+    selected sparse-feature counts.
     """
     blocks, target = _align_samples(tables, y.to_series())
     design = _resolve_design(design_matrix, design_weight, list(blocks))
@@ -186,44 +148,6 @@ def feature_selection_block_splsda(
     number of components from either a manual value or a component-tuning
     artifact, runs the private feature-selection action, and delegates report
     generation to the private feature-selection visualization pipeline.
-
-    Args:
-        ctx (Context): Pipeline execution context used to retrieve actions.
-        tables (ResultCollection): Named feature-table artifacts used as
-            blocks for block sPLS-DA (DIABLO).
-        y (CategoricalMetadataColumn): Categorical response labels for the
-            samples.
-        keepx (dict): Named comma-separated keepX candidate counts for each
-            input block.
-        already_tested_x (dict, optional): Named comma-separated selected
-            keepX counts for earlier components.
-        design_matrix (Artifact, optional): AssociationMatrix artifact.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight used when no design matrix is supplied.
-        tuned_ncomp (Artifact, optional): Component-tuning artifact used when
-            ``ncomp`` is not provided.
-        ncomp (CaptureHolder[int], optional): Manual number of components to
-            tune or holder for the value resolved from ``tuned_ncomp``.
-        scale (bool): Whether to standardize features within every block.
-        tol (float): Convergence tolerance for the iterative model fit.
-        max_iter (int): Maximum iterations for each model fit.
-        near_zero_var (bool): Whether to remove zero or near-zero variance
-            predictors before fitting.
-        validation (str): Cross-validation strategy accepted by mixOmics.
-        folds (int): Number of folds used for M-fold cross-validation.
-        nrepeat (int): Number of cross-validation repetitions.
-        signif_threshold (float): Minimum error-rate improvement required to
-            retain an additional component.
-        distance (str): Prediction distance used for classification.
-        measure (str): Classification error measure used to select keepX.
-        weighted (bool): Whether to use weighted rather than majority voting.
-        seed (int, optional): Random seed used for reproducible
-            cross-validation.
-        threads (int): Number of BiocParallel workers to use.
-
-    Returns:
-        tuple[Artifact, Visualization]: The feature-selection artifact and its
-            diagnostic visualization.
     """
     select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
     visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
@@ -271,16 +195,6 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
     additionally creates one heatmap per component using the two blocks'
     keepX values as axes and mean error rate as the gradient, then combines the
     plots and tables into a nested report.
-
-    Args:
-        ctx (Context): Pipeline execution context used to retrieve actions and
-            create reports.
-        feature_selection (Artifact): Block sPLS-DA (DIABLO)
-            feature-selection results.
-
-    Returns:
-        Visualization: A report containing both tables and, for exactly two
-            blocks, the component heatmaps.
     """
     tabulate = ctx.get_action("metadata", "tabulate")
     feature_selection_data = feature_selection.view(PLSFeatureSelectionDirFmt)

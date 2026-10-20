@@ -209,6 +209,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
                     y_measure="mean",
                     replicate_method="none",
                     group_by="error_rate",
+                    color_palette="category20",
                     title="sPLS-DA weighted-vote error rates",
                 ),
                 call(
@@ -217,6 +218,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
                     y_measure="mean",
                     replicate_method="none",
                     group_by="error_rate",
+                    color_palette="category20",
                     title="sPLS-DA majority-vote error rates",
                 ),
             ]

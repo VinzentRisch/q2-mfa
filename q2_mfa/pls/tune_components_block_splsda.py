@@ -192,6 +192,7 @@ def _tune_components_block_visualisation(ctx, tune_components):
         y_measure="mean",
         replicate_method="none",
         group_by="error_rate",
+        color_palette="category20",
         title="sPLS-DA weighted-vote error rates",
     )
     (majority_error_rate_plot,) = lineplot(
@@ -200,6 +201,7 @@ def _tune_components_block_visualisation(ctx, tune_components):
         y_measure="mean",
         replicate_method="none",
         group_by="error_rate",
+        color_palette="category20",
         title="sPLS-DA majority-vote error rates",
     )
     (weighted_choice_matrix,) = tabulate(

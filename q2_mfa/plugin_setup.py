@@ -69,19 +69,19 @@ plugin.methods.register_function(
     parameter_descriptions={
         "pseudocount": (
             "Value used to replace zeros before CLR. If not provided, a "
-            "pseudocount of 1 is used. This parameter is only used when "
-            "replacement_method is 'pseudocount'."
+            "`pseudocount` value of 1 is used. This parameter is only used "
+            "when `replacement-method` is `pseudocount`."
         ),
         "replacement_method": (
-            "Method used to handle zeros before CLR. 'multiplicative' replaces "
+            "Method used to handle zeros before CLR. `multiplicative` replaces "
             "zeros while rescaling the remaining values to preserve the "
-            "composition. 'pseudocount' adds the pseudocount to all values in "
-            "the table."
+            "composition. `pseudocount` adds the `pseudocount` value to all "
+            "values in the table."
         ),
         "delta": (
             "Replacement value used for multiplicative replacement. This "
-            "parameter is only used when replacement_method is "
-            "'multiplicative'."
+            "parameter is only used when `replacement-method` is "
+            "`multiplicative`."
         ),
     },
     output_descriptions={"transformed_table": "The CLR transformed table."},
@@ -123,17 +123,17 @@ ordination_parameter_descriptions = {
         "Whether to remove columns with zero variance before SVD."
     ),
     "engine": (
-        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "SVD engine used. `sklearn` uses faster randomized SVD, while `scipy` "
         "uses deterministic SciPy SVD."
     ),
     "n_iter": (
-        "Number of iterations used by the 'sklearn' randomized SVD "
-        "engine. This parameter is ignored by the 'scipy' engine."
+        "Number of iterations used by the `sklearn` randomized SVD "
+        "engine. This parameter is ignored by the `scipy` engine."
     ),
     "random_state": (
-        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "Random seed used by the `sklearn` SVD engine. Pass an int for "
         "reproducible results across multiple function calls. This "
-        "parameter is ignored by the 'scipy' engine."
+        "parameter is ignored by the `scipy` engine."
     ),
 }
 
@@ -149,11 +149,11 @@ mfa_parameter_descriptions = {
     "metadata_groups": (
         "Optional mapping from metadata group names to comma-separated metadata "
         "column strings. Pass a collection/dict such as "
-        "{'group': 'column1,column2'} to define explicit groups. If a single "
+        "`{'group': 'column1,column2'}` to define explicit groups. If a single "
         "string is provided, all metadata columns are included in a group with "
-        "that string as the group name. If sample metadata is provided without "
-        "this parameter, all metadata columns are included in a group named "
-        "'metadata'. Groups must contain only numeric or only categorical columns."
+        "that string as the group name. If `sample-metadata` is provided without "
+        "`metadata-groups`, all metadata columns are included in a group named "
+        "`metadata`. Groups must contain only numeric or only categorical columns."
     ),
     **ordination_parameter_descriptions,
 }

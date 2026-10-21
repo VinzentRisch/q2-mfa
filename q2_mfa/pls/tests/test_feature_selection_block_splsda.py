@@ -254,7 +254,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         feature_selection = MagicMock()
         selected_features = pd.DataFrame(
             {
-                "id": ["row1", "row2"],
+                "id": ["_1", "_2"],
                 "component": [1, 2],
                 "block-a": [3, 4],
                 "block-b": [5, 6],

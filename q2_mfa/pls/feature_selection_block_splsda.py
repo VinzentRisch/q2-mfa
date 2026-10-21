@@ -409,13 +409,11 @@ def _serialize_feature_selection(
     directory_format = PLSFeatureSelectionDirFmt()
     error_rate = error_rate.copy()
     selected_features = selected_features.reset_index()
-    error_rate.insert(
-        0, "id", [f"row{index}" for index in range(1, len(error_rate) + 1)]
-    )
+    error_rate.insert(0, "id", [f"_{index}" for index in range(1, len(error_rate) + 1)])
     selected_features.insert(
         0,
         "id",
-        [f"row{index}" for index in range(1, len(selected_features) + 1)],
+        [f"_{index}" for index in range(1, len(selected_features) + 1)],
     )
     error_rate.attrs["description"] = feature_selection_descriptions["error_rate"]
     selected_features.attrs["description"] = feature_selection_descriptions[

@@ -292,13 +292,13 @@ def _parse_keepx_collection(
         selection_lengths = {len(values) for values in parsed.values()}
         if len(selection_lengths) != 1:
             raise ValueError(
-                "Each 'already-tested-x' value must contain the same number of "
-                "component selections."
+                "All 'already-tested-x' lists must have the same length. "
+                "Each entry specifies how many features to retain for one component."
             )
         if ncomp <= selection_lengths.pop():
             raise ValueError(
-                "'ncomp' must be greater than the number of 'already-tested-x' "
-                "component selections."
+                "'ncomp' must be greater than the length of each 'already-tested-x' "
+                "list so that at least one component remains to tune."
             )
     return parsed
 

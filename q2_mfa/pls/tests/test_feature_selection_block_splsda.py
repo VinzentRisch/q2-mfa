@@ -119,8 +119,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         """Rejects prior selections with unequal numbers of components."""
         with self.assertRaisesRegex(
             ValueError,
-            "^Each 'already-tested-x' value must contain the same number of "
-            "component selections\\.$",
+            "^All 'already-tested-x' lists must have the same length\\. "
+            "Each entry specifies how many features to retain for one component\\.$",
         ):
             _parse_keepx_collection(
                 {"block-a": "1,2", "block-b": "3"},
@@ -133,8 +133,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         """Rejects prior selections that fill every requested component."""
         with self.assertRaisesRegex(
             ValueError,
-            "^'ncomp' must be greater than the number of 'already-tested-x' "
-            "component selections\\.$",
+            "^'ncomp' must be greater than the length of each 'already-tested-x' "
+            "list so that at least one component remains to tune\\.$",
         ):
             _parse_keepx_collection(
                 {"block-a": "1,2", "block-b": "3,4"},

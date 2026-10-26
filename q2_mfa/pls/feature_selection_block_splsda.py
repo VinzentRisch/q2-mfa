@@ -318,10 +318,8 @@ def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
     """
     selected_keepx = tune_result.rx2("choice.keepX")
     selected_features = pd.DataFrame(
-        {
-            str(block): [int(value) for value in values]
-            for block, values in zip(selected_keepx.names, selected_keepx)
-        }
+        {block: list(values) for block, values in selected_keepx.items()},
+        dtype=int,
     )
     selected_features.index = pd.Index(
         range(1, len(selected_features) + 1), dtype="Int64", name="component"
@@ -353,35 +351,21 @@ def _r_feature_selection_error_rate_to_dataframe(
             mean, and standard deviation. Each row represents one tested
             combination for one component.
     """
-    statistic_tables = {}
+    statistics = {}
     for statistic, error_rates in (
         ("mean", tune_result.rx2("error.rate")),
         ("sd", tune_result.rx2("error.rate.sd")),
     ):
-        values = np.asarray(error_rates, dtype=float)
-        keepx_values = [str(value) for value in base.dimnames(error_rates)[0]]
-        component_names = [str(value) for value in base.dimnames(error_rates)[1]]
-        component_numbers = [int(name.removeprefix("comp")) for name in component_names]
-        statistic_table = (
-            pd.DataFrame(
-                values.T,
-                index=pd.Index(component_numbers, name="component"),
-                columns=pd.Index(keepx_values, name="keepx"),
-            )
-            .reset_index()
-            .melt(id_vars="component", var_name="keepx", value_name=statistic)
-        )
-        statistic_tables[statistic] = statistic_table
-    result = statistic_tables["mean"].merge(
-        statistic_tables["sd"], on=["keepx", "component"], how="left", sort=False
-    )
+        keepx_labels, component_labels = base.dimnames(error_rates)
+        statistics[statistic] = pd.DataFrame(
+            np.asarray(error_rates, dtype=float),
+            index=pd.Index(keepx_labels, name="keepx"),
+            columns=pd.Index(component_labels, name="component"),
+        ).stack(future_stack=True)
+    result = pd.DataFrame(statistics).reindex(statistics["mean"].index).reset_index()
     keepx_columns = [f"keepx_{name}" for name in block_names]
-    parsed = result["keepx"].map(
-        lambda value: [int(count) for count in str(value).split("_")]
-    )
-    result = result.drop(columns="keepx")
-    result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
-    result["component"] = result["component"].astype("Int64")
+    result[keepx_columns] = result["keepx"].str.split("_", expand=True).astype(int)
+    result["component"] = result["component"].str.removeprefix("comp").astype("Int64")
     return result[[*keepx_columns, "component", "mean", "sd"]]
 
 

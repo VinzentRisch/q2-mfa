@@ -441,27 +441,23 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         self.assertIs(observed, report)
 
     def test_error_rate_table_converts_mixomics_statistics(self):
-        """Converts the mixOmics mean and standard-deviation matrices to rows."""
-        tune_result = r(
-            "list("
-            "error.rate = structure(matrix(c(0.2, 0.4), nrow = 2, "
-            "dimnames = list(c('1_2', '3_4'), 'comp1'))), "
-            "error.rate.sd = structure(matrix(c(0.01, 0.02), nrow = 2, "
-            "dimnames = list(c('1_2', '3_4'), 'comp1'))))"
-        )
+        """Reshapes multiple components and aligns reordered statistics by label."""
+        tune_result = r["source"](
+            self.get_data_path("feature-selection/error-rate-statistics.R")
+        ).rx2("value")
 
         observed = _r_feature_selection_error_rate_to_dataframe(
             tune_result, ("block-a", "block-b")
         )
-        expected = pd.DataFrame(
-            {
-                "keepx_block-a": [1, 3],
-                "keepx_block-b": [2, 4],
-                "component": [1, 1],
-                "mean": [0.2, 0.4],
-                "sd": [0.01, 0.02],
-            },
-        ).astype({"component": "Int64"})
+        expected = (
+            pd.read_csv(
+                self.get_data_path("feature-selection/serializer-error-rate.tsv"),
+                sep="\t",
+            )
+            .sort_values(["keepx_block-a", "keepx_block-b"], kind="stable")
+            .reset_index(drop=True)
+            .astype({"component": "Int64"})
+        )
 
         assert_frame_equal(observed, expected)
 

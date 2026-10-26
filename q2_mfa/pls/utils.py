@@ -245,7 +245,7 @@ def _resolve_ncomp(
 
     Raises:
         ValueError: If exactly one of a manual count and tuning artifact is not
-            provided, or the artifact has no unique matching selection.
+            provided.
     """
     manual_ncomp = ncomp.is_set
     has_tuned_ncomp = tuned_ncomp is not None
@@ -278,10 +278,6 @@ def _ncomp_from_tuned_ncomp(
 
     Returns:
         int: The uniquely selected number of components.
-
-    Raises:
-        ValueError: If the artifact has no selected component for the requested
-            vote, measure, and distance.
     """
     requested_measure = "Overall.BER" if measure == "BER" else "Overall.ER"
     matrix_file = (
@@ -291,9 +287,4 @@ def _ncomp_from_tuned_ncomp(
     )
     matrix = matrix_file.view(pd.DataFrame)
     selected_ncomp = matrix.loc[matrix["id"] == requested_measure, distance].iloc[0]
-    if pd.isna(selected_ncomp):
-        raise ValueError(
-            "The component-tuning artifact has no selected number of components for "
-            "the requested vote, measure, and distance."
-        )
     return int(selected_ncomp)

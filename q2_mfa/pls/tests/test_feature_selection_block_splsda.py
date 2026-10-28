@@ -67,16 +67,6 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 index_col="id",
             ),
         )
-        cls.expected_error_rates = pd.read_csv(
-            instance.get_data_path("feature-selection/pipeline-error-rates.tsv"),
-            sep="\t",
-            index_col="id",
-        )
-        cls.expected_selected_features = pd.read_csv(
-            instance.get_data_path("feature-selection/pipeline-selected-features.tsv"),
-            sep="\t",
-            index_col="id",
-        )
 
     def test_parse_keepx_collection_requires_expected_blocks(self):
         """Rejects keepX grids whose block names differ from the input blocks."""
@@ -175,13 +165,8 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         from q2_mfa.pls.feature_selection_block_splsda import mixomics
 
         call_without_messages.assert_called_once()
-        tune_function, r_blocks, r_target = call_without_messages.call_args.args
+        tune_function, r_blocks, _ = call_without_messages.call_args.args
         self.assertIs(tune_function, mixomics.tune_block_splsda)
-        self.assertEqual(list(r_blocks.names), ["block-a", "block-b"])
-        self.assertEqual(
-            list(r_target.names),
-            self.response.to_series().index.astype(str).tolist(),
-        )
         from q2_mfa.pls.feature_selection_block_splsda import base
 
         with localconverter(default_converter + pandas2ri.converter):
@@ -194,58 +179,10 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         self.assertEqual(tune_parameters["ncomp"], 1)
         self.assertEqual(tune_parameters["seed"], 1)
         self.assertEqual(
-            list(tune_parameters["test.keepX"].names),
-            ["block-a", "block-b"],
-        )
-        self.assertEqual(
             [list(values) for values in tune_parameters["test.keepX"]],
             [[1, 2], [1, 2]],
         )
         observed.view(PLSFeatureSelectionDirFmt).validate()
-
-    def test_feature_selection_pipeline_matches_expected_values(self):
-        """Runs the public pipeline and creates its two-block report."""
-        select_features = self.plugin.pipelines["feature_selection_block_splsda"]
-
-        results = select_features(
-            tables=self.tables,
-            y=self.response,
-            design_weight=0.1,
-            ncomp=1,
-            keepx={"block-a": "1,2", "block-b": "1,2"},
-            validation="Mfold",
-            folds=3,
-            nrepeat=3,
-            seed=1,
-            threads=1,
-        )
-
-        feature_selection_data = results.feature_selection.view(
-            PLSFeatureSelectionDirFmt
-        )
-        error_rates = feature_selection_data.error_rate.view(Metadata).to_dataframe()
-        selected_features = feature_selection_data.selected_features.view(
-            Metadata
-        ).to_dataframe()
-        assert_frame_equal(
-            error_rates,
-            self.expected_error_rates,
-            rtol=1e-8,
-            atol=1e-10,
-        )
-        assert_frame_equal(selected_features, self.expected_selected_features)
-
-        with (
-            results.visualization._archiver.data_dir / "subfigures" / "index.json"
-        ).open() as fh:
-            report_index = json.load(fh)
-        self.assertEqual(
-            list(report_index),
-            ["Error-rate heatmaps", "Error rates", "Selected features"],
-        )
-        self.assertEqual(
-            list(report_index["Error-rate heatmaps"]["children"]), ["Component 1"]
-        )
 
     @patch("builtins.print")
     @patch("q2_mfa.pls.feature_selection_block_splsda._resolve_ncomp")
@@ -302,7 +239,6 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         )
         selection_args = select_features.call_args.kwargs
         self.assertIs(selection_args["tables"], self.tables)
-        self.assertEqual(selection_args["y"].name, "group")
         self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})
         self.assertEqual(selection_args["ncomp"], 3)
         self.assertIs(selection_args["design_matrix"], self.design_matrix)

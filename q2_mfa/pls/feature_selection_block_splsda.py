@@ -16,7 +16,10 @@ from rachis.plugin.context import IContext
 from rpy2.robjects import ListVector, r
 from rpy2.robjects.packages import importr
 
-from q2_mfa.pls.descriptions import feature_selection_descriptions
+from q2_mfa.pls.descriptions import (
+    feature_selection_descriptions,
+    feature_selection_report_descriptions,
+)
 from q2_mfa.pls.types._format import (
     PLSComponentSelectionDirFmt,
     PLSFeatureSelectionDirFmt,
@@ -217,6 +220,12 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
                 "Error rates": error_rate_table,
                 "Selected features": selected_features_table,
             },
+            descriptions={
+                "Error rates": feature_selection_report_descriptions["error_rates"],
+                "Selected features": feature_selection_report_descriptions[
+                    "selected_features"
+                ],
+            },
         )
 
     heatmap = ctx.get_action("vizard", "heatmap")
@@ -237,13 +246,25 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
         )
         heatmaps[f"Component {component}"] = component_heatmap
 
-    heatmap_report = ctx.make_report(matryoshka_template, heatmaps)
+    heatmap_report = ctx.make_report(
+        matryoshka_template,
+        heatmaps,
+        descriptions={
+            name: feature_selection_report_descriptions["heatmaps"] for name in heatmaps
+        },
+    )
     return ctx.make_report(
         matryoshka_template,
         {
             "Error-rate heatmaps": heatmap_report,
             "Error rates": error_rate_table,
             "Selected features": selected_features_table,
+        },
+        descriptions={
+            "Error rates": feature_selection_report_descriptions["error_rates"],
+            "Selected features": feature_selection_report_descriptions[
+                "selected_features"
+            ],
         },
     )
 

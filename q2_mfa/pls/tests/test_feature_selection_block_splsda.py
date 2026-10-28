@@ -20,7 +20,10 @@ from rpy2.robjects import conversion, default_converter, pandas2ri, r
 from rpy2.robjects.conversion import localconverter
 
 from q2_mfa.pls import AssociationMatrix, PLSFeatureSelectionDirFmt
-from q2_mfa.pls.descriptions import feature_selection_descriptions
+from q2_mfa.pls.descriptions import (
+    feature_selection_descriptions,
+    feature_selection_report_descriptions,
+)
 from q2_mfa.pls.feature_selection_block_splsda import (
     _feature_selection_block_splsda_visualiser,
     _parse_keepx_collection,
@@ -388,6 +391,20 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             ],
         )
         self.assertEqual(context.make_report.call_count, 2)
+        self.assertEqual(
+            context.make_report.call_args_list[0],
+            call(
+                matryoshka_template,
+                {
+                    "Component 1": component_heatmaps[0],
+                    "Component 2": component_heatmaps[1],
+                },
+                descriptions={
+                    "Component 1": feature_selection_report_descriptions["heatmaps"],
+                    "Component 2": feature_selection_report_descriptions["heatmaps"],
+                },
+            ),
+        )
         self.assertIs(observed, combined_report)
 
     def test_feature_selection_visualiser_returns_tables_for_three_blocks(self):
@@ -436,6 +453,12 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             {
                 "Error rates": error_rate_table,
                 "Selected features": selected_features_table,
+            },
+            descriptions={
+                "Error rates": feature_selection_report_descriptions["error_rates"],
+                "Selected features": feature_selection_report_descriptions[
+                    "selected_features"
+                ],
             },
         )
         self.assertIs(observed, report)

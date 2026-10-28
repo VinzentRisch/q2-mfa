@@ -175,6 +175,8 @@ def feature_selection_block_splsda(
         seed=seed,
         threads=threads,
     )
+    (visualization,) = visualise(feature_selection=feature_selection)
+
     selected_features = (
         feature_selection.view(PLSFeatureSelectionDirFmt)
         .selected_features.view(pd.DataFrame)
@@ -182,7 +184,6 @@ def feature_selection_block_splsda(
     )
     print("\nTuned keepX values:\n", flush=True)
     print(selected_features, end="\n\n", flush=True)
-    (visualization,) = visualise(feature_selection=feature_selection)
     return feature_selection, visualization
 
 

@@ -41,6 +41,7 @@ from q2_mfa.pls import (
     feature_selection_block_splsda,
     tune_components_block_splsda,
 )
+from q2_mfa.pls.examples import feature_selection_block_splsda_nutrimouse
 from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -523,6 +524,7 @@ plugin.pipelines.register_function(
         ),
     },
     name="Select block sPLS-DA (DIABLO) features",
+    examples={"nutrimouse": feature_selection_block_splsda_nutrimouse},
     description=(
         "Aligns input blocks and the response, tunes sparse feature counts for "
         "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "

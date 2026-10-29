@@ -129,7 +129,7 @@ def feature_selection_block_splsda(
     design_matrix: Artifact = None,
     design_weight: float = None,
     tuned_ncomp: Artifact = None,
-    ncomp: CaptureHolder[int] = None,
+    ncomp: int = None,
     scale: bool = True,
     tol: float = 1e-6,
     max_iter: int = 100,
@@ -155,7 +155,6 @@ def feature_selection_block_splsda(
     select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
     visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
 
-    selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
     (feature_selection,) = select_features(
         tables=tables,
         y=y,
@@ -163,7 +162,8 @@ def feature_selection_block_splsda(
         already_tested_x=already_tested_x,
         design_matrix=design_matrix,
         design_weight=design_weight,
-        ncomp=selected_ncomp,
+        ncomp=ncomp,
+        tuned_ncomp=tuned_ncomp,
         scale=scale,
         tol=tol,
         max_iter=max_iter,

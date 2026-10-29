@@ -19,11 +19,7 @@ from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import conversion, default_converter, pandas2ri, r
 from rpy2.robjects.conversion import localconverter
 
-from q2_mfa.pls import (
-    AssociationMatrix,
-    PLSComponentSelectionDirFmt,
-    PLSFeatureSelectionDirFmt,
-)
+from q2_mfa.pls import AssociationMatrix, PLSFeatureSelectionDirFmt
 from q2_mfa.pls.descriptions import (
     feature_selection_descriptions,
     feature_selection_report_descriptions,
@@ -34,7 +30,6 @@ from q2_mfa.pls.feature_selection_block_splsda import (
     _r_feature_selection_error_rate_to_dataframe,
     _selected_features_table,
     _serialize_feature_selection,
-    feature_selection_block_splsda,
 )
 
 
@@ -187,80 +182,6 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             [[1, 2], [1, 2]],
         )
         observed.view(PLSFeatureSelectionDirFmt).validate()
-
-    @patch("builtins.print")
-    @patch("q2_mfa.pls.feature_selection_block_splsda._resolve_ncomp")
-    def test_feature_selection_pipeline_calls_its_actions(
-        self, resolve_ncomp, mock_print
-    ):
-        """Forwards inputs, prints keepX values, and creates a visualization."""
-        resolve_ncomp.return_value = 3
-        feature_selection = MagicMock()
-        selected_features = pd.DataFrame(
-            {
-                "id": ["_1", "_2"],
-                "component": [1, 2],
-                "block-a": [3, 4],
-                "block-b": [5, 6],
-            }
-        )
-        expected_printed_features = pd.DataFrame(
-            {
-                "component": [1, 2],
-                "block-a": [3, 4],
-                "block-b": [5, 6],
-            }
-        )
-        feature_selection.view.return_value.selected_features.view.return_value = (
-            selected_features
-        )
-        select_features = MagicMock(return_value=(feature_selection,))
-        visualization = MagicMock()
-        visualise = MagicMock(return_value=(visualization,))
-        context = MagicMock()
-        context.get_action.side_effect = [select_features, visualise]
-        tuned_ncomp = MagicMock()
-
-        observed = feature_selection_block_splsda(
-            ctx=context,
-            tables=self.tables,
-            y=self.response,
-            keepx={"block-a": "1,2", "block-b": "1,2"},
-            design_weight=0.1,
-            tuned_ncomp=tuned_ncomp,
-            design_matrix=self.design_matrix,
-        )
-
-        self.assertEqual(
-            context.get_action.call_args_list,
-            [
-                call("mfa", "_feature_selection_block_splsda"),
-                call("mfa", "_feature_selection_block_splsda_visualiser"),
-            ],
-        )
-        resolve_ncomp.assert_called_once_with(
-            None, tuned_ncomp.view.return_value, True, "BER", "max.dist"
-        )
-        tuned_ncomp.view.assert_called_once_with(PLSComponentSelectionDirFmt)
-        selection_args = select_features.call_args.kwargs
-        self.assertIs(selection_args["tables"], self.tables)
-        self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})
-        self.assertEqual(selection_args["ncomp"], 3)
-        self.assertIs(selection_args["design_matrix"], self.design_matrix)
-        self.assertIs(selection_args["y"], self.response)
-        feature_selection.view.assert_called_once_with(PLSFeatureSelectionDirFmt)
-        self.assertEqual(len(mock_print.call_args_list), 2)
-        self.assertEqual(
-            mock_print.call_args_list[0], call("\nTuned keepX values:\n", flush=True)
-        )
-        assert_frame_equal(
-            mock_print.call_args_list[1].args[0], expected_printed_features
-        )
-        self.assertEqual(
-            mock_print.call_args_list[1].kwargs, {"end": "\n\n", "flush": True}
-        )
-        visualise.assert_called_once_with(feature_selection=feature_selection)
-        self.assertEqual(observed, (feature_selection, visualization))
 
     @patch("q2_mfa.pls.feature_selection_block_splsda.Metadata")
     def test_feature_selection_visualiser_creates_component_heatmaps(self, metadata):

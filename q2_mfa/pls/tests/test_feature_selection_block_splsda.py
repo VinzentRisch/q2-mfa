@@ -19,7 +19,11 @@ from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import conversion, default_converter, pandas2ri, r
 from rpy2.robjects.conversion import localconverter
 
-from q2_mfa.pls import AssociationMatrix, PLSFeatureSelectionDirFmt
+from q2_mfa.pls import (
+    AssociationMatrix,
+    PLSComponentSelectionDirFmt,
+    PLSFeatureSelectionDirFmt,
+)
 from q2_mfa.pls.descriptions import (
     feature_selection_descriptions,
     feature_selection_report_descriptions,
@@ -235,8 +239,9 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             ],
         )
         resolve_ncomp.assert_called_once_with(
-            None, tuned_ncomp, True, "BER", "max.dist"
+            None, tuned_ncomp.view.return_value, True, "BER", "max.dist"
         )
+        tuned_ncomp.view.assert_called_once_with(PLSComponentSelectionDirFmt)
         selection_args = select_features.call_args.kwargs
         self.assertIs(selection_args["tables"], self.tables)
         self.assertEqual(selection_args["keepx"], {"block-a": "1,2", "block-b": "1,2"})

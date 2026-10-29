@@ -6,6 +6,8 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
@@ -39,7 +41,16 @@ class TestUsageExamples(TestPluginBase):
     def test_feature_selection_block_splsda_nutrimouse(self):
         use = ExecutionUsage()
         action = self.plugin.pipelines["feature_selection_block_splsda"]
-        action.examples["nutrimouse"](use)
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            action.examples["nutrimouse"](use)
+        expected_printed_features = self.expected_selected_features.reset_index(
+            drop=True
+        ).astype(int)
+        self.assertEqual(
+            stdout.getvalue(),
+            f"\nTuned keepX values:\n\n{expected_printed_features}\n\n",
+        )
         outputs = use.render()
         selection = outputs["feature_selection_nutrimouse"].execute()
         data = selection.view(PLSFeatureSelectionDirFmt)

@@ -523,7 +523,7 @@ plugin.pipelines.register_function(
             "component."
         ),
     },
-    name="Select block sPLS-DA (DIABLO) features",
+    name="Select block sPLS-DA (DIABLO) feature counts",
     examples={"nutrimouse": feature_selection_block_splsda_nutrimouse},
     description=(
         "Aligns input blocks and the response, tunes sparse feature counts for "
@@ -533,7 +533,7 @@ plugin.pipelines.register_function(
         "parameter determines whether overall error rate (ER) or balanced "
         "error rate (BER) is used."
     ),
-    citations=[citations["rohart2017mixomics"]],
+    citations=[citations["rohart2017mixomics"], citations["martin2007novel"]],
 )
 
 plugin.register_formats(

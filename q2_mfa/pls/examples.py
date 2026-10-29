@@ -5,13 +5,16 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from importlib.resources import files
+
 import pandas as pd
 from q2_types.feature_table import FeatureTable, Unconstrained
 from rachis import Artifact, Metadata, ResultCollection
-from rachis.sdk.usage import ExecutionUsage
 from rpy2.robjects import conversion, default_converter, pandas2ri
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
+
+from q2_mfa.pls.types import AssociationMatrix, PLSComponentSelection
 
 base = importr("base")
 mixomics = importr("mixOmics")
@@ -44,27 +47,49 @@ def nutrimouse_metadata_factory():
     )
 
 
+def nutrimouse_tuned_ncomp_factory():
+    """Imports an illustrative artifact choosing two components for weighted BER."""
+    fixture = files("q2_mfa.pls.types.tests") / "data" / "pls-tune-components"
+    return Artifact.import_data(PLSComponentSelection, str(fixture))
+
+
+def nutrimouse_association_matrix_factory():
+    design = pd.DataFrame(
+        [[0.0, 0.9], [0.9, 0.0]],
+        index=pd.Index(["gene", "lipid"], name="id"),
+        columns=["gene", "lipid"],
+    )
+    return Artifact.import_data(AssociationMatrix, design)
+
+
 def feature_selection_block_splsda_nutrimouse(use):
     use.comment(
         "Load the nutrimouse dataset bundled with mixOmics: 40 mice, 120 "
         "gene-expression features, and 21 lipid features. The small grid and three "
         "repeats keep this demonstration short; use more repeats for a thorough "
-        "analysis."
+        "analysis. Usees an illustrative prebuilt component-selection artifact whose "
+        "weighted BER choice is two components, and a gene/lipid association "
+        "matrix with integration weight 0.9."
     )
     tables = use.init_artifact_collection(
         "nutrimouse_tables", nutrimouse_tables_factory
     )
     metadata = use.init_metadata("nutrimouse_metadata", nutrimouse_metadata_factory)
     diet = use.get_metadata_column("diet", "diet", metadata)
-    ExecutionUsage
+    tuned_ncomp = use.init_artifact(
+        "nutrimouse_tuned_ncomp", nutrimouse_tuned_ncomp_factory
+    )
+    design_matrix = use.init_artifact(
+        "nutrimouse_association_matrix", nutrimouse_association_matrix_factory
+    )
     use.action(
         use.UsageAction(plugin_id="mfa", action_id="feature_selection_block_splsda"),
         use.UsageInputs(
             tables=tables,
             y=diet,
             keepx={"gene": "5,10,15", "lipid": "5,10,15"},
-            ncomp=2,
-            design_weight=0.1,
+            tuned_ncomp=tuned_ncomp,
+            design_matrix=design_matrix,
             folds=3,
             nrepeat=3,
             measure="BER",

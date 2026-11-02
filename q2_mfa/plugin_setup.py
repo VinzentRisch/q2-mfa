@@ -526,12 +526,12 @@ plugin.pipelines.register_function(
     name="Select features with block sPLS-DA (DIABLO)",
     examples={"nutrimouse": select_features_block_splsda_nutrimouse},
     description=(
-        "Aligns input blocks and the response, tunes sparse feature counts for "
-        "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "
-        "visualizations. Reported error rates use weighted voting when "
-        "weighted is enabled and majority voting otherwise. The measure "
-        "parameter determines whether overall error rate (ER) or balanced "
-        "error rate (BER) is used."
+        "Selects feature counts for a block sPLS-DA (DIABLO) model using the "
+        "mixOmics function tune.block.splsda. Aligns input blocks and the "
+        "response and creates diagnostic visualizations. Reported error rates "
+        "use weighted voting when weighted is enabled and majority voting "
+        "otherwise. For questions about the implementation or parameters, consult "
+        "the mixOmics documentation: https://mixomics.org/methods/diablo/"
     ),
     citations=[citations["rohart2017mixomics"]],
 )

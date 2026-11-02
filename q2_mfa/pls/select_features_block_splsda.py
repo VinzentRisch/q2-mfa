@@ -61,7 +61,7 @@ def _select_features_block_splsda(
     threads: int = 1,
 ) -> PLSFeatureSelectionDirFmt:
     """
-    Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
+    Tunes sparse feature counts using mixOmics ``tune.block.splsda``.
 
     Aligns the input blocks and categorical response, determines the component
     count from either ``ncomp`` or a component-tuning artifact, evaluates the

@@ -6,8 +6,10 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 import json
+import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from pathlib import Path
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
@@ -15,7 +17,49 @@ from rachis import Metadata
 from rachis.plugin.testing import TestPluginBase
 from rachis.sdk.usage import ExecutionUsage
 
+import q2_mfa
 from q2_mfa.pls import PLSFeatureSelectionDirFmt
+from q2_mfa.plugin_setup import plugin
+
+
+class TestUsageExampleCoverage(unittest.TestCase):
+    def test_all_usage_examples_have_tests(self):
+        """Check that every registered action example has a named test.
+
+        Test methods must be named ``test_<action_id>_<example_name>``,
+        using the action ID and example name exactly as registered on the
+        plugin, for example
+        ``test_feature_selection_block_splsda_nutrimouse``.
+        """
+        package_dir = Path(q2_mfa.__file__).resolve().parent
+        loader = unittest.TestLoader()
+        suite = loader.discover(
+            start_dir=str(package_dir),
+            pattern="test*.py",
+            top_level_dir=str(package_dir.parent),
+        )
+
+        # Get names of all tests
+        pending = [suite]
+        test_names = set()
+        while pending:
+            test = pending.pop()
+            if isinstance(test, unittest.TestSuite):
+                pending.extend(test)
+            else:
+                test_names.add(test.id().rsplit(".", 1)[-1])
+
+        # Check if all usage examples have a test
+        missing = []
+        for action_id, action in sorted(plugin.actions.items()):
+            for example_name in sorted(action.examples):
+                expected = f"test_{action_id}_{example_name}"
+                if expected not in test_names:
+                    missing.append(f"{action_id}/{example_name}: expected {expected}")
+        self.assertFalse(
+            missing,
+            "Usage examples missing tests:\n" + "\n".join(missing),
+        )
 
 
 class TestUsageExamples(TestPluginBase):
@@ -38,7 +82,7 @@ class TestUsageExamples(TestPluginBase):
             index_col="id",
         )
 
-    def test_feature_selection_block_splsda_nutrimouse(self):
+    def test_feature_selection_bloc_splsda_nutrimouse(self):
         use = ExecutionUsage()
         action = self.plugin.pipelines["feature_selection_block_splsda"]
         stdout = StringIO()

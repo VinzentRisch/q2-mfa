@@ -12,10 +12,14 @@ import secrets
 import pandas as pd
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import IntVector, ListVector, r
+from rpy2.robjects import r
 
-from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
-from q2_mfa.pls.types._result import _PLSFitResult
+from q2_mfa.pls.jsonl_descriptions import fit_descriptions
+from q2_mfa.pls.types._format import (
+    PLSFeatureSelectionDirFmt,
+    PLSFitDirFmt,
+    PLSTuneComponentsDirFmt,
+)
 from q2_mfa.pls.utils import (
     _build_bpparam,
     _feature_component_correlation_to_dataframe,
@@ -55,7 +59,7 @@ def fit_block_splsda(
     weighted: bool = True,
     seed: CaptureHolder[int] = None,
     threads: int = 1,
-) -> _PLSFitResult:
+) -> PLSFitDirFmt:
     """Fits DIABLO with supplied or previously selected components and keepX.
 
     ``ncomp`` and ``tuned_components`` are mutually exclusive. Likewise,
@@ -76,34 +80,17 @@ def fit_block_splsda(
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
     bpparam = _build_bpparam(threads, resolved_seed)
 
-    model = _fit_model(
+    r_blocks, r_target, r_design, r_keepx, _ = _to_r_inputs(
         blocks,
         target,
         design,
-        selected_ncomp,
-        selected_keepx,
-        scale,
-        tol,
-        max_iter,
-        near_zero_var,
+        keep_x=selected_keepx,
     )
-    perf_result = _run_final_perf(
-        model, validation, folds, nrepeat, signif_threshold, resolved_seed, bpparam
-    )
-    return _to_pls_fit_result(model, perf_result, blocks, selected_ncomp)
-
-
-def _fit_model(
-    blocks, target, design, ncomp, keepx, scale, tol, max_iter, near_zero_var
-):
-    """Calls mixOmics block.splsda with final selected values."""
-    r_blocks, r_target, r_design, _, _ = _to_r_inputs(blocks, target, design)
-    r_keepx = ListVector({name: IntVector(values) for name, values in keepx.items()})
-    return r["block.splsda"](
+    model = r["block.splsda"](
         r_blocks,
         r_target,
         **{
-            "ncomp": ncomp,
+            "ncomp": selected_ncomp,
             "keepX": r_keepx,
             "design": r_design,
             "scale": scale,
@@ -114,11 +101,7 @@ def _fit_model(
             "verbose.call": False,
         },
     )
-
-
-def _run_final_perf(model, validation, folds, nrepeat, signif_threshold, seed, bpparam):
-    """Runs the post-fit mixOmics performance assessment."""
-    return r["perf"](
+    perf_result = r["perf"](
         model,
         **{
             "dist": "all",
@@ -128,37 +111,171 @@ def _run_final_perf(model, validation, folds, nrepeat, signif_threshold, seed, b
             "signif.threshold": signif_threshold,
             "auc": True,
             "BPPARAM": bpparam,
-            "seed": seed,
+            "seed": resolved_seed,
             "progressBar": False,
         },
     )
+    return _serialize_fit(model, perf_result, blocks, selected_ncomp)
 
 
-def _to_pls_fit_result(model, perf_result, blocks, ncomp) -> _PLSFitResult:
-    """Converts final model and post-fit perf outputs to artifact tables."""
+def _serialize_fit(
+    model,
+    perf_result,
+    blocks,
+    ncomp,
+) -> PLSFitDirFmt:
+    """Serializes final DIABLO model and performance outputs to JSONL files."""
     loadings = _r_named_frames(model.rx2("loadings"))
     variates = _r_named_frames(model.rx2("variates"))
-    return _PLSFitResult(
-        loadings=loadings,
-        loadings_star=_r_named_frames(model.rx2("loadings.star")),
-        variates=variates,
-        prop_expl_var=_r_named_frames(model.rx2("prop_expl_var")),
-        vip={},
-        ave=_r_ave_frames(model.rx2("AVE")),
-        crit=_r_criterion_to_dataframe(model.rx2("crit")),
-        feature_stability=_r_feature_stability_to_dataframe(perf_result),
-        auc=_r_auc_to_dataframe(perf_result),
-        error_rate=pd.concat(
-            [
-                _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote"),
-                _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote"),
-            ],
-            ignore_index=True,
-        ),
-        feature_component_correlation=_feature_component_correlation_to_dataframe(
-            blocks, variates, loadings
-        ),
-        feature_similarity=_r_feature_similarity_to_dataframe(
-            model, blocks, loadings, ncomp
-        ),
+    directory_format = PLSFitDirFmt()
+    _write_fit_table(
+        directory_format.loadings,
+        _block_wide_values(loadings, "feature"),
+        "loadings",
     )
+    _write_optional_fit_table(
+        directory_format.loadings_star,
+        _block_wide_values(_r_named_frames(model.rx2("loadings.star")), "feature"),
+        "loadings_star",
+    )
+    _write_fit_table(
+        directory_format.variates,
+        _block_wide_values(variates, "sample"),
+        "variates",
+    )
+    _write_fit_table(
+        directory_format.prop_expl_var,
+        _block_component_values(_r_named_frames(model.rx2("prop_expl_var"))),
+        "prop_expl_var",
+    )
+    _write_optional_fit_table(directory_format.vip, pd.DataFrame(), "vip")
+    _write_optional_fit_table(
+        directory_format.ave,
+        _ave_values(_r_ave_frames(model.rx2("AVE"))),
+        "ave",
+    )
+    _write_optional_fit_table(
+        directory_format.crit,
+        _r_criterion_to_dataframe(model.rx2("crit")),
+        "crit",
+    )
+    _write_optional_fit_table(
+        directory_format.feature_stability,
+        _r_feature_stability_to_dataframe(perf_result),
+        "feature_stability",
+    )
+    _write_fit_table(directory_format.auc, _r_auc_to_dataframe(perf_result), "auc")
+    _write_error_rate_table(
+        directory_format.error_rate_weighted,
+        _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote"),
+        "error_rate_weighted",
+    )
+    _write_error_rate_table(
+        directory_format.error_rate_majority,
+        _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote"),
+        "error_rate_majority",
+    )
+    _write_fit_table(
+        directory_format.feature_component_correlation,
+        _feature_component_correlation_to_dataframe(blocks, variates, loadings),
+        "feature_component_correlation",
+    )
+    _write_fit_table(
+        directory_format.feature_similarity,
+        _r_feature_similarity_to_dataframe(model, blocks, loadings, ncomp),
+        "feature_similarity",
+    )
+    return directory_format
+
+
+def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) -> None:
+    """Attaches a JSONL description and writes a required fit-result table."""
+    table = table.convert_dtypes()
+    table.attrs["description"] = fit_descriptions[description_key]
+    directory_file.write_data(table, pd.DataFrame)
+
+
+def _write_optional_fit_table(
+    directory_file, table: pd.DataFrame | None, description_key: str
+) -> None:
+    """Writes an optional fit-result table only when it contains records."""
+    if table is not None and not table.empty:
+        _write_fit_table(directory_file, table, description_key)
+
+
+def _write_error_rate_table(
+    directory_file, error_rate: pd.DataFrame, description_key: str
+) -> None:
+    """Adds stable IDs and writes one voting scheme's fit error rates."""
+    error_rate = error_rate.copy()
+    error_rate.insert(
+        0, "id", [f"row{index}" for index in range(1, len(error_rate) + 1)]
+    )
+    _write_fit_table(directory_file, error_rate, description_key)
+
+
+def _block_wide_values(
+    tables: dict[str, pd.DataFrame], identifier: str
+) -> pd.DataFrame:
+    """Converts named wide component tables into block-labelled records."""
+    records = []
+    for block, table in tables.items():
+        working = table.copy()
+        working.index.name = identifier
+        long_table = working.reset_index().melt(
+            id_vars=[identifier], var_name="component", value_name="value"
+        )
+        long_table["component"] = [
+            component
+            for component in range(working.shape[1])
+            for _ in range(len(working))
+        ]
+        long_table.insert(0, "block", str(block))
+        records.append(long_table)
+    columns = ["block", identifier, "component", "value"]
+    if not records:
+        return pd.DataFrame(columns=columns)
+    combined = pd.concat(records, ignore_index=True)[columns]
+    combined[identifier] = combined[identifier].astype(str)
+    return combined
+
+
+def _block_component_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Consolidates per-block explained-variance vectors by component."""
+    records = []
+    for block, table in tables.items():
+        working = table.copy()
+        if working.shape[1] == 1:
+            long_table = pd.DataFrame(
+                {"component": working.index, "value": working.iloc[:, 0]}
+            )
+        elif working.shape[0] == 1:
+            long_table = pd.DataFrame(
+                {"component": working.columns, "value": working.iloc[0]}
+            )
+        else:
+            raise ValueError(
+                "mixOmics prop_expl_var must contain one value per component."
+            )
+        long_table["component"] = range(len(long_table))
+        long_table.insert(0, "block", str(block))
+        records.append(long_table)
+    columns = ["block", "component", "value"]
+    if not records:
+        return pd.DataFrame(columns=columns)
+    return pd.concat(records, ignore_index=True)[columns]
+
+
+def _ave_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Consolidates AVE metrics while retaining their metric and block labels."""
+    records = []
+    for metric, table in tables.items():
+        working = table.copy()
+        if "block" not in working:
+            working.insert(0, "block", "overall")
+        working.insert(0, "metric", metric)
+        records.append(working[["metric", "block", "component", "value"]])
+    columns = ["metric", "block", "component", "value"]
+    if not records:
+        return pd.DataFrame(columns=columns)
+    return pd.concat(records, ignore_index=True)[columns]

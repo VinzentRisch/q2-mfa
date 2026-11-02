@@ -25,7 +25,12 @@ class PLSFitDirFmt(model.DirectoryFormat):
         "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
-    error_rate = model.File("error_rate.jsonl", format=TableJSONLFileFormat)
+    error_rate_weighted = model.File(
+        "error_rate_weighted.jsonl", format=TableJSONLFileFormat
+    )
+    error_rate_majority = model.File(
+        "error_rate_majority.jsonl", format=TableJSONLFileFormat
+    )
     feature_component_correlation = model.File(
         "feature_component_correlation.jsonl", format=TableJSONLFileFormat
     )

@@ -6,7 +6,6 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 from ._format import PLSFeatureSelectionDirFmt, PLSFitDirFmt, PLSTuneComponentsDirFmt
-from ._result import _PLSFitResult
 from ._type import PLSFeatureSelection, PLSFit, PLSTuneComponents
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "PLSFeatureSelectionDirFmt",
     "PLSFit",
     "PLSFitDirFmt",
-    "_PLSFitResult",
 ]

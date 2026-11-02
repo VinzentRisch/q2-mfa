@@ -533,7 +533,7 @@ plugin.pipelines.register_function(
         "parameter determines whether overall error rate (ER) or balanced "
         "error rate (BER) is used."
     ),
-    citations=[citations["rohart2017mixomics"], citations["martin2007novel"]],
+    citations=[citations["rohart2017mixomics"]],
 )
 
 plugin.register_formats(

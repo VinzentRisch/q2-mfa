@@ -70,6 +70,9 @@ def feature_selection_block_splsda_nutrimouse(use):
         "analysis. Usees an illustrative prebuilt component-selection artifact whose "
         "weighted BER choice is two components, and a gene/lipid association "
         "matrix with integration weight 0.9."
+        'Martin, Pascal GP, et al. "Novel aspects of PPARα‐mediated regulation of '
+        'lipid and xenobiotic metabolism revealed through a nutrigenomic study." '
+        "Hepatology 45.3 (2007): 767-777."
     )
     tables = use.init_artifact_collection(
         "nutrimouse_tables", nutrimouse_tables_factory

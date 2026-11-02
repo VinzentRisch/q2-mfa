@@ -62,7 +62,7 @@ def nutrimouse_association_matrix_factory():
     return Artifact.import_data(AssociationMatrix, design)
 
 
-def feature_selection_block_splsda_nutrimouse(use):
+def select_features_block_splsda_nutrimouse(use):
     use.comment(
         "Load the nutrimouse dataset bundled with mixOmics: 40 mice, 120 "
         "gene-expression features, and 21 lipid features. The small grid and three "
@@ -86,7 +86,7 @@ def feature_selection_block_splsda_nutrimouse(use):
         "nutrimouse_association_matrix", nutrimouse_association_matrix_factory
     )
     use.action(
-        use.UsageAction(plugin_id="mfa", action_id="feature_selection_block_splsda"),
+        use.UsageAction(plugin_id="mfa", action_id="select_features_block_splsda"),
         use.UsageInputs(
             tables=tables,
             y=diet,

@@ -29,7 +29,7 @@ class TestUsageExampleCoverage(unittest.TestCase):
         Test methods must be named ``test_<action_id>_<example_name>``,
         using the action ID and example name exactly as registered on the
         plugin, for example
-        ``test_feature_selection_block_splsda_nutrimouse``.
+        ``test_select_features_block_splsda_nutrimouse``.
         """
         package_dir = Path(q2_mfa.__file__).resolve().parent
         loader = unittest.TestLoader()
@@ -82,9 +82,9 @@ class TestUsageExamples(TestPluginBase):
             index_col="id",
         )
 
-    def test_feature_selection_bloc_splsda_nutrimouse(self):
+    def test_select_features_block_splsda_nutrimouse(self):
         use = ExecutionUsage()
-        action = self.plugin.pipelines["feature_selection_block_splsda"]
+        action = self.plugin.pipelines["select_features_block_splsda"]
         stdout = StringIO()
         with redirect_stdout(stdout):
             action.examples["nutrimouse"](use)

@@ -24,16 +24,16 @@ from q2_mfa.pls.descriptions import (
     feature_selection_descriptions,
     feature_selection_report_descriptions,
 )
-from q2_mfa.pls.feature_selection_block_splsda import (
-    _feature_selection_block_splsda_visualiser,
+from q2_mfa.pls.select_features_block_splsda import (
     _parse_keepx_collection,
     _r_feature_selection_error_rate_to_dataframe,
+    _select_features_block_splsda_visualiser,
     _selected_features_table,
     _serialize_feature_selection,
 )
 
 
-class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
+class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
     package = "q2_mfa.pls.tests"
 
     @classmethod
@@ -135,7 +135,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
                 already_tested=True,
             )
 
-    @patch("q2_mfa.pls.feature_selection_block_splsda._call_without_messages")
+    @patch("q2_mfa.pls.select_features_block_splsda._call_without_messages")
     def test_private_feature_selection_calls_mixomics_and_serializes(
         self, call_without_messages
     ):
@@ -149,7 +149,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             "'comp1'))), choice.keepX = list(`block-a` = 1, `block-b` = 2))"
         )
         call_without_messages.return_value = tune_result
-        select_features = self.plugin.methods["_feature_selection_block_splsda"]
+        select_features = self.plugin.methods["_select_features_block_splsda"]
 
         (observed,) = select_features(
             tables=self.tables,
@@ -161,12 +161,12 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
             threads=1,
         )
 
-        from q2_mfa.pls.feature_selection_block_splsda import mixomics
+        from q2_mfa.pls.select_features_block_splsda import mixomics
 
         call_without_messages.assert_called_once()
         tune_function, r_blocks, _ = call_without_messages.call_args.args
         self.assertIs(tune_function, mixomics.tune_block_splsda)
-        from q2_mfa.pls.feature_selection_block_splsda import base
+        from q2_mfa.pls.select_features_block_splsda import base
 
         with localconverter(default_converter + pandas2ri.converter):
             for name, table in self.tables.items():
@@ -183,7 +183,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         )
         observed.view(PLSFeatureSelectionDirFmt).validate()
 
-    @patch("q2_mfa.pls.feature_selection_block_splsda.Metadata")
+    @patch("q2_mfa.pls.select_features_block_splsda.Metadata")
     def test_feature_selection_visualiser_creates_component_heatmaps(self, metadata):
         """Calls the heatmap action once per component for two blocks."""
         error_rates = MagicMock()
@@ -220,7 +220,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         context.get_action.side_effect = [tabulate, heatmap]
         context.make_report.side_effect = [heatmap_report, combined_report]
 
-        observed = _feature_selection_block_splsda_visualiser(
+        observed = _select_features_block_splsda_visualiser(
             ctx=context,
             feature_selection=feature_selection,
         )
@@ -298,7 +298,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         context.get_action.return_value = tabulate
         context.make_report.return_value = report
 
-        observed = _feature_selection_block_splsda_visualiser(
+        observed = _select_features_block_splsda_visualiser(
             ctx=context,
             feature_selection=feature_selection,
         )
@@ -409,7 +409,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
 
     def test_feature_selection_preserves_prior_keepx_with_association_matrix(self):
         """Runs real R tuning with an association matrix and prior selections."""
-        (selection,) = self.plugin.methods["_feature_selection_block_splsda"](
+        (selection,) = self.plugin.methods["_select_features_block_splsda"](
             tables=self.tables,
             y=self.response,
             design_matrix=self.design_matrix,
@@ -436,7 +436,7 @@ class TestFeatureSelectionBlockSPLSDA(TestPluginBase):
         """Verifies both R wrappers hide messages without swallowing warnings."""
         from rpy2.rinterface_lib import callbacks
 
-        from q2_mfa.pls.feature_selection_block_splsda import (
+        from q2_mfa.pls.select_features_block_splsda import (
             _call_without_messages as feature_call,
         )
         from q2_mfa.pls.tune_components_block_splsda import (

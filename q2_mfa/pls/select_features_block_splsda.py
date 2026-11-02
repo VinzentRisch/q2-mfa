@@ -37,7 +37,7 @@ mixomics = importr("mixOmics")
 _call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
-def _feature_selection_block_splsda(
+def _select_features_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
     keepx: dict,
@@ -120,7 +120,7 @@ def _feature_selection_block_splsda(
     )
 
 
-def feature_selection_block_splsda(
+def select_features_block_splsda(
     ctx: IContext,
     tables: dict[str, Artifact],
     y: CategoricalMetadataColumn,
@@ -152,8 +152,8 @@ def feature_selection_block_splsda(
     artifact, runs the private feature-selection action, and delegates report
     generation to the private feature-selection visualization pipeline.
     """
-    select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
-    visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
+    select_features = ctx.get_action("mfa", "_select_features_block_splsda")
+    visualise = ctx.get_action("mfa", "_select_features_block_splsda_visualiser")
 
     (feature_selection,) = select_features(
         tables=tables,
@@ -190,7 +190,7 @@ def feature_selection_block_splsda(
     return feature_selection, visualization
 
 
-def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
+def _select_features_block_splsda_visualiser(ctx, feature_selection):
     """
     Creates block sPLS-DA (DIABLO) feature-selection visualizations.
 

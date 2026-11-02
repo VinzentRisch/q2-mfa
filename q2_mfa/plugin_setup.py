@@ -34,14 +34,14 @@ from q2_mfa.pls import (
     PLSComponentSelectionDirFmt,
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
-    _feature_selection_block_splsda,
-    _feature_selection_block_splsda_visualiser,
+    _select_features_block_splsda,
+    _select_features_block_splsda_visualiser,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
-    feature_selection_block_splsda,
+    select_features_block_splsda,
     tune_components_block_splsda,
 )
-from q2_mfa.pls.examples import feature_selection_block_splsda_nutrimouse
+from q2_mfa.pls.examples import select_features_block_splsda_nutrimouse
 from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -446,7 +446,7 @@ plugin.pipelines.register_function(
 )
 
 plugin.methods.register_function(
-    function=_feature_selection_block_splsda,
+    function=_select_features_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
         "tuned_ncomp": PLSComponentSelection,
@@ -471,7 +471,7 @@ plugin.methods.register_function(
 )
 
 plugin.pipelines.register_function(
-    function=_feature_selection_block_splsda_visualiser,
+    function=_select_features_block_splsda_visualiser,
     inputs={"feature_selection": PLSFeatureSelection},
     parameters={},
     outputs=[("visualization", Visualization)],
@@ -499,7 +499,7 @@ plugin.pipelines.register_function(
 )
 
 plugin.pipelines.register_function(
-    function=feature_selection_block_splsda,
+    function=select_features_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
         "tuned_ncomp": PLSComponentSelection,
@@ -523,8 +523,8 @@ plugin.pipelines.register_function(
             "component."
         ),
     },
-    name="Select block sPLS-DA (DIABLO) feature counts",
-    examples={"nutrimouse": feature_selection_block_splsda_nutrimouse},
+    name="Select features with block sPLS-DA (DIABLO)",
+    examples={"nutrimouse": select_features_block_splsda_nutrimouse},
     description=(
         "Aligns input blocks and the response, tunes sparse feature counts for "
         "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "

@@ -5,40 +5,42 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from .feature_selection_block_splsda import (
-    _feature_selection_block_splsda,
-    _feature_selection_block_splsda_visualiser,
-    feature_selection_block_splsda,
-)
 from .fit_block_splsda import fit_block_splsda
+from .select_features_block_splsda import (
+    _select_features_block_splsda,
+    _select_features_block_splsda_visualiser,
+    select_features_block_splsda,
+)
 from .tune_components_block_splsda import (
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
     tune_components_block_splsda,
 )
 from .types import (
+    AssociationMatrix,
+    AssociationMatrixDirFmt,
+    PLSComponentSelection,
+    PLSComponentSelectionDirFmt,
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
     PLSFit,
     PLSFitDirFmt,
-    PLSTuneComponents,
-    PLSTuneComponentsDirFmt,
 )
-from .utils import _align_samples_metadata
 
 __all__ = [
-    "PLSTuneComponents",
-    "PLSTuneComponentsDirFmt",
-    "_align_samples_metadata",
-    "_tune_components_block_splsda",
-    "_tune_components_block_visualisation",
-    "tune_components_block_splsda",
-    "PLSFeatureSelection",
-    "PLSFeatureSelectionDirFmt",
     "PLSFit",
     "PLSFitDirFmt",
     "fit_block_splsda",
-    "_feature_selection_block_splsda",
-    "_feature_selection_block_splsda_visualiser",
-    "feature_selection_block_splsda",
+    "PLSFeatureSelection",
+    "PLSFeatureSelectionDirFmt",
+    "_select_features_block_splsda",
+    "_select_features_block_splsda_visualiser",
+    "select_features_block_splsda",
+    "PLSComponentSelection",
+    "PLSComponentSelectionDirFmt",
+    "AssociationMatrix",
+    "AssociationMatrixDirFmt",
+    "_tune_components_block_splsda",
+    "_tune_components_block_visualisation",
+    "tune_components_block_splsda",
 ]

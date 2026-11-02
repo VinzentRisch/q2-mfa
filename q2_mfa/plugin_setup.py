@@ -8,7 +8,6 @@
 import importlib
 
 from q2_types.feature_table import FeatureTable, Frequency, Unconstrained
-from q2_types.metadata import ImmutableMetadata
 from rachis import Citations
 from rachis.core.type import (
     Bool,
@@ -19,7 +18,6 @@ from rachis.core.type import (
     Int,
     Metadata,
     MetadataColumn,
-    Numeric,
     Range,
     Str,
 )
@@ -30,21 +28,23 @@ from q2_mfa.component_analysis import ComponentAnalysis, ComponentAnalysisDirFmt
 from q2_mfa.component_analysis.mfa import mfa
 from q2_mfa.component_analysis.pca import pca
 from q2_mfa.pls import (
+    AssociationMatrix,
+    AssociationMatrixDirFmt,
+    PLSComponentSelection,
+    PLSComponentSelectionDirFmt,
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
     PLSFit,
     PLSFitDirFmt,
-    PLSTuneComponents,
-    PLSTuneComponentsDirFmt,
-    _align_samples_metadata,
-    _feature_selection_block_splsda,
-    _feature_selection_block_splsda_visualiser,
+    _select_features_block_splsda,
+    _select_features_block_splsda_visualiser,
     _tune_components_block_splsda,
     _tune_components_block_visualisation,
-    feature_selection_block_splsda,
     fit_block_splsda,
+    select_features_block_splsda,
     tune_components_block_splsda,
 )
+from q2_mfa.pls.examples import select_features_block_splsda_nutrimouse
 from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -73,19 +73,19 @@ plugin.methods.register_function(
     parameter_descriptions={
         "pseudocount": (
             "Value used to replace zeros before CLR. If not provided, a "
-            "pseudocount of 1 is used. This parameter is only used when "
-            "replacement_method is 'pseudocount'."
+            "`pseudocount` value of 1 is used. This parameter is only used "
+            "when `replacement-method` is `pseudocount`."
         ),
         "replacement_method": (
-            "Method used to handle zeros before CLR. 'multiplicative' replaces "
+            "Method used to handle zeros before CLR. `multiplicative` replaces "
             "zeros while rescaling the remaining values to preserve the "
-            "composition. 'pseudocount' adds the pseudocount to all values in "
-            "the table."
+            "composition. `pseudocount` adds the `pseudocount` value to all "
+            "values in the table."
         ),
         "delta": (
             "Replacement value used for multiplicative replacement. This "
-            "parameter is only used when replacement_method is "
-            "'multiplicative'."
+            "parameter is only used when `replacement-method` is "
+            "`multiplicative`."
         ),
     },
     output_descriptions={"transformed_table": "The CLR transformed table."},
@@ -103,34 +103,6 @@ plugin.methods.register_function(
         citations["aitchison1982statistical"],
         citations["aton2025scikit"],
     ],
-)
-
-plugin.pipelines.register_function(
-    function=_align_samples_metadata,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
-    parameters={"metadata_column": MetadataColumn[Categorical | Numeric]},
-    outputs=[
-        ("aligned_tables", Collection[FeatureTable[Unconstrained]]),
-        ("aligned_metadata", ImmutableMetadata),
-    ],
-    input_descriptions={
-        "tables": "Named feature tables to restrict to their shared sample IDs."
-    },
-    parameter_descriptions={
-        "metadata_column": (
-            "Metadata column to align with the feature tables. Samples "
-            "with missing values in this column are excluded."
-        )
-    },
-    output_descriptions={
-        "aligned_tables": "Feature tables restricted to their shared sample IDs.",
-        "aligned_metadata": "The aligned metadata column.",
-    },
-    name="Align samples and metadata column",
-    description=(
-        "Restricts every input feature table and a metadata column to "
-        "their shared sample IDs."
-    ),
 )
 
 ordination_parameters = {
@@ -155,17 +127,17 @@ ordination_parameter_descriptions = {
         "Whether to remove columns with zero variance before SVD."
     ),
     "engine": (
-        "SVD engine used. 'sklearn' uses faster randomized SVD, while 'scipy' "
+        "SVD engine used. `sklearn` uses faster randomized SVD, while `scipy` "
         "uses deterministic SciPy SVD."
     ),
     "n_iter": (
-        "Number of iterations used by the 'sklearn' randomized SVD "
-        "engine. This parameter is ignored by the 'scipy' engine."
+        "Number of iterations used by the `sklearn` randomized SVD "
+        "engine. This parameter is ignored by the `scipy` engine."
     ),
     "random_state": (
-        "Random seed used by the 'sklearn' SVD engine. Pass an int for "
+        "Random seed used by the `sklearn` SVD engine. Pass an int for "
         "reproducible results across multiple function calls. This "
-        "parameter is ignored by the 'scipy' engine."
+        "parameter is ignored by the `scipy` engine."
     ),
 }
 
@@ -181,11 +153,11 @@ mfa_parameter_descriptions = {
     "metadata_groups": (
         "Optional mapping from metadata group names to comma-separated metadata "
         "column strings. Pass a collection/dict such as "
-        "{'group': 'column1,column2'} to define explicit groups. If a single "
+        "`{'group': 'column1,column2'}` to define explicit groups. If a single "
         "string is provided, all metadata columns are included in a group with "
-        "that string as the group name. If sample metadata is provided without "
-        "this parameter, all metadata columns are included in a group named "
-        "'metadata'. Groups must contain only numeric or only categorical columns."
+        "that string as the group name. If `sample-metadata` is provided without "
+        "`metadata-groups`, all metadata columns are included in a group named "
+        "`metadata`. Groups must contain only numeric or only categorical columns."
     ),
     **ordination_parameter_descriptions,
 }
@@ -244,7 +216,6 @@ plugin.methods.register_function(
 
 component_tuning_parameters = {
     "y": MetadataColumn[Categorical],
-    "design_matrix": Metadata,
     "design_weight": Float % Range(0, 1),
     "ncomp": Int % Range(2, None),
     "scale": Bool,
@@ -260,22 +231,14 @@ component_tuning_parameters = {
 }
 
 component_tuning_parameter_descriptions = {
-    "y": ("Categorical response variable to predict."),
-    "design_matrix": (
-        "Block-relationship matrix. Provide exactly one of 'design-matrix' or "
-        "'design-weight'. This square metadata table must have rows and columns "
-        "named exactly as the feature-table collection, zeros on its diagonal, "
-        "and symmetric numeric off-diagonal values from 0 (no modeled "
-        "relationship) to 1 (maximum modeled relationship)."
-    ),
+    "y": "Categorical response variable to predict.",
     "design_weight": (
         "Single block-relationship weight. Provide exactly one of "
-        "'design-weight' or 'design-matrix'. A value from 0 to 1 creates a "
-        "fully "
-        "connected design matrix with this value in every off-diagonal cell; "
+        "`design-weight` or `design-matrix`. A value from 0 to 1 creates a "
+        "fully connected design matrix with this value in every off-diagonal cell; "
         "0 means no modeled block relationships and 1 is the maximum."
     ),
-    "ncomp": ("Number of components to fit and evaluate by cross-validation."),
+    "ncomp": "Number of components to fit and evaluate by cross-validation.",
     "scale": (
         "Whether to standardize every feature within each input block to zero "
         "mean and unit variance before fitting."
@@ -296,29 +259,28 @@ component_tuning_parameter_descriptions = {
     ),
     "validation": (
         "Internal cross-validation strategy used to estimate classification "
-        "error rates: Mfold repeatedly holds out folds, while loo leaves out "
+        "error rates: `Mfold` repeatedly holds out folds, while `loo` leaves out "
         "one sample at a time."
     ),
     "folds": (
         "Number of sample folds for M-fold cross-validation. Ignored when "
-        "'validation' is 'loo'. Each fold should contain enough samples from "
-        "every "
-        "response class for model fitting and evaluation."
+        "`validation` is `loo`. Each fold should contain enough samples from "
+        "every response class for model fitting and evaluation."
     ),
     "nrepeat": (
         "Number of independent M-fold cross-validation repetitions. More "
         "repetitions reduce sensitivity to random fold assignments but increase "
-        "runtime; it is not needed when 'validation' is 'loo'."
+        "runtime; it is not needed when `validation` is `loo`."
     ),
     "signif_threshold": (
         "Minimum improvement in cross-validated error rate required before an "
         "additional latent component is considered beneficial."
     ),
-    "seed": ("Random seed used for reproducible cross-validation fold assignments."),
+    "seed": "Random seed used for reproducible cross-validation fold assignments.",
     "threads": (
         "Number of BiocParallel workers used for cross-validation model fits. "
-        "Use 1 for serial execution. The Rachis/QIIME value 'auto' is "
-        "converted to 0; both 0 and 'auto' omit 'workers' and let "
+        "Use 1 for serial execution. The Rachis/QIIME value `auto` is "
+        "converted to 0; both 0 and `auto` omit `workers` and let "
         "BiocParallel select its default."
     ),
 }
@@ -329,7 +291,14 @@ component_tuning_input_descriptions = {
         "block and the response are restricted to their shared sample IDs; a "
         "sample missing from one or more blocks is dropped. Table names identify "
         "the corresponding design-matrix rows and columns."
-    )
+    ),
+    "design_matrix": (
+        "Block-relationship matrix. Provide exactly one of `design-matrix` or "
+        "`design-weight`. This square table must have rows and columns named "
+        "exactly as the feature-table collection, zeroes on its diagonal, and "
+        "symmetric numeric off-diagonal values from 0 (no modeled relationship) "
+        "to 1 (maximum modeled relationship)."
+    ),
 }
 
 feature_selection_parameters = {
@@ -385,21 +354,14 @@ feature_selection_input_descriptions = {
     ),
 }
 
-feature_selection_action_input_descriptions = {
-    **feature_selection_input_descriptions,
-    "tables": (
-        "Named, sample-aligned feature tables used as blocks for block "
-        "sPLS-DA (DIABLO). The blocks and response must have identical sample "
-        "IDs in the same order. Table names identify the corresponding "
-        "design-matrix rows and columns."
-    ),
-}
-
 plugin.methods.register_function(
     function=_tune_components_block_splsda,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "design_matrix": AssociationMatrix,
+    },
     parameters=component_tuning_parameters,
-    outputs=[("tune_components", PLSTuneComponents)],
+    outputs=[("tune_components", PLSComponentSelection)],
     input_descriptions=component_tuning_input_descriptions,
     parameter_descriptions=component_tuning_parameter_descriptions,
     output_descriptions={
@@ -424,7 +386,7 @@ plugin.methods.register_function(
 
 plugin.pipelines.register_function(
     function=_tune_components_block_visualisation,
-    inputs={"tune_components": PLSTuneComponents},
+    inputs={"tune_components": PLSComponentSelection},
     parameters={},
     outputs=[("visualization", Visualization)],
     input_descriptions={
@@ -451,10 +413,13 @@ plugin.pipelines.register_function(
 
 plugin.pipelines.register_function(
     function=tune_components_block_splsda,
-    inputs={"tables": Collection[FeatureTable[Unconstrained]]},
+    inputs={
+        "tables": Collection[FeatureTable[Unconstrained]],
+        "design_matrix": AssociationMatrix,
+    },
     parameters=component_tuning_parameters,
     outputs=[
-        ("tune_components", PLSTuneComponents),
+        ("tune_components", PLSComponentSelection),
         ("visualization", Visualization),
     ],
     input_descriptions=component_tuning_input_descriptions,
@@ -484,14 +449,15 @@ plugin.pipelines.register_function(
 )
 
 plugin.methods.register_function(
-    function=_feature_selection_block_splsda,
+    function=_select_features_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
-        "tuned_ncomp": PLSTuneComponents,
+        "tuned_ncomp": PLSComponentSelection,
+        "design_matrix": AssociationMatrix,
     },
     parameters=feature_selection_parameters,
     outputs=[("feature_selection", PLSFeatureSelection)],
-    input_descriptions=feature_selection_action_input_descriptions,
+    input_descriptions=feature_selection_input_descriptions,
     parameter_descriptions=feature_selection_parameter_descriptions,
     output_descriptions={
         "feature_selection": (
@@ -508,7 +474,7 @@ plugin.methods.register_function(
 )
 
 plugin.pipelines.register_function(
-    function=_feature_selection_block_splsda_visualiser,
+    function=_select_features_block_splsda_visualiser,
     inputs={"feature_selection": PLSFeatureSelection},
     parameters={},
     outputs=[("visualization", Visualization)],
@@ -536,10 +502,11 @@ plugin.pipelines.register_function(
 )
 
 plugin.pipelines.register_function(
-    function=feature_selection_block_splsda,
+    function=select_features_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
-        "tuned_ncomp": PLSTuneComponents,
+        "tuned_ncomp": PLSComponentSelection,
+        "design_matrix": AssociationMatrix,
     },
     parameters=feature_selection_parameters,
     outputs=[
@@ -559,14 +526,15 @@ plugin.pipelines.register_function(
             "component."
         ),
     },
-    name="Select block sPLS-DA (DIABLO) features",
+    name="Select features with block sPLS-DA (DIABLO)",
+    examples={"nutrimouse": select_features_block_splsda_nutrimouse},
     description=(
-        "Aligns input blocks and the response, tunes sparse feature counts for "
-        "a block sPLS-DA (DIABLO) model with mixOmics, and creates diagnostic "
-        "visualizations. Reported error rates use weighted voting when "
-        "weighted is enabled and majority voting otherwise. The measure "
-        "parameter determines whether overall error rate (ER) or balanced "
-        "error rate (BER) is used."
+        "Selects feature counts for a block sPLS-DA (DIABLO) model using the "
+        "mixOmics function tune.block.splsda. Aligns input blocks and the "
+        "response and creates diagnostic visualizations. Reported error rates "
+        "use weighted voting when weighted is enabled and majority voting "
+        "otherwise. For questions about the implementation or parameters, consult "
+        "the mixOmics documentation: https://mixomics.org/methods/diablo/"
     ),
     citations=[citations["rohart2017mixomics"]],
 )
@@ -586,18 +554,36 @@ fit_block_splsda_parameter_descriptions = {
         "One comma-separated feature-count string for each component, in "
         "component order. Values within a string follow input block order."
     ),
+    "distance": (
+        "Prediction-distance column used only to resolve ncomp from "
+        "tuned-components. Has no effect when ncomp is supplied manually. "
+        "Performance evaluation always uses all prediction distances."
+    ),
+    "measure": (
+        "Error-measure row used only to resolve ncomp from tuned-components: "
+        "overall error rate or balanced error rate (BER). Has no effect when "
+        "ncomp is supplied manually. Does not restrict the reported error measures."
+    ),
+    "weighted": (
+        "Whether to use the weighted-vote component-choice matrix to resolve "
+        "ncomp from tuned-components. Disable to use the majority-vote matrix. "
+        "Has no effect when ncomp is supplied manually. Performance evaluation "
+        "always reports both voting schemes."
+    ),
 }
 
 plugin.methods.register_function(
     function=fit_block_splsda,
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
-        "tuned_components": PLSTuneComponents,
+        "design_matrix": AssociationMatrix,
+        "tuned_components": PLSComponentSelection,
         "feature_selection": PLSFeatureSelection,
     },
     parameters=fit_block_splsda_parameters,
     outputs=[("pls_results", PLSFit)],
     input_descriptions={
+        **component_tuning_input_descriptions,
         "tables": (
             "Named feature tables used as DIABLO blocks. The tables and response "
             "must already have identical sample IDs in the same order."
@@ -616,15 +602,17 @@ plugin.methods.register_function(
 )
 
 plugin.register_formats(
-    ComponentAnalysisDirFmt,
     PLSFitDirFmt,
-    PLSTuneComponentsDirFmt,
+    ComponentAnalysisDirFmt,
+    PLSComponentSelectionDirFmt,
+    AssociationMatrixDirFmt,
     PLSFeatureSelectionDirFmt,
 )
 plugin.register_semantic_types(
-    ComponentAnalysis,
     PLSFit,
-    PLSTuneComponents,
+    ComponentAnalysis,
+    PLSComponentSelection,
+    AssociationMatrix,
     PLSFeatureSelection,
 )
 plugin.register_artifact_class(
@@ -636,19 +624,27 @@ plugin.register_artifact_class(
     ),
 )
 plugin.register_artifact_class(
-    PLSFit,
-    directory_format=PLSFitDirFmt,
-    description="Represents fitted PLS model result tables produced by mixOmics.",
-)
-plugin.register_artifact_class(
-    PLSTuneComponents,
-    directory_format=PLSTuneComponentsDirFmt,
+    PLSComponentSelection,
+    directory_format=PLSComponentSelectionDirFmt,
     description="Represents PLS component tuning results produced by mixOmics.",
 )
+plugin.register_artifact_class(
+    AssociationMatrix,
+    directory_format=AssociationMatrixDirFmt,
+    description="Represents a matrix that denotes the association between multiple "
+    "omics feature tables.",
+)
+
 plugin.register_artifact_class(
     PLSFeatureSelection,
     directory_format=PLSFeatureSelectionDirFmt,
     description="Represents PLS feature-selection results produced by mixOmics.",
+)
+
+plugin.register_artifact_class(
+    PLSFit,
+    directory_format=PLSFitDirFmt,
+    description="Represents fitted PLS model result tables produced by mixOmics.",
 )
 
 importlib.import_module("q2_mfa.component_analysis.types._transformer")

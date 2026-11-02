@@ -5,14 +5,21 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-from ._format import PLSFeatureSelectionDirFmt, PLSFitDirFmt, PLSTuneComponentsDirFmt
-from ._type import PLSFeatureSelection, PLSFit, PLSTuneComponents
+from ._format import (
+    AssociationMatrixDirFmt,
+    PLSComponentSelectionDirFmt,
+    PLSFeatureSelectionDirFmt,
+    PLSFitDirFmt,
+)
+from ._type import AssociationMatrix, PLSComponentSelection, PLSFeatureSelection, PLSFit
 
 __all__ = [
-    "PLSTuneComponents",
-    "PLSTuneComponentsDirFmt",
-    "PLSFeatureSelection",
-    "PLSFeatureSelectionDirFmt",
     "PLSFit",
     "PLSFitDirFmt",
+    "PLSFeatureSelection",
+    "PLSFeatureSelectionDirFmt",
+    "PLSComponentSelection",
+    "PLSComponentSelectionDirFmt",
+    "AssociationMatrix",
+    "AssociationMatrixDirFmt",
 ]

@@ -14,25 +14,37 @@ from rachis import Artifact, CategoricalMetadataColumn, Metadata, Visualization
 from rachis.plugin import CaptureHolder
 from rachis.plugin.context import IContext
 from rpy2.robjects import ListVector, r
+from rpy2.robjects.packages import importr
 
-from q2_mfa.pls.jsonl_descriptions import feature_selection_descriptions
-from q2_mfa.pls.types._format import PLSFeatureSelectionDirFmt, PLSTuneComponentsDirFmt
+from q2_mfa.pls.descriptions import (
+    feature_selection_descriptions,
+    feature_selection_report_descriptions,
+)
+from q2_mfa.pls.types._format import (
+    PLSComponentSelectionDirFmt,
+    PLSFeatureSelectionDirFmt,
+)
 from q2_mfa.pls.utils import (
+    _align_samples,
     _build_bpparam,
     _resolve_design,
     _resolve_ncomp,
     _to_r_inputs,
 )
 
+base = importr("base")
+mixomics = importr("mixOmics")
+_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
-def _feature_selection_block_splsda(
+
+def _select_features_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
     keepx: dict,
     already_tested_x: dict | None = None,
-    design_matrix: Metadata = None,
+    design_matrix: pd.DataFrame = None,
     design_weight: float | None = None,
-    tuned_ncomp: PLSTuneComponentsDirFmt = None,
+    tuned_ncomp: PLSComponentSelectionDirFmt = None,
     ncomp: CaptureHolder[int] = None,
     scale: bool = True,
     tol: float = 1e-6,
@@ -49,67 +61,23 @@ def _feature_selection_block_splsda(
     threads: int = 1,
 ) -> PLSFeatureSelectionDirFmt:
     """
-    Tunes block sPLS-DA (DIABLO) sparse feature counts with mixOmics.
+    Tunes sparse feature counts using mixOmics ``tune.block.splsda``.
 
-    Assumes the input blocks and categorical response have already been sample
-    aligned, determines the component count from either ``ncomp`` or a
-    component-tuning artifact, evaluates the supplied manual keepX candidate
-    grid, and serializes error rates and the selected sparse-feature counts.
-
-    Args:
-        tables (ResultCollection): Named feature-table artifacts used as
-            blocks for block sPLS-DA (DIABLO).
-        y (CategoricalMetadataColumn): Categorical response labels for the
-            samples.
-        keepx (dict): Named comma-separated keepX candidate counts for each
-            input block.
-        already_tested_x (dict, optional): Named comma-separated selected
-            keepX counts for earlier components. Each block must provide the
-            same number of prior component selections.
-        design_matrix (Metadata, optional): Explicit block-relationship design
-            matrix.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight used when no design matrix is supplied.
-        tuned_ncomp (PLSTuneComponentsDirFmt, optional): Component-tuning
-            artifact used when ``ncomp`` is not provided.
-        ncomp (CaptureHolder[int], optional): Manual number of components to
-            tune.
-        scale (bool): Whether to standardize features within every block.
-        tol (float): Convergence tolerance for the iterative model fit.
-        max_iter (int): Maximum iterations for each model fit.
-        near_zero_var (bool): Whether to remove zero or near-zero variance
-            predictors before fitting.
-        validation (str): Cross-validation strategy accepted by mixOmics.
-        folds (int): Number of folds used for M-fold cross-validation.
-        nrepeat (int): Number of cross-validation repetitions.
-        signif_threshold (float): Minimum error-rate improvement required to
-            retain an additional component.
-        distance (str): Prediction distance used for classification.
-        measure (str): Classification error measure used to select keepX.
-        weighted (bool): Whether to use weighted rather than majority voting.
-        seed (CaptureHolder[int], optional): Random seed holder used for
-            reproducible cross-validation.
-        threads (int): Number of BiocParallel workers to use.
-
-    Returns:
-        PLSFeatureSelectionDirFmt: Serialized keepX error rates and selected
-            feature counts.
+    Aligns the input blocks and categorical response, determines the component
+    count from either ``ncomp`` or a component-tuning artifact, evaluates the
+    supplied manual keepX candidate grid, and serializes error rates and the
+    selected sparse-feature counts.
     """
-    r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks = tables.collection
-    target = y.to_series()
+    blocks, target = _align_samples(tables, y.to_series())
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
-    bpparam = _build_bpparam(threads, resolved_seed)
+    bpparam = _build_bpparam(threads)
     selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
 
-    keepx_collection = dict(getattr(keepx, "collection", keepx))
-    parsed_keepx = _parse_keepx_collection(
-        keepx_collection, list(blocks), selected_ncomp
-    )
+    parsed_keepx = _parse_keepx_collection(keepx, list(blocks), selected_ncomp)
     if already_tested_x is not None:
         already_tested_x = _parse_keepx_collection(
-            dict(getattr(already_tested_x, "collection", already_tested_x)),
+            already_tested_x,
             list(blocks),
             selected_ncomp,
             already_tested=True,
@@ -139,9 +107,9 @@ def _feature_selection_block_splsda(
     }
     if r_already_tested_x is not None:
         tune_parameters["already.tested.X"] = r_already_tested_x
-    tune_result = r(
-        "function(...) suppressWarnings(suppressMessages(tune.block.splsda(...)))"
-    )(r_blocks, r_target, **tune_parameters)
+    tune_result = _call_without_messages(
+        mixomics.tune_block_splsda, r_blocks, r_target, **tune_parameters
+    )
     error_rates = _r_feature_selection_error_rate_to_dataframe(
         tune_result, tuple(blocks)
     )
@@ -152,16 +120,16 @@ def _feature_selection_block_splsda(
     )
 
 
-def feature_selection_block_splsda(
+def select_features_block_splsda(
     ctx: IContext,
     tables: dict[str, Artifact],
     y: CategoricalMetadataColumn,
     keepx: dict,
     already_tested_x: dict = None,
-    design_matrix: Metadata = None,
+    design_matrix: Artifact = None,
     design_weight: float = None,
     tuned_ncomp: Artifact = None,
-    ncomp: CaptureHolder[int] = None,
+    ncomp: int = None,
     scale: bool = True,
     tol: float = 1e-6,
     max_iter: int = 100,
@@ -183,63 +151,19 @@ def feature_selection_block_splsda(
     number of components from either a manual value or a component-tuning
     artifact, runs the private feature-selection action, and delegates report
     generation to the private feature-selection visualization pipeline.
-
-    Args:
-        ctx (Context): Pipeline execution context used to retrieve actions.
-        tables (ResultCollection): Named feature-table artifacts used as
-            blocks for block sPLS-DA (DIABLO).
-        y (CategoricalMetadataColumn): Categorical response labels for the
-            samples.
-        keepx (dict): Named comma-separated keepX candidate counts for each
-            input block.
-        already_tested_x (dict, optional): Named comma-separated selected
-            keepX counts for earlier components.
-        design_matrix (Metadata, optional): Explicit block-relationship design
-            matrix.
-        design_weight (float, optional): Shared off-diagonal relationship
-            weight used when no design matrix is supplied.
-        tuned_ncomp (Artifact, optional): Component-tuning artifact used when
-            ``ncomp`` is not provided.
-        ncomp (CaptureHolder[int], optional): Manual number of components to
-            tune or holder for the value resolved from ``tuned_ncomp``.
-        scale (bool): Whether to standardize features within every block.
-        tol (float): Convergence tolerance for the iterative model fit.
-        max_iter (int): Maximum iterations for each model fit.
-        near_zero_var (bool): Whether to remove zero or near-zero variance
-            predictors before fitting.
-        validation (str): Cross-validation strategy accepted by mixOmics.
-        folds (int): Number of folds used for M-fold cross-validation.
-        nrepeat (int): Number of cross-validation repetitions.
-        signif_threshold (float): Minimum error-rate improvement required to
-            retain an additional component.
-        distance (str): Prediction distance used for classification.
-        measure (str): Classification error measure used to select keepX.
-        weighted (bool): Whether to use weighted rather than majority voting.
-        seed (int, optional): Random seed used for reproducible
-            cross-validation.
-        threads (int): Number of BiocParallel workers to use.
-
-    Returns:
-        tuple[Artifact, Visualization]: The feature-selection artifact and its
-            diagnostic visualization.
     """
-    select_features = ctx.get_action("mfa", "_feature_selection_block_splsda")
-    align_samples = ctx.get_action("mfa", "_align_samples_metadata")
-    visualise = ctx.get_action("mfa", "_feature_selection_block_splsda_visualiser")
+    select_features = ctx.get_action("mfa", "_select_features_block_splsda")
+    visualise = ctx.get_action("mfa", "_select_features_block_splsda_visualiser")
 
-    aligned_tables, aligned_metadata = align_samples(
-        tables=tables,
-        metadata_column=y,
-    )
-    selected_ncomp = _resolve_ncomp(ncomp, tuned_ncomp, weighted, measure, distance)
     (feature_selection,) = select_features(
-        tables=aligned_tables,
-        y=aligned_metadata.view(Metadata).get_column(y.name),
+        tables=tables,
+        y=y,
         keepx=keepx,
         already_tested_x=already_tested_x,
         design_matrix=design_matrix,
         design_weight=design_weight,
-        ncomp=selected_ncomp,
+        ncomp=ncomp,
+        tuned_ncomp=tuned_ncomp,
         scale=scale,
         tol=tol,
         max_iter=max_iter,
@@ -254,18 +178,19 @@ def feature_selection_block_splsda(
         seed=seed,
         threads=threads,
     )
+    (visualization,) = visualise(feature_selection=feature_selection)
+
     selected_features = (
         feature_selection.view(PLSFeatureSelectionDirFmt)
         .selected_features.view(pd.DataFrame)
         .drop(columns="id")
     )
-    print("Tuned keepX values:\n", flush=True)
-    print(selected_features, flush=True)
-    (visualization,) = visualise(feature_selection=feature_selection)
+    print("\nTuned keepX values:\n", flush=True)
+    print(selected_features, end="\n\n", flush=True)
     return feature_selection, visualization
 
 
-def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
+def _select_features_block_splsda_visualiser(ctx, feature_selection):
     """
     Creates block sPLS-DA (DIABLO) feature-selection visualizations.
 
@@ -274,16 +199,6 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
     additionally creates one heatmap per component using the two blocks'
     keepX values as axes and mean error rate as the gradient, then combines the
     plots and tables into a nested report.
-
-    Args:
-        ctx (Context): Pipeline execution context used to retrieve actions and
-            create reports.
-        feature_selection (Artifact): Block sPLS-DA (DIABLO)
-            feature-selection results.
-
-    Returns:
-        Visualization: A report containing both tables and, for exactly two
-            blocks, the component heatmaps.
     """
     tabulate = ctx.get_action("metadata", "tabulate")
     feature_selection_data = feature_selection.view(PLSFeatureSelectionDirFmt)
@@ -305,6 +220,12 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
                 "Error rates": error_rate_table,
                 "Selected features": selected_features_table,
             },
+            descriptions={
+                "Error rates": feature_selection_report_descriptions["error_rates"],
+                "Selected features": feature_selection_report_descriptions[
+                    "selected_features"
+                ],
+            },
         )
 
     heatmap = ctx.get_action("vizard", "heatmap")
@@ -325,13 +246,25 @@ def _feature_selection_block_splsda_visualiser(ctx, feature_selection):
         )
         heatmaps[f"Component {component}"] = component_heatmap
 
-    heatmap_report = ctx.make_report(matryoshka_template, heatmaps)
+    heatmap_report = ctx.make_report(
+        matryoshka_template,
+        heatmaps,
+        descriptions={
+            name: feature_selection_report_descriptions["heatmaps"] for name in heatmaps
+        },
+    )
     return ctx.make_report(
         matryoshka_template,
         {
             "Error-rate heatmaps": heatmap_report,
             "Error rates": error_rate_table,
             "Selected features": selected_features_table,
+        },
+        descriptions={
+            "Error rates": feature_selection_report_descriptions["error_rates"],
+            "Selected features": feature_selection_report_descriptions[
+                "selected_features"
+            ],
         },
     )
 
@@ -381,13 +314,13 @@ def _parse_keepx_collection(
         selection_lengths = {len(values) for values in parsed.values()}
         if len(selection_lengths) != 1:
             raise ValueError(
-                "Each 'already-tested-x' value must contain the same number of "
-                "component selections."
+                "All 'already-tested-x' lists must have the same length. "
+                "Each entry specifies how many features to retain for one component."
             )
         if ncomp <= selection_lengths.pop():
             raise ValueError(
-                "'ncomp' must be greater than the number of 'already-tested-x' "
-                "component selections."
+                "'ncomp' must be greater than the length of each 'already-tested-x' "
+                "list so that at least one component remains to tune."
             )
     return parsed
 
@@ -407,10 +340,8 @@ def _selected_features_table(tune_result: ListVector) -> pd.DataFrame:
     """
     selected_keepx = tune_result.rx2("choice.keepX")
     selected_features = pd.DataFrame(
-        {
-            str(block): [int(value) for value in values]
-            for block, values in zip(selected_keepx.names, selected_keepx)
-        }
+        {block: list(values) for block, values in selected_keepx.items()},
+        dtype=int,
     )
     selected_features.index = pd.Index(
         range(1, len(selected_features) + 1), dtype="Int64", name="component"
@@ -442,35 +373,21 @@ def _r_feature_selection_error_rate_to_dataframe(
             mean, and standard deviation. Each row represents one tested
             combination for one component.
     """
-    statistic_tables = {}
+    statistics = {}
     for statistic, error_rates in (
         ("mean", tune_result.rx2("error.rate")),
         ("sd", tune_result.rx2("error.rate.sd")),
     ):
-        values = np.asarray(error_rates, dtype=float)
-        keepx_values = [str(value) for value in r["dimnames"](error_rates)[0]]
-        component_names = [str(value) for value in r["dimnames"](error_rates)[1]]
-        component_numbers = [int(name.removeprefix("comp")) for name in component_names]
-        statistic_table = (
-            pd.DataFrame(
-                values.T,
-                index=pd.Index(component_numbers, name="component"),
-                columns=pd.Index(keepx_values, name="keepx"),
-            )
-            .reset_index()
-            .melt(id_vars="component", var_name="keepx", value_name=statistic)
-        )
-        statistic_tables[statistic] = statistic_table
-    result = statistic_tables["mean"].merge(
-        statistic_tables["sd"], on=["keepx", "component"], how="left", sort=False
-    )
+        keepx_labels, component_labels = base.dimnames(error_rates)
+        statistics[statistic] = pd.DataFrame(
+            np.asarray(error_rates, dtype=float),
+            index=pd.Index(keepx_labels, name="keepx"),
+            columns=pd.Index(component_labels, name="component"),
+        ).stack(future_stack=True)
+    result = pd.DataFrame(statistics).reindex(statistics["mean"].index).reset_index()
     keepx_columns = [f"keepx_{name}" for name in block_names]
-    parsed = result["keepx"].map(
-        lambda value: [int(count) for count in str(value).split("_")]
-    )
-    result = result.drop(columns="keepx")
-    result[keepx_columns] = pd.DataFrame(parsed.tolist(), index=result.index)
-    result["component"] = result["component"].astype("Int64")
+    result[keepx_columns] = result["keepx"].str.split("_", expand=True).astype(int)
+    result["component"] = result["component"].str.removeprefix("comp").astype("Int64")
     return result[[*keepx_columns, "component", "mean", "sd"]]
 
 
@@ -498,13 +415,11 @@ def _serialize_feature_selection(
     directory_format = PLSFeatureSelectionDirFmt()
     error_rate = error_rate.copy()
     selected_features = selected_features.reset_index()
-    error_rate.insert(
-        0, "id", [f"row{index}" for index in range(1, len(error_rate) + 1)]
-    )
+    error_rate.insert(0, "id", [f"_{index}" for index in range(1, len(error_rate) + 1)])
     selected_features.insert(
         0,
         "id",
-        [f"row{index}" for index in range(1, len(selected_features) + 1)],
+        [f"_{index}" for index in range(1, len(selected_features) + 1)],
     )
     error_rate.attrs["description"] = feature_selection_descriptions["error_rate"]
     selected_features.attrs["description"] = feature_selection_descriptions[

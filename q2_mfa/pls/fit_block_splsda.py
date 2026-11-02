@@ -10,15 +10,15 @@
 import secrets
 
 import pandas as pd
-from rachis import CategoricalMetadataColumn, Metadata
+from rachis import CategoricalMetadataColumn
 from rachis.plugin import CaptureHolder
 from rpy2.robjects import r
 
-from q2_mfa.pls.jsonl_descriptions import fit_descriptions
+from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.pls.types._format import (
+    PLSComponentSelectionDirFmt,
     PLSFeatureSelectionDirFmt,
     PLSFitDirFmt,
-    PLSTuneComponentsDirFmt,
 )
 from q2_mfa.pls.utils import (
     _build_bpparam,
@@ -29,7 +29,7 @@ from q2_mfa.pls.utils import (
     _r_feature_similarity_to_dataframe,
     _r_feature_stability_to_dataframe,
     _r_named_frames,
-    _r_vote_error_rate_to_dataframe,
+    _r_perf_error_rate_to_df,
     _resolve_design,
     _resolve_fit_keepx,
     _resolve_ncomp,
@@ -40,9 +40,9 @@ from q2_mfa.pls.utils import (
 def fit_block_splsda(
     tables: pd.DataFrame,
     y: CategoricalMetadataColumn,
-    design_matrix: Metadata = None,
+    design_matrix: pd.DataFrame = None,
     design_weight: float | None = None,
-    tuned_components: PLSTuneComponentsDirFmt = None,
+    tuned_components: PLSComponentSelectionDirFmt = None,
     ncomp: CaptureHolder[int] = None,
     keepx: CaptureHolder[dict] = None,
     feature_selection: PLSFeatureSelectionDirFmt = None,
@@ -68,7 +68,7 @@ def fit_block_splsda(
     identical sample IDs in the same order.
     """
     r("suppressPackageStartupMessages(library(mixOmics))")
-    blocks = tables.collection
+    blocks = dict(tables.items())
     target = y.to_series()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     selected_ncomp = _resolve_ncomp(
@@ -78,7 +78,7 @@ def fit_block_splsda(
         keepx, feature_selection, list(blocks), selected_ncomp
     )
     resolved_seed = CaptureHolder.get_or_set(seed, lambda: secrets.randbelow(2**31))
-    bpparam = _build_bpparam(threads, resolved_seed)
+    bpparam = _build_bpparam(threads)
 
     r_blocks, r_target, r_design, r_keepx, _ = _to_r_inputs(
         blocks,
@@ -167,12 +167,12 @@ def _serialize_fit(
     _write_fit_table(directory_format.auc, _r_auc_to_dataframe(perf_result), "auc")
     _write_error_rate_table(
         directory_format.error_rate_weighted,
-        _r_vote_error_rate_to_dataframe(perf_result, "WeightedVote"),
+        _r_perf_error_rate_to_df(perf_result, "WeightedVote"),
         "error_rate_weighted",
     )
     _write_error_rate_table(
         directory_format.error_rate_majority,
-        _r_vote_error_rate_to_dataframe(perf_result, "MajorityVote"),
+        _r_perf_error_rate_to_df(perf_result, "MajorityVote"),
         "error_rate_majority",
     )
     _write_fit_table(

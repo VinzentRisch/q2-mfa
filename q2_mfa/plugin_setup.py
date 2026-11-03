@@ -551,8 +551,9 @@ fit_block_splsda_parameter_descriptions = {
     **component_tuning_parameter_descriptions,
     "ncomp": "Manual component count. Provide this value or tuned-components.",
     "keepx": (
-        "One comma-separated feature-count string for each component, in "
-        "component order. Values within a string follow input block order."
+        "One comma-separated feature-count string per named input block. "
+        "Each string must provide one count per fitted component, in component "
+        "order. Provide keepx or feature-selection."
     ),
     "distance": (
         "Prediction-distance column used only to resolve ncomp from "

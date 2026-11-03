@@ -20,8 +20,8 @@ from q2_mfa.pls import (
     PLSFeatureSelection,
     PLSFeatureSelectionDirFmt,
     PLSFitDirFmt,
-    utils,
 )
+from q2_mfa.pls.fit_block_splsda import _block_keepx_from_feature_selection
 from q2_mfa.pls.select_features_block_splsda import _serialize_feature_selection
 
 
@@ -87,12 +87,14 @@ class TestFitBlockSPLSDA(TestPluginBase):
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""
-        observed = utils._component_keepx_from_feature_selection(
+        observed = _block_keepx_from_feature_selection(
             self.selection.view(PLSFeatureSelectionDirFmt),
             ["block-b", "block-a"],
             2,
         )
-        self.assertEqual(observed, {"component-1": "2,1", "component-2": "1,2"})
+        self.assertEqual(
+            list(observed.items()), [("block-b", "2,1"), ("block-a", "1,2")]
+        )
 
     def test_selection_requires_matching_components(self):
         """Rejects selection counts that do not cover the fitted components."""
@@ -101,7 +103,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
             "The feature-selection artifact must contain one keepX value for "
             "each input block and fitted component.",
         ):
-            utils._component_keepx_from_feature_selection(
+            _block_keepx_from_feature_selection(
                 self.selection.view(PLSFeatureSelectionDirFmt),
                 ["block-a", "block-b"],
                 3,

@@ -17,7 +17,6 @@ from rpy2.robjects import (
     conversion,
     default_converter,
     pandas2ri,
-    r,
 )
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
@@ -298,294 +297,57 @@ def _ncomp_from_tuned_ncomp(
     return int(selected.iloc[0])
 
 
-def _parse_fit_keepx(keepx, block_names: list[str], ncomp: int) -> dict[str, list[int]]:
-    """Parses one comma-separated keepX string for each model component.
+def _parse_keepx_collection(
+    keepx: dict,
+    block_names: list[str],
+    ncomp: int,
+    already_tested: bool = False,
+) -> dict[str, list[int]]:
+    """
+    Parses comma-separated keepX counts keyed by input block.
+
+    For example, ``{"metabolome": "5,10", "microbiome": "3,6"}``
+    becomes ``{"metabolome": [5, 10], "microbiome": [3, 6]}``.
 
     Args:
-        keepx: Collection of strings, ordered from component one onward.
-        block_names (list[str]): Expected input-table collection keys.
-        ncomp (int): Number of components in the final fitted model.
+        keepx (dict): Collection mapping each block to comma-separated feature
+            counts.
+        block_names (list[str]): Ordered names of the input feature blocks.
+        ncomp (int): Total components being tuned.
+        already_tested (bool): Whether the values are fixed selections for
+            earlier components rather than candidate counts.
 
     Returns:
-        dict[str, list[int]]: Final keepX values grouped by block.
+        dict[str, list[int]]: Validated feature counts keyed by block name.
 
     Raises:
-        ValueError: If a component string is malformed or the collection does
-            not provide one value per fitted component.
+        ValueError: If the collection keys do not match the input blocks, a
+            value is not a positive integer, fixed selections have unequal
+            lengths, or ncomp does not exceed their length.
     """
-    if keepx is None:
-        raise ValueError("keepx is required for DIABLO feature selection.")
-    collection = getattr(keepx, "collection", keepx)
-    values = (
-        list(collection.values()) if isinstance(collection, dict) else list(collection)
-    )
-    if len(values) != ncomp:
-        raise ValueError(
-            "keepx must provide one comma-separated value per component; "
-            f"expected {ncomp}, received {len(values)}."
-        )
-    try:
-        by_component = [
-            [int(value.strip()) for value in str(component).split(",")]
-            for component in values
-        ]
-    except ValueError as error:
-        raise ValueError(
-            "Each keepx component value must be a comma-separated integer list."
-        ) from error
-    if any(len(values) != len(block_names) for values in by_component):
-        raise ValueError(
-            "Each keepx component value must contain one count for every input "
-            "block, in input collection order."
-        )
-    return {
-        block: [component[index] for component in by_component]
-        for index, block in enumerate(block_names)
-    }
-
-
-def _resolve_fit_keepx(
-    keepx: CaptureHolder[dict], feature_selection, block_names: list[str], ncomp: int
-) -> dict[str, list[int]]:
-    """Captures manual keepX strings or derives them from feature selection."""
-    manual_keepx = keepx is not None and (
-        not isinstance(keepx, CaptureHolder) or keepx.is_set
-    )
-    if manual_keepx and feature_selection is not None:
-        raise ValueError(
-            "Provide either keepx or a feature-selection artifact, not both."
-        )
-    component_keepx = CaptureHolder.get_or_set(
-        keepx,
-        lambda: _component_keepx_from_feature_selection(
-            feature_selection, block_names, ncomp
-        ),
-    )
-    return _parse_fit_keepx(component_keepx, block_names, ncomp)
-
-
-def _component_keepx_from_feature_selection(
-    feature_selection, block_names: list[str], ncomp: int
-) -> dict[str, str]:
-    """Reads the wide keepX table into the component-ordered parameter view.
-
-    Uses one-based component labels and orders each component's counts by the
-    fitting action's input block order.
-    """
-    if feature_selection is None:
-        raise ValueError("Provide keepx or a feature-selection artifact.")
-    table = feature_selection.selected_features.view(pd.DataFrame)
-    expected_components = list(range(1, ncomp + 1))
-    if (
-        set(table.columns) - {"id", "component"} != set(block_names)
-        or table["component"].duplicated().any()
-        or set(table["component"]) != set(expected_components)
-    ):
-        raise ValueError(
-            "The feature-selection artifact must contain one keepX value for "
-            "each input block and fitted component."
-        )
-    table = table.set_index("component").loc[expected_components, block_names]
-    return {
-        f"component-{component}": ",".join(str(int(value)) for value in row)
-        for component, row in zip(expected_components, table.to_numpy())
-    }
-
-
-def _r_matrix_to_dataframe(values) -> pd.DataFrame:
-    """Converts a labelled numeric R matrix while preserving row/column order."""
-    return pd.DataFrame(
-        np.asarray(values),
-        index=[str(name) for name in values.rownames],
-        columns=[str(name) for name in values.colnames],
-    )
-
-
-def _r_named_frames(values) -> dict[str, pd.DataFrame]:
-    """Converts a named R list of labelled matrices to pandas tables."""
-    return {
-        str(name): _r_matrix_to_dataframe(value)
-        for name, value in zip(values.names, values)
-    }
-
-
-def _component_vectors_to_dataframe(vectors, value_name: str) -> pd.DataFrame:
-    """Flattens (block, numeric vector) pairs with one-based components.
-
-    Component positions follow the order returned by mixOmics, including
-    vectors without names such as AVE_outer and AVE_inner.
-    """
-    return pd.DataFrame.from_records(
-        (
-            (str(block), component, float(value))
-            for block, values in vectors
-            for component, value in enumerate(values, start=1)
-        ),
-        columns=["block", "component", value_name],
-    )
-
-
-def _r_ave_to_dataframe(values) -> pd.DataFrame:
-    """Flattens block and overall AVE vectors into one labelled table."""
-    ave_x = values.rx2("AVE_X")
-    metrics = {
-        "AVE_X": zip(ave_x.names, ave_x),
-        "AVE_outer": [("overall", values.rx2("AVE_outer"))],
-        "AVE_inner": [("overall", values.rx2("AVE_inner"))],
-    }
-    tables = []
-    for metric, vectors in metrics.items():
-        table = _component_vectors_to_dataframe(vectors, "value")
-        table.insert(0, "metric", metric)
-        tables.append(table)
-    return pd.concat(tables, ignore_index=True)
-
-
-def _r_criterion_to_dataframe(values) -> pd.DataFrame:
-    """Flattens per-component convergence traces into one pandas table.
-
-    Args:
-        values: Unnamed R list of numeric convergence criteria, one per
-            component.
-
-    Returns:
-        pd.DataFrame: Component, iteration, and criterion values.
-    """
-    return pd.DataFrame.from_records(
-        (
-            (component, iteration, float(criterion))
-            for component, trace in enumerate(values, start=1)
-            for iteration, criterion in enumerate(trace, start=1)
-        ),
-        columns=["component", "iteration", "criterion"],
-    )
-
-
-def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
-    """Averages final-model selection frequencies across CV repeats.
-
-    Args:
-        perf_result: R ``perf`` result for the final block sPLS-DA model.
-
-    Returns:
-        pd.DataFrame: Block, feature, component, and mean selection frequency.
-    """
-    stable = perf_result.rx2("features").rx2("stable")
-    records = []
-    for repeat_values in stable:
-        for block_name, component_values in zip(repeat_values.names, repeat_values):
-            for component, selection_frequency in enumerate(component_values, start=1):
-                feature_names = [str(name) for name in r["names"](selection_frequency)]
-                records.append(
-                    pd.DataFrame(
-                        {
-                            "block": str(block_name),
-                            "feature": feature_names,
-                            "component": component,
-                            "selection_frequency": np.asarray(
-                                selection_frequency, dtype=float
-                            ),
-                        }
-                    )
-                )
-    return (
-        pd.concat(records, ignore_index=True)
-        .groupby(["block", "feature", "component"], as_index=False)
-        .selection_frequency.mean()
-        .rename(columns={"selection_frequency": "mean_selection_frequency"})
-    )
-
-
-def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
-    """Converts mixOmics per-component, per-contrast AUC results.
-
-    Args:
-        perf_result: R ``perf`` result for the final block sPLS-DA model.
-
-    Returns:
-        pd.DataFrame: Component, contrast, AUC, and p-value records.
-    """
-    auc = perf_result.rx2("auc")
-    columns = ["component", "contrast", "auc", "p_value"]
-    if type(auc).__name__ == "NULLType":
-        return pd.DataFrame(columns=columns)
-    records = []
-    for component, values in enumerate(auc, start=1):
-        auc_table = (
-            _r_matrix_to_dataframe(values)
-            .rename(columns={"AUC": "auc", "p-value": "p_value"})
-            .rename_axis("contrast")
-            .reset_index()
-        )
-        auc_table.insert(0, "component", component)
-        records.append(auc_table[columns])
-    return (
-        pd.concat(records, ignore_index=True)
-        if records
-        else pd.DataFrame(columns=columns)
-    )
-
-
-def _feature_component_correlation_to_dataframe(
-    blocks: dict[str, pd.DataFrame],
-    variates: dict[str, pd.DataFrame],
-    loadings: dict[str, pd.DataFrame],
-) -> pd.DataFrame:
-    """Correlates features selected on any component with all block scores."""
-    columns = ["block", "feature", "component", "correlation"]
-    records = []
-    for block, values in blocks.items():
-        block_loadings = loadings[block]
-        selected = block_loadings.index[block_loadings.fillna(0).ne(0).any(axis=1)]
-        feature_values = values.loc[:, selected]
-        for component, (_, scores) in enumerate(variates[block].items(), start=1):
-            records.extend(
-                (block, feature, component, feature_values[feature].corr(scores))
-                for feature in selected
+    if set(keepx) != set(block_names):
+        raise ValueError("keepx keys must exactly match input block names.")
+    parsed = {}
+    for name in block_names:
+        try:
+            values = [int(value.strip()) for value in str(keepx[name]).split(",")]
+            if not values or any(value < 1 for value in values):
+                raise ValueError
+        except ValueError as error:
+            raise ValueError(
+                "Each keepx value must be a comma-separated list of positive integers."
+            ) from error
+        parsed[name] = values
+    if already_tested:
+        selection_lengths = {len(values) for values in parsed.values()}
+        if len(selection_lengths) != 1:
+            raise ValueError(
+                "All 'already-tested-x' lists must have the same length. "
+                "Each entry specifies how many features to retain for one component."
             )
-    return pd.DataFrame.from_records(records, columns=columns)
-
-
-def _r_feature_similarity_to_dataframe(
-    model,
-    blocks: dict[str, pd.DataFrame],
-    loadings: dict[str, pd.DataFrame],
-    ncomp: int,
-) -> pd.DataFrame:
-    """Captures the all-component similarity matrix returned by ``circosPlot``.
-
-    mixOmics builds this matrix from feature-to-variate correlations, so its
-    entries are component-derived similarities rather than raw feature
-    correlations. Feature identities are reconstructed from the selected
-    loading rows, in the ordering used by ``circosPlot``.
-    """
-    columns = ["block_1", "feature_1", "block_2", "feature_2", "similarity"]
-    features = []
-    for block in blocks:
-        selected = loadings[block].index[
-            loadings[block].iloc[:, :ncomp].abs().sum(axis=1).ne(0)
-        ]
-        features.extend((block, str(feature)) for feature in selected)
-    if len(features) < 2:
-        return pd.DataFrame(columns=columns)
-    similarity = np.asarray(
-        r["circosPlot"](model, comp=IntVector(range(1, ncomp + 1)), cutoff=0),
-        dtype=float,
-    )
-    if similarity.shape != (len(features), len(features)):
-        raise ValueError(
-            "circosPlot returned a similarity matrix incompatible with the "
-            "selected model features."
-        )
-    records = [
-        {
-            "block_1": features[first][0],
-            "feature_1": features[first][1],
-            "block_2": features[second][0],
-            "feature_2": features[second][1],
-            "similarity": similarity[first, second],
-        }
-        for first in range(len(features))
-        for second in range(first + 1, len(features))
-    ]
-    return pd.DataFrame.from_records(records, columns=columns)
+        if ncomp <= selection_lengths.pop():
+            raise ValueError(
+                "'ncomp' must be greater than the length of each 'already-tested-x' "
+                "list so that at least one component remains to tune."
+            )
+    return parsed

@@ -25,12 +25,12 @@ from q2_mfa.pls.descriptions import (
     feature_selection_report_descriptions,
 )
 from q2_mfa.pls.select_features_block_splsda import (
-    _parse_keepx_collection,
     _r_feature_selection_error_rate_to_dataframe,
     _select_features_block_splsda_visualiser,
     _selected_features_table,
     _serialize_feature_selection,
 )
+from q2_mfa.pls.utils import _parse_keepx_collection
 
 
 class TestSelectFeaturesBlockSPLSDA(TestPluginBase):

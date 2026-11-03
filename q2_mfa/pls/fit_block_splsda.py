@@ -24,6 +24,7 @@ from q2_mfa.pls.types._format import (
 from q2_mfa.pls.utils import (
     _build_bpparam,
     _parse_keepx_collection,
+    _r_matrix_to_dataframe,
     _r_perf_error_rate_to_df,
     _resolve_design,
     _resolve_ncomp,
@@ -252,15 +253,6 @@ def _block_keepx_from_feature_selection(
     return {
         block: ",".join(str(int(value)) for value in table[block]) for block in table
     }
-
-
-def _r_matrix_to_dataframe(values) -> pd.DataFrame:
-    """Converts a labelled numeric R matrix while preserving row/column order."""
-    return pd.DataFrame(
-        np.asarray(values),
-        index=[str(name) for name in values.rownames],
-        columns=[str(name) for name in values.colnames],
-    )
 
 
 def _r_named_frames(values) -> dict[str, pd.DataFrame]:

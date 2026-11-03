@@ -531,38 +531,18 @@ def _feature_component_correlation_to_dataframe(
     variates: dict[str, pd.DataFrame],
     loadings: dict[str, pd.DataFrame],
 ) -> pd.DataFrame:
-    """Calculates selected-feature correlations with their block variates.
-
-    The calculation follows the feature coordinates used by mixOmics
-    ``plotVar``: each selected feature is correlated with each fitted variate
-    from its own block.
-    """
+    """Correlates features selected on any component with all block scores."""
     columns = ["block", "feature", "component", "correlation"]
     records = []
     for block, values in blocks.items():
         block_loadings = loadings[block]
-        block_variates = variates[block]
-        for component, loading_column in enumerate(block_loadings.columns):
-            selected = block_loadings.index[
-                block_loadings.iloc[:, component].fillna(0).ne(0)
-            ]
-            for feature in selected:
-                paired = pd.concat(
-                    [
-                        values.loc[:, feature].rename("feature"),
-                        block_variates.iloc[:, component].rename("variate"),
-                    ],
-                    axis=1,
-                    join="inner",
-                )
-                records.append(
-                    {
-                        "block": block,
-                        "feature": str(feature),
-                        "component": component + 1,
-                        "correlation": paired["feature"].corr(paired["variate"]),
-                    }
-                )
+        selected = block_loadings.index[block_loadings.fillna(0).ne(0).any(axis=1)]
+        feature_values = values.loc[:, selected]
+        for component, (_, scores) in enumerate(variates[block].items(), start=1):
+            records.extend(
+                (block, feature, component, feature_values[feature].corr(scores))
+                for feature in selected
+            )
     return pd.DataFrame.from_records(records, columns=columns)
 
 

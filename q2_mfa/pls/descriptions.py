@@ -217,8 +217,10 @@ fit_descriptions = {
         "MajorityVote.error.rate.sd."
     ),
     "feature_component_correlation": (
-        "Correlations between selected input features and their own-block latent "
-        "component variates."
+        "Pearson correlations between features selected on any fitted component "
+        "and every component's sample scores in their own block. These "
+        "correlations correspond to the coordinates computed by mixOmics "
+        "plotVar()."
     ),
     "feature_similarity": (
         "Pairwise selected-feature similarities across all fitted components from "

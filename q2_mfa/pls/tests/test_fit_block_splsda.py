@@ -139,7 +139,13 @@ class TestFitBlockSPLSDA(TestPluginBase):
             },
         )
         correlations = fitted.feature_component_correlation.view(pd.DataFrame)
-        self.assertEqual(len(correlations), len(nonzero))
+        selected = set(zip(nonzero["block"], nonzero["feature"]))
+        self.assertCountEqual(
+            correlations[["block", "feature", "component"]].itertuples(
+                index=False, name=None
+            ),
+            [(block, feature, comp) for block, feature in selected for comp in (1, 2)],
+        )
         self.assertFalse(fitted.feature_similarity.view(pd.DataFrame).empty)
         for error_file in (fitted.error_rate_weighted, fitted.error_rate_majority):
             self.assertEqual(set(error_file.view(pd.DataFrame)["component"]), {1, 2})

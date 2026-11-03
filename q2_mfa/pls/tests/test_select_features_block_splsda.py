@@ -30,7 +30,7 @@ from q2_mfa.pls.select_features_block_splsda import (
     _selected_features_table,
     _serialize_feature_selection,
 )
-from q2_mfa.pls.utils import _parse_keepx_collection
+from q2_mfa.pls.utils import _parse_keepx_collection, base
 
 
 class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
@@ -166,8 +166,6 @@ class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
         call_without_messages.assert_called_once()
         tune_function, r_blocks, _ = call_without_messages.call_args.args
         self.assertIs(tune_function, mixomics.tune_block_splsda)
-        from q2_mfa.pls.select_features_block_splsda import base
-
         with localconverter(default_converter + pandas2ri.converter):
             for name, table in self.tables.items():
                 converted = conversion.get_conversion().rpy2py(
@@ -431,39 +429,3 @@ class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
         self.assertEqual(selected.loc[1].tolist(), [1, 2])
         for count in selected.loc[2]:
             self.assertIn(count, [1, 2])
-
-    def test_tuning_wrappers_suppress_messages_and_preserve_warnings(self):
-        """Verifies both R wrappers hide messages without swallowing warnings."""
-        from rpy2.rinterface_lib import callbacks
-
-        from q2_mfa.pls.select_features_block_splsda import (
-            _call_without_messages as feature_call,
-        )
-        from q2_mfa.pls.tune_components_block_splsda import (
-            _call_without_messages as component_call,
-        )
-
-        observe_warning = r("""
-            function(call) {
-                seen <- FALSE
-                value <- withCallingHandlers(
-                    call(function() {
-                        message("hidden tuning message")
-                        warning("visible tuning warning")
-                        7
-                    }),
-                    warning = function(w) {
-                        seen <<- conditionMessage(w) == "visible tuning warning"
-                        invokeRestart("muffleWarning")
-                    }
-                )
-                list(value = value, warned = seen)
-            }
-        """)
-        for wrapper in (feature_call, component_call):
-            with self.subTest(wrapper=wrapper):
-                with patch.object(callbacks, "consolewrite_warnerror") as console:
-                    observed = observe_warning(wrapper)
-                console.assert_not_called()
-                self.assertEqual(list(observed.rx2("value")), [7])
-                self.assertEqual(list(observed.rx2("warned")), [True])

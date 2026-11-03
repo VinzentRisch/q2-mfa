@@ -17,16 +17,18 @@ from rpy2.robjects import (
     conversion,
     default_converter,
     pandas2ri,
+    r,
 )
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
 from rpy2.robjects.vectors import DataFrame as RDataFrame
-from rpy2.robjects.vectors import FactorVector
+from rpy2.robjects.vectors import FactorVector, Matrix
 
 from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 
 base = importr("base")
 biocparallel = importr("BiocParallel")
+_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _align_samples(
@@ -169,6 +171,30 @@ def _to_r_inputs(
     return r_blocks, r_target, r_design, r_keep_x, r_already_tested_x
 
 
+def _r_matrix_to_dataframe(matrix: Matrix) -> pd.DataFrame:
+    """Converts a numeric R matrix to pandas in its labelled row and column order."""
+    return pd.DataFrame(
+        np.asarray(matrix),
+        index=[str(name) for name in matrix.rownames],
+        columns=[str(name) for name in matrix.colnames],
+    )
+
+
+def _r_error_rate_matrices_to_dataframe(
+    mean_rates: Matrix, sd_rates: Matrix, row_name: str
+) -> pd.DataFrame:
+    """Matches SDs to means by row and component in the mean matrix's order."""
+    mean = _r_matrix_to_dataframe(mean_rates).stack(future_stack=True)
+    sd = _r_matrix_to_dataframe(sd_rates).stack(future_stack=True)
+    rates = (
+        pd.DataFrame({"mean": mean, "sd": sd.reindex(mean.index)})
+        .rename_axis(index=[row_name, "component"])
+        .reset_index()
+    )
+    rates["component"] = rates["component"].str.removeprefix("comp").astype("Int64")
+    return rates
+
+
 def _r_perf_error_rate_to_df(perf_result: ListVector, vote: str) -> pd.DataFrame:
     """
     Converts mixOmics vote error-rate means and standard deviations to rows.
@@ -190,30 +216,14 @@ def _r_perf_error_rate_to_df(perf_result: ListVector, vote: str) -> pd.DataFrame
     sd_error_rates = perf_result.rx2(f"{vote}.error.rate.sd")
     tables = []
 
-    for distance, mean_rates, sd_rates in zip(
-        mean_error_rates.names, mean_error_rates, sd_error_rates
-    ):
-        means = np.asarray(mean_rates, dtype=float)
-        standard_deviations = np.asarray(sd_rates, dtype=float)
-        class_names = [str(name) for name in base.rownames(mean_rates)]
-        component_count = means.shape[1]
-        tables.append(
-            pd.DataFrame(
-                {
-                    "distance": str(distance),
-                    "class": np.repeat(class_names, component_count),
-                    "component": np.tile(
-                        np.arange(1, component_count + 1), len(class_names)
-                    ),
-                    "mean": means.ravel(),
-                    "sd": standard_deviations.ravel(),
-                }
-            )
+    for distance, mean_rates in mean_error_rates.items():
+        rates = _r_error_rate_matrices_to_dataframe(
+            mean_rates, sd_error_rates.rx2(distance), "class"
         )
+        rates.insert(0, "distance", distance)
+        tables.append(rates)
 
-    error_rates = pd.concat(tables, ignore_index=True)
-    error_rates["component"] = error_rates["component"].astype("Int64")
-    return error_rates
+    return pd.concat(tables, ignore_index=True)
 
 
 def _resolve_ncomp(

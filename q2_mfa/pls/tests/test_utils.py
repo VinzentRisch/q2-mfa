@@ -13,7 +13,7 @@ from rachis import Metadata
 from rachis.core.exceptions import RachisWarning
 from rachis.plugin import CaptureHolder, Int
 from rachis.plugin.testing import TestPluginBase
-from rpy2.robjects import FloatVector, ListVector, StrVector
+from rpy2.robjects import r
 
 from q2_mfa.pls import PLSComponentSelectionDirFmt, utils
 
@@ -168,33 +168,19 @@ class TestPLSUtils(TestPluginBase):
         self.assertEqual(list(r_already_tested_x.rx2("block-b")), [3])
 
     def test_vote_error_rates_combines_mean_and_standard_deviation(self):
-        dimnames = utils.base.list(
-            StrVector(["Overall.BER", "Overall.ER"]),
-            StrVector(["comp1", "comp2"]),
-        )
-        mean_rates = utils.base.matrix(
-            FloatVector([0.1, 0.3, 0.2, 0.4]), nrow=2, dimnames=dimnames
-        )
-        standard_deviations = utils.base.matrix(
-            FloatVector([0.01, 0.03, 0.02, 0.04]), nrow=2, dimnames=dimnames
-        )
-        perf_result = ListVector(
-            {
-                "WeightedVote.error.rate": ListVector({"max.dist": mean_rates}),
-                "WeightedVote.error.rate.sd": ListVector(
-                    {"max.dist": standard_deviations}
-                ),
-            }
-        )
+        """Aligns SD values to the mean by distance, class, and component."""
+        perf_result = r["source"](
+            self.get_data_path("tune-components/perf-statistics.R")
+        ).rx2("value")
         observed = utils._r_perf_error_rate_to_df(perf_result, "WeightedVote")
 
         expected = pd.DataFrame(
             {
-                "distance": ["max.dist"] * 4,
-                "class": ["Overall.BER", "Overall.BER", "Overall.ER", "Overall.ER"],
-                "component": [1, 2, 1, 2],
-                "mean": [0.1, 0.2, 0.3, 0.4],
-                "sd": [0.01, 0.02, 0.03, 0.04],
+                "distance": ["max.dist"] * 4 + ["centroids.dist"] * 4,
+                "class": (["Overall.BER"] * 2 + ["Overall.ER"] * 2) * 2,
+                "component": [1, 2] * 4,
+                "mean": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                "sd": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08],
             }
         )
         expected["component"] = expected["component"].astype("Int64")

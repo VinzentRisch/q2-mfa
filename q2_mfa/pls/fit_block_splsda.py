@@ -227,7 +227,7 @@ def _block_wide_values(
         )
         long_table["component"] = [
             component
-            for component in range(working.shape[1])
+            for component in range(1, working.shape[1] + 1)
             for _ in range(len(working))
         ]
         long_table.insert(0, "block", str(block))
@@ -257,7 +257,7 @@ def _block_component_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
             raise ValueError(
                 "mixOmics prop_expl_var must contain one value per component."
             )
-        long_table["component"] = range(len(long_table))
+        long_table["component"] = range(1, len(long_table) + 1)
         long_table.insert(0, "block", str(block))
         records.append(long_table)
     columns = ["block", "component", "value"]

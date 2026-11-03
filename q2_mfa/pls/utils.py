@@ -433,7 +433,7 @@ def _r_ave_frames(values) -> dict[str, pd.DataFrame]:
             pd.DataFrame(
                 {
                     "block": str(block_name),
-                    "component": np.arange(len(values_array)),
+                    "component": np.arange(1, len(values_array) + 1),
                     "value": values_array,
                 }
             )
@@ -443,7 +443,7 @@ def _r_ave_frames(values) -> dict[str, pd.DataFrame]:
         component_values = np.asarray(values.rx2(name), dtype=float)
         return pd.DataFrame(
             {
-                "component": np.arange(len(component_values)),
+                "component": np.arange(1, len(component_values) + 1),
                 "value": component_values,
             }
         )
@@ -469,7 +469,7 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame | None:
     if type(values).__name__ == "NULLType":
         return None
     traces = []
-    for component, trace in enumerate(values):
+    for component, trace in enumerate(values, start=1):
         trace_values = np.asarray(trace, dtype=float)
         traces.append(
             pd.DataFrame(
@@ -499,7 +499,7 @@ def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame | None:
     records = []
     for repeat_values in stable:
         for block_name, component_values in zip(repeat_values.names, repeat_values):
-            for component, selection_frequency in enumerate(component_values):
+            for component, selection_frequency in enumerate(component_values, start=1):
                 feature_names = [str(name) for name in r["names"](selection_frequency)]
                 records.append(
                     pd.DataFrame(
@@ -537,7 +537,7 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
     if type(auc).__name__ == "NULLType":
         return pd.DataFrame(columns=columns)
     records = []
-    for component, values in enumerate(auc):
+    for component, values in enumerate(auc, start=1):
         auc_table = pd.DataFrame(
             np.asarray(values),
             index=[str(name) for name in r["rownames"](values)],
@@ -593,7 +593,7 @@ def _feature_component_correlation_to_dataframe(
                     {
                         "block": block,
                         "feature": str(feature),
-                        "component": component,
+                        "component": component + 1,
                         "value": paired["feature"].corr(paired["variate"]),
                     }
                 )

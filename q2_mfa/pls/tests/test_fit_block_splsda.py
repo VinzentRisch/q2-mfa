@@ -132,10 +132,10 @@ class TestFitBlockSPLSDA(TestPluginBase):
         self.assertEqual(
             counts,
             {
-                ("block-a", 0): 1,
-                ("block-a", 1): 2,
-                ("block-b", 0): 2,
-                ("block-b", 1): 1,
+                ("block-a", 1): 1,
+                ("block-a", 2): 2,
+                ("block-b", 1): 2,
+                ("block-b", 2): 1,
             },
         )
         correlations = fitted.feature_component_correlation.view(pd.DataFrame)

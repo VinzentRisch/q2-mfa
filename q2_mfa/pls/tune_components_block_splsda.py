@@ -11,7 +11,6 @@ import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
@@ -20,12 +19,12 @@ from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
     _call_without_messages,
+    _r_matrix_to_dataframe,
     _r_perf_error_rate_to_df,
     _resolve_design,
     _to_r_inputs,
 )
 
-base = importr("base")
 mixomics = importr("mixOmics")
 
 
@@ -270,12 +269,9 @@ def _error_rate_metadata(error_rates: Metadata) -> Metadata:
 
 
 def _r_choice_matrix_to_df(perf_result, vote: str) -> pd.DataFrame:
-    # Extract the R matrix
+    """Converts one vote's component choices to a metadata-compatible table."""
     matrix = perf_result.rx2("choice.ncomp").rx2(vote)
-    # Convert to R data frame
-    choice_matrix = pandas2ri.rpy2py_dataframe(base.as_data_frame(matrix))
-    # Index for rachis metadata compatability
-    return choice_matrix.rename_axis("id").astype("Int64")
+    return _r_matrix_to_dataframe(matrix).rename_axis("id").astype("Int64")
 
 
 def _print_component_choice(choice_table: pd.DataFrame, vote: str) -> None:

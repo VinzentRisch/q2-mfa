@@ -7,7 +7,6 @@
 # ----------------------------------------------------------------------------
 import secrets
 
-import numpy as np
 import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import Artifact, CategoricalMetadataColumn, Metadata, Visualization
@@ -28,12 +27,12 @@ from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
     _call_without_messages,
+    _r_error_rate_matrices_to_dataframe,
     _resolve_design,
     _resolve_ncomp,
     _to_r_inputs,
 )
 
-base = importr("base")
 mixomics = importr("mixOmics")
 
 
@@ -373,21 +372,11 @@ def _r_feature_selection_error_rate_to_dataframe(
             mean, and standard deviation. Each row represents one tested
             combination for one component.
     """
-    statistics = {}
-    for statistic, error_rates in (
-        ("mean", tune_result.rx2("error.rate")),
-        ("sd", tune_result.rx2("error.rate.sd")),
-    ):
-        keepx_labels, component_labels = base.dimnames(error_rates)
-        statistics[statistic] = pd.DataFrame(
-            np.asarray(error_rates, dtype=float),
-            index=pd.Index(keepx_labels, name="keepx"),
-            columns=pd.Index(component_labels, name="component"),
-        ).stack(future_stack=True)
-    result = pd.DataFrame(statistics).reindex(statistics["mean"].index).reset_index()
+    result = _r_error_rate_matrices_to_dataframe(
+        tune_result.rx2("error.rate"), tune_result.rx2("error.rate.sd"), "keepx"
+    )
     keepx_columns = [f"keepx_{name}" for name in block_names]
     result[keepx_columns] = result["keepx"].str.split("_", expand=True).astype(int)
-    result["component"] = result["component"].str.removeprefix("comp").astype("Int64")
     return result[[*keepx_columns, "component", "mean", "sd"]]
 
 

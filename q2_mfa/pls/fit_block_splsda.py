@@ -133,13 +133,6 @@ def _serialize_fit(
         _block_wide_values(loadings, "feature", "loading"),
         "loadings",
     )
-    _write_optional_fit_table(
-        directory_format.loadings_star,
-        _block_wide_values(
-            _r_named_frames(model.rx2("loadings.star")), "feature", "loading"
-        ),
-        "loadings_star",
-    )
     _write_fit_table(
         directory_format.variates,
         _block_wide_values(variates, "sample", "score"),
@@ -150,18 +143,17 @@ def _serialize_fit(
         _block_component_values(_r_named_frames(model.rx2("prop_expl_var"))),
         "prop_expl_var",
     )
-    _write_optional_fit_table(directory_format.vip, pd.DataFrame(), "vip")
-    _write_optional_fit_table(
+    _write_fit_table(
         directory_format.ave,
         _ave_values(_r_ave_frames(model.rx2("AVE"))),
         "ave",
     )
-    _write_optional_fit_table(
+    _write_fit_table(
         directory_format.crit,
         _r_criterion_to_dataframe(model.rx2("crit")),
         "crit",
     )
-    _write_optional_fit_table(
+    _write_fit_table(
         directory_format.feature_stability,
         _r_feature_stability_to_dataframe(perf_result),
         "feature_stability",
@@ -195,14 +187,6 @@ def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) 
     table = table.convert_dtypes()
     table.attrs["description"] = fit_descriptions[description_key]
     directory_file.write_data(table, pd.DataFrame)
-
-
-def _write_optional_fit_table(
-    directory_file, table: pd.DataFrame | None, description_key: str
-) -> None:
-    """Writes an optional fit-result table only when it contains records."""
-    if table is not None and not table.empty:
-        _write_fit_table(directory_file, table, description_key)
 
 
 def _write_error_rate_table(
@@ -284,6 +268,4 @@ def _ave_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         working.insert(0, "metric", metric)
         records.append(working[["metric", "block", "component", "value"]])
     columns = ["metric", "block", "component", "value"]
-    if not records:
-        return pd.DataFrame(columns=columns)
     return pd.concat(records, ignore_index=True)[columns]

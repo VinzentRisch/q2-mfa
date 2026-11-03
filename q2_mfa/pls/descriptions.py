@@ -182,11 +182,6 @@ fit_descriptions = {
         "Per-feature component loading weights from mixOmics block.splsda() "
         "model$loadings, with input-block and component labels."
     ),
-    "loadings_star": (
-        "Per-feature deflated component loading weights from mixOmics "
-        "block.splsda() model$loadings.star, with input-block and component "
-        "labels."
-    ),
     "variates": (
         "Per-sample latent-component scores from mixOmics block.splsda() "
         "model$variates, with input-block and component labels."
@@ -194,10 +189,6 @@ fit_descriptions = {
     "prop_expl_var": (
         "Proportion of explained variance per input block and latent component "
         "from mixOmics block.splsda() model$prop_expl_var."
-    ),
-    "vip": (
-        "Variable importance in projection scores from mixOmics block.splsda() "
-        "for each input block, feature, and component."
     ),
     "ave": (
         "Average variance explained summaries from mixOmics block.splsda() "

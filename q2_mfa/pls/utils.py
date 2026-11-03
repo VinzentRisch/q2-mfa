@@ -423,8 +423,6 @@ def _r_ave_frames(values) -> dict[str, pd.DataFrame]:
         dict[str, pd.DataFrame]: AVE summary names mapped to already-long
             tables with block, component, and value columns as appropriate.
     """
-    if type(values).__name__ == "NULLType":
-        return {}
     ave_x = values.rx2("AVE_X")
     ave_x_frames = []
     for block_name, component_values in zip(ave_x.names, ave_x):
@@ -455,7 +453,7 @@ def _r_ave_frames(values) -> dict[str, pd.DataFrame]:
     }
 
 
-def _r_criterion_to_dataframe(values) -> pd.DataFrame | None:
+def _r_criterion_to_dataframe(values) -> pd.DataFrame:
     """Flattens per-component convergence traces into one pandas table.
 
     Args:
@@ -463,11 +461,8 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame | None:
             component.
 
     Returns:
-        pd.DataFrame | None: Component, iteration, and criterion values, or
-        None when mixOmics did not return convergence criteria.
+        pd.DataFrame: Component, iteration, and criterion values.
     """
-    if type(values).__name__ == "NULLType":
-        return None
     traces = []
     for component, trace in enumerate(values, start=1):
         trace_values = np.asarray(trace, dtype=float)
@@ -480,22 +475,19 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame | None:
                 }
             )
         )
-    return pd.concat(traces, ignore_index=True) if traces else None
+    return pd.concat(traces, ignore_index=True)
 
 
-def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame | None:
+def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
     """Averages final-model selection frequencies across CV repeats.
 
     Args:
         perf_result: R ``perf`` result for the final block sPLS-DA model.
 
     Returns:
-        pd.DataFrame | None: Block, feature, component, and mean selection
-            frequency records, or None when mixOmics did not return stability.
+        pd.DataFrame: Block, feature, component, and mean selection frequency.
     """
     stable = perf_result.rx2("features").rx2("stable")
-    if type(stable).__name__ == "NULLType":
-        return None
     records = []
     for repeat_values in stable:
         for block_name, component_values in zip(repeat_values.names, repeat_values):
@@ -513,8 +505,6 @@ def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame | None:
                         }
                     )
                 )
-    if not records:
-        return None
     return (
         pd.concat(records, ignore_index=True)
         .groupby(["block", "feature", "component"], as_index=False)

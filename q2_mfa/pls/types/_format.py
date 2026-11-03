@@ -49,16 +49,12 @@ class PLSFitDirFmt(model.DirectoryFormat):
     """Stores consolidated long-form fitted PLS and DIABLO result tables."""
 
     loadings = model.File("loadings.jsonl", format=TableJSONLFileFormat)
-    loadings_star = model.File(
-        "loadings_star.jsonl", format=TableJSONLFileFormat, optional=True
-    )
     variates = model.File("variates.jsonl", format=TableJSONLFileFormat)
     prop_expl_var = model.File("prop_expl_var.jsonl", format=TableJSONLFileFormat)
-    vip = model.File("vip.jsonl", format=TableJSONLFileFormat, optional=True)
-    ave = model.File("ave.jsonl", format=TableJSONLFileFormat, optional=True)
-    crit = model.File("criterion.jsonl", format=TableJSONLFileFormat, optional=True)
+    ave = model.File("ave.jsonl", format=TableJSONLFileFormat)
+    crit = model.File("criterion.jsonl", format=TableJSONLFileFormat)
     feature_stability = model.File(
-        "feature_stability.jsonl", format=TableJSONLFileFormat, optional=True
+        "feature_stability.jsonl", format=TableJSONLFileFormat
     )
     auc = model.File("auc.jsonl", format=TableJSONLFileFormat)
     error_rate_weighted = model.File(

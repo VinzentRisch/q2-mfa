@@ -392,65 +392,53 @@ def _component_keepx_from_feature_selection(
     }
 
 
+def _r_matrix_to_dataframe(values) -> pd.DataFrame:
+    """Converts a labelled numeric R matrix while preserving row/column order."""
+    return pd.DataFrame(
+        np.asarray(values),
+        index=[str(name) for name in values.rownames],
+        columns=[str(name) for name in values.colnames],
+    )
+
+
 def _r_named_frames(values) -> dict[str, pd.DataFrame]:
-    """Converts a named R list of tables to a pandas mapping.
-
-    Args:
-        values: Named R list containing mixOmics table-like outputs.
-
-    Returns:
-        dict[str, pd.DataFrame]: Table name to pandas DataFrame mapping.
-    """
-    if type(values).__name__ == "NULLType":
-        return {}
-    try:
-        names = list(values.names)
-    except TypeError:
-        return {}
-    if not names:
-        table = _r_to_dataframe(values)
-        return {} if table is None else {"overall": table}
-    return {str(name): _r_to_dataframe(value) for name, value in zip(names, values)}
-
-
-def _r_ave_frames(values) -> dict[str, pd.DataFrame]:
-    """Converts mixOmics AVE summaries into explicit component records.
-
-    Args:
-        values: Named R list containing AVE_X, AVE_outer, and AVE_inner.
-
-    Returns:
-        dict[str, pd.DataFrame]: AVE summary names mapped to already-long
-            tables with block, component, and value columns as appropriate.
-    """
-    ave_x = values.rx2("AVE_X")
-    ave_x_frames = []
-    for block_name, component_values in zip(ave_x.names, ave_x):
-        values_array = np.asarray(component_values, dtype=float)
-        ave_x_frames.append(
-            pd.DataFrame(
-                {
-                    "block": str(block_name),
-                    "component": np.arange(1, len(values_array) + 1),
-                    "value": values_array,
-                }
-            )
-        )
-
-    def component_vector(name: str) -> pd.DataFrame:
-        component_values = np.asarray(values.rx2(name), dtype=float)
-        return pd.DataFrame(
-            {
-                "component": np.arange(1, len(component_values) + 1),
-                "value": component_values,
-            }
-        )
-
+    """Converts a named R list of labelled matrices to pandas tables."""
     return {
-        "AVE_X": pd.concat(ave_x_frames, ignore_index=True),
-        "AVE_outer": component_vector("AVE_outer"),
-        "AVE_inner": component_vector("AVE_inner"),
+        str(name): _r_matrix_to_dataframe(value)
+        for name, value in zip(values.names, values)
     }
+
+
+def _component_vectors_to_dataframe(vectors, value_name: str) -> pd.DataFrame:
+    """Flattens (block, numeric vector) pairs with one-based components.
+
+    Component positions follow the order returned by mixOmics, including
+    vectors without names such as AVE_outer and AVE_inner.
+    """
+    return pd.DataFrame.from_records(
+        (
+            (str(block), component, float(value))
+            for block, values in vectors
+            for component, value in enumerate(values, start=1)
+        ),
+        columns=["block", "component", value_name],
+    )
+
+
+def _r_ave_to_dataframe(values) -> pd.DataFrame:
+    """Flattens block and overall AVE vectors into one labelled table."""
+    ave_x = values.rx2("AVE_X")
+    metrics = {
+        "AVE_X": zip(ave_x.names, ave_x),
+        "AVE_outer": [("overall", values.rx2("AVE_outer"))],
+        "AVE_inner": [("overall", values.rx2("AVE_inner"))],
+    }
+    tables = []
+    for metric, vectors in metrics.items():
+        table = _component_vectors_to_dataframe(vectors, "value")
+        table.insert(0, "metric", metric)
+        tables.append(table)
+    return pd.concat(tables, ignore_index=True)
 
 
 def _r_criterion_to_dataframe(values) -> pd.DataFrame:
@@ -463,19 +451,14 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Component, iteration, and criterion values.
     """
-    traces = []
-    for component, trace in enumerate(values, start=1):
-        trace_values = np.asarray(trace, dtype=float)
-        traces.append(
-            pd.DataFrame(
-                {
-                    "component": component,
-                    "iteration": np.arange(1, len(trace_values) + 1),
-                    "criterion": trace_values,
-                }
-            )
-        )
-    return pd.concat(traces, ignore_index=True)
+    return pd.DataFrame.from_records(
+        (
+            (component, iteration, float(criterion))
+            for component, trace in enumerate(values, start=1)
+            for iteration, criterion in enumerate(trace, start=1)
+        ),
+        columns=["component", "iteration", "criterion"],
+    )
 
 
 def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
@@ -528,21 +511,14 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
     records = []
     for component, values in enumerate(auc, start=1):
-        auc_table = pd.DataFrame(
-            np.asarray(values),
-            index=[str(name) for name in r["rownames"](values)],
-            columns=[str(name) for name in r["colnames"](values)],
+        auc_table = (
+            _r_matrix_to_dataframe(values)
+            .rename(columns={"AUC": "auc", "p-value": "p_value"})
+            .rename_axis("contrast")
+            .reset_index()
         )
-        records.append(
-            pd.DataFrame(
-                {
-                    "component": component,
-                    "contrast": auc_table.index,
-                    "auc": auc_table["AUC"].to_numpy(),
-                    "p_value": auc_table["p-value"].to_numpy(),
-                }
-            )
-        )
+        auc_table.insert(0, "component", component)
+        records.append(auc_table[columns])
     return (
         pd.concat(records, ignore_index=True)
         if records
@@ -633,54 +609,3 @@ def _r_feature_similarity_to_dataframe(
         for second in range(first + 1, len(features))
     ]
     return pd.DataFrame.from_records(records, columns=columns)
-
-
-def _r_to_dataframe(value) -> pd.DataFrame | None:
-    """Converts an R vector, matrix, or data frame while preserving labels."""
-    if type(value).__name__ == "NULLType":
-        return None
-    row_names = r["rownames"](value)
-    column_names = r["colnames"](value)
-    value_names = r["names"](value)
-    row_labels = (
-        [str(label) for label in row_names]
-        if type(row_names).__name__ != "NULLType"
-        else None
-    )
-    column_labels = (
-        [str(label) for label in column_names]
-        if type(column_names).__name__ != "NULLType"
-        else None
-    )
-    value_labels = (
-        [str(label) for label in value_names]
-        if type(value_names).__name__ != "NULLType"
-        else None
-    )
-    with localconverter(default_converter + pandas2ri.converter):
-        converted = conversion.rpy2py(value)
-    if isinstance(converted, pd.DataFrame):
-        if row_labels is not None and len(row_labels) == len(converted.index):
-            converted.index = row_labels
-        if column_labels is not None and len(column_labels) == len(converted.columns):
-            converted.columns = column_labels
-        return converted
-    if isinstance(converted, pd.Series):
-        if value_labels is not None and len(value_labels) == len(converted.index):
-            converted.index = value_labels
-        return converted.to_frame(name=converted.name or "value")
-    array = np.asarray(converted)
-    if array.ndim == 0:
-        return pd.DataFrame({"value": [array.item()]})
-    if array.ndim == 1:
-        index = (
-            value_labels if value_labels and len(value_labels) == len(array) else None
-        )
-        return pd.DataFrame({"value": array}, index=index)
-    index = row_labels if row_labels and len(row_labels) == len(array) else None
-    columns = (
-        column_labels
-        if column_labels and len(column_labels) == array.shape[1]
-        else None
-    )
-    return pd.DataFrame(array, index=index, columns=columns)

@@ -22,9 +22,10 @@ from q2_mfa.pls.types._format import (
 )
 from q2_mfa.pls.utils import (
     _build_bpparam,
+    _component_vectors_to_dataframe,
     _feature_component_correlation_to_dataframe,
     _r_auc_to_dataframe,
-    _r_ave_frames,
+    _r_ave_to_dataframe,
     _r_criterion_to_dataframe,
     _r_feature_similarity_to_dataframe,
     _r_feature_stability_to_dataframe,
@@ -127,6 +128,7 @@ def _serialize_fit(
     """Serializes final DIABLO model and performance outputs to JSONL files."""
     loadings = _r_named_frames(model.rx2("loadings"))
     variates = _r_named_frames(model.rx2("variates"))
+    prop_expl_var = model.rx2("prop_expl_var")
     directory_format = PLSFitDirFmt()
     _write_fit_table(
         directory_format.loadings,
@@ -140,12 +142,15 @@ def _serialize_fit(
     )
     _write_fit_table(
         directory_format.prop_expl_var,
-        _block_component_values(_r_named_frames(model.rx2("prop_expl_var"))),
+        _component_vectors_to_dataframe(
+            zip(prop_expl_var.names, prop_expl_var),
+            "proportion_explained_variance",
+        ),
         "prop_expl_var",
     )
     _write_fit_table(
         directory_format.ave,
-        _ave_values(_r_ave_frames(model.rx2("AVE"))),
+        _r_ave_to_dataframe(model.rx2("AVE")),
         "ave",
     )
     _write_fit_table(
@@ -208,14 +213,10 @@ def _block_wide_values(
     for block, table in tables.items():
         working = table.copy()
         working.index.name = identifier
+        working.columns = range(1, working.shape[1] + 1)
         long_table = working.reset_index().melt(
             id_vars=[identifier], var_name="component", value_name=value_name
         )
-        long_table["component"] = [
-            component
-            for component in range(1, working.shape[1] + 1)
-            for _ in range(len(working))
-        ]
         long_table.insert(0, "block", str(block))
         records.append(long_table)
     columns = ["block", identifier, "component", value_name]
@@ -224,48 +225,3 @@ def _block_wide_values(
     combined = pd.concat(records, ignore_index=True)[columns]
     combined[identifier] = combined[identifier].astype(str)
     return combined
-
-
-def _block_component_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Consolidates per-block explained-variance vectors by component."""
-    records = []
-    for block, table in tables.items():
-        working = table.copy()
-        if working.shape[1] == 1:
-            long_table = pd.DataFrame(
-                {
-                    "component": working.index,
-                    "proportion_explained_variance": working.iloc[:, 0],
-                }
-            )
-        elif working.shape[0] == 1:
-            long_table = pd.DataFrame(
-                {
-                    "component": working.columns,
-                    "proportion_explained_variance": working.iloc[0],
-                }
-            )
-        else:
-            raise ValueError(
-                "mixOmics prop_expl_var must contain one value per component."
-            )
-        long_table["component"] = range(1, len(long_table) + 1)
-        long_table.insert(0, "block", str(block))
-        records.append(long_table)
-    columns = ["block", "component", "proportion_explained_variance"]
-    if not records:
-        return pd.DataFrame(columns=columns)
-    return pd.concat(records, ignore_index=True)[columns]
-
-
-def _ave_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Consolidates AVE metrics while retaining their metric and block labels."""
-    records = []
-    for metric, table in tables.items():
-        working = table.copy()
-        if "block" not in working:
-            working.insert(0, "block", "overall")
-        working.insert(0, "metric", metric)
-        records.append(working[["metric", "block", "component", "value"]])
-    columns = ["metric", "block", "component", "value"]
-    return pd.concat(records, ignore_index=True)[columns]

@@ -17,6 +17,7 @@ from rpy2.robjects import (
     conversion,
     default_converter,
     pandas2ri,
+    r,
 )
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
@@ -27,6 +28,7 @@ from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 
 base = importr("base")
 biocparallel = importr("BiocParallel")
+_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _align_samples(

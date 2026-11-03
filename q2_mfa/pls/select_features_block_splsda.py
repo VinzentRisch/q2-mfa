@@ -13,7 +13,7 @@ from q2templates.reports import matryoshka_template
 from rachis import Artifact, CategoricalMetadataColumn, Metadata, Visualization
 from rachis.plugin import CaptureHolder
 from rachis.plugin.context import IContext
-from rpy2.robjects import ListVector, r
+from rpy2.robjects import ListVector
 from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import (
@@ -27,6 +27,7 @@ from q2_mfa.pls.types._format import (
 from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
+    _call_without_messages,
     _resolve_design,
     _resolve_ncomp,
     _to_r_inputs,
@@ -34,7 +35,6 @@ from q2_mfa.pls.utils import (
 
 base = importr("base")
 mixomics = importr("mixOmics")
-_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _select_features_block_splsda(

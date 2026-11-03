@@ -11,7 +11,7 @@ import pandas as pd
 from q2templates.reports import matryoshka_template
 from rachis import CategoricalMetadataColumn, Metadata
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import pandas2ri, r
+from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import jsonl_descriptions, report_descriptions
@@ -19,6 +19,7 @@ from q2_mfa.pls.types._format import PLSComponentSelectionDirFmt
 from q2_mfa.pls.utils import (
     _align_samples,
     _build_bpparam,
+    _call_without_messages,
     _r_perf_error_rate_to_df,
     _resolve_design,
     _to_r_inputs,
@@ -26,7 +27,6 @@ from q2_mfa.pls.utils import (
 
 base = importr("base")
 mixomics = importr("mixOmics")
-_call_without_messages = r("function(fun, ...) suppressMessages(fun(...))")
 
 
 def _tune_components_block_splsda(

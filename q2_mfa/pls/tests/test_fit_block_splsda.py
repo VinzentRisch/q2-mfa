@@ -21,6 +21,7 @@ from q2_mfa.pls import (
     PLSFeatureSelectionDirFmt,
     PLSFitDirFmt,
 )
+from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.pls.fit_block_splsda import _resolve_fit_keepx
 from q2_mfa.pls.select_features_block_splsda import _serialize_feature_selection
 
@@ -151,5 +152,14 @@ class TestFitBlockSPLSDA(TestPluginBase):
             [(block, feature, comp) for block, feature in selected for comp in (1, 2)],
         )
         self.assertFalse(fitted.feature_similarity.view(pd.DataFrame).empty)
+        stability = fitted.feature_stability.view(pd.DataFrame)
+        self.assertEqual(
+            stability.attrs["description"], fit_descriptions["feature_stability"]
+        )
+        frequencies = stability.set_index(["block", "feature", "component"])
+        # b0 was selected in two folds of one repeat and omitted from the other two.
+        self.assertAlmostEqual(
+            frequencies.loc[("block-b", "b0", 2), "mean_selection_frequency"], 2 / 9
+        )
         for error_file in (fitted.error_rate_weighted, fitted.error_rate_majority):
             self.assertEqual(set(error_file.view(pd.DataFrame)["component"]), {1, 2})

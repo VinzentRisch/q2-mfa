@@ -316,7 +316,10 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame:
 
 
 def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
-    """Averages final-model selection frequencies across CV repeats.
+    """Averages selection frequencies across all CV repeats.
+
+    A feature omitted from a repeat was selected in zero folds, so its
+    contribution is zero and the repeat still counts in the denominator.
 
     Args:
         perf_result: R ``perf`` result for the final block sPLS-DA model.
@@ -342,12 +345,13 @@ def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
                         }
                     )
                 )
-    return (
+    stability = (
         pd.concat(records, ignore_index=True)
         .groupby(["block", "feature", "component"], as_index=False)
-        .selection_frequency.mean()
-        .rename(columns={"selection_frequency": "mean_selection_frequency"})
+        .agg(mean_selection_frequency=("selection_frequency", "sum"))
     )
+    stability["mean_selection_frequency"] /= len(stable)
+    return stability
 
 
 def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:

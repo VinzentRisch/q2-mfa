@@ -199,8 +199,11 @@ fit_descriptions = {
         "model$crit."
     ),
     "feature_stability": (
-        "Mean cross-validation feature-selection frequencies from mixOmics "
-        "perf() features$stable, grouped by block, feature, and component."
+        "Mean selection frequency across all cross-validation repeats for each "
+        "block, feature, and component. The per-repeat frequencies from mixOmics "
+        "perf() features$stable are summed and divided by the total number of "
+        "repeats. Repeats in which a feature was never selected are included "
+        "in the average with a selection frequency of zero."
     ),
     "auc": (
         "Per-component contrast AUC values and p-values from mixOmics perf() "

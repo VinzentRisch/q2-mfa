@@ -73,6 +73,7 @@ class TestUsageExamples(TestPluginBase):
             instance.get_data_path("feature-selection/nutrimouse-error-rates.tsv"),
             sep="\t",
             index_col="id",
+            dtype={"id": str},
         )
         cls.expected_selected_features = pd.read_csv(
             instance.get_data_path(
@@ -80,6 +81,7 @@ class TestUsageExamples(TestPluginBase):
             ),
             sep="\t",
             index_col="id",
+            dtype={"id": str},
         )
 
     def test_select_features_block_splsda_nutrimouse(self):

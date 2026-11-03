@@ -40,6 +40,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
                 instance.get_data_path(f"tune-components/{name}"),
                 sep="\t",
                 index_col="id",
+                dtype={"id": str},
             )
 
         cls.tables = ResultCollection(
@@ -240,18 +241,18 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         self.assertEqual(
             actual.index.tolist(),
             [
-                "_5",
-                "_6",
-                "_7",
-                "_8",
-                "_13",
-                "_14",
-                "_15",
-                "_16",
-                "_21",
-                "_22",
-                "_23",
-                "_24",
+                "5",
+                "6",
+                "7",
+                "8",
+                "13",
+                "14",
+                "15",
+                "16",
+                "21",
+                "22",
+                "23",
+                "24",
             ],
         )
         self.assertEqual(

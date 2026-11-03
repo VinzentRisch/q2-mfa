@@ -314,10 +314,10 @@ def _serialize_tune_components(
     choice_matrix_majority = choice_matrix_majority.reset_index()
 
     error_rate_weighted.insert(
-        0, "id", [f"_{index}" for index in range(1, len(error_rate_weighted) + 1)]
+        0, "id", [str(index) for index in range(1, len(error_rate_weighted) + 1)]
     )
     error_rate_majority.insert(
-        0, "id", [f"_{index}" for index in range(1, len(error_rate_majority) + 1)]
+        0, "id", [str(index) for index in range(1, len(error_rate_majority) + 1)]
     )
 
     error_rate_weighted.attrs["description"] = jsonl_descriptions["error_rate_weighted"]

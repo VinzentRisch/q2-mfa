@@ -126,7 +126,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
         fitted.validate()
         loadings = fitted.loadings.view(pd.DataFrame)
         nonzero = loadings.loc[
-            loadings["value"].ne(0) & loadings["block"].isin(self.tables)
+            loadings["loading"].ne(0) & loadings["block"].isin(self.tables)
         ]
         counts = nonzero.groupby(["block", "component"]).size().to_dict()
         self.assertEqual(

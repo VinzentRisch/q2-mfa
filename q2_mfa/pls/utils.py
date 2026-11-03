@@ -571,7 +571,7 @@ def _feature_component_correlation_to_dataframe(
     ``plotVar``: each selected feature is correlated with each fitted variate
     from its own block.
     """
-    columns = ["block", "feature", "component", "value"]
+    columns = ["block", "feature", "component", "correlation"]
     records = []
     for block, values in blocks.items():
         block_loadings = loadings[block]
@@ -594,7 +594,7 @@ def _feature_component_correlation_to_dataframe(
                         "block": block,
                         "feature": str(feature),
                         "component": component + 1,
-                        "value": paired["feature"].corr(paired["variate"]),
+                        "correlation": paired["feature"].corr(paired["variate"]),
                     }
                 )
     return pd.DataFrame.from_records(records, columns=columns)
@@ -613,7 +613,7 @@ def _r_feature_similarity_to_dataframe(
     correlations. Feature identities are reconstructed from the selected
     loading rows, in the ordering used by ``circosPlot``.
     """
-    columns = ["block_1", "feature_1", "block_2", "feature_2", "value"]
+    columns = ["block_1", "feature_1", "block_2", "feature_2", "similarity"]
     features = []
     for block in blocks:
         selected = loadings[block].index[
@@ -637,7 +637,7 @@ def _r_feature_similarity_to_dataframe(
             "feature_1": features[first][1],
             "block_2": features[second][0],
             "feature_2": features[second][1],
-            "value": similarity[first, second],
+            "similarity": similarity[first, second],
         }
         for first in range(len(features))
         for second in range(first + 1, len(features))

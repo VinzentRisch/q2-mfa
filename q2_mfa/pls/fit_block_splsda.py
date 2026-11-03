@@ -130,17 +130,19 @@ def _serialize_fit(
     directory_format = PLSFitDirFmt()
     _write_fit_table(
         directory_format.loadings,
-        _block_wide_values(loadings, "feature"),
+        _block_wide_values(loadings, "feature", "loading"),
         "loadings",
     )
     _write_optional_fit_table(
         directory_format.loadings_star,
-        _block_wide_values(_r_named_frames(model.rx2("loadings.star")), "feature"),
+        _block_wide_values(
+            _r_named_frames(model.rx2("loadings.star")), "feature", "loading"
+        ),
         "loadings_star",
     )
     _write_fit_table(
         directory_format.variates,
-        _block_wide_values(variates, "sample"),
+        _block_wide_values(variates, "sample", "score"),
         "variates",
     )
     _write_fit_table(
@@ -215,7 +217,7 @@ def _write_error_rate_table(
 
 
 def _block_wide_values(
-    tables: dict[str, pd.DataFrame], identifier: str
+    tables: dict[str, pd.DataFrame], identifier: str, value_name: str
 ) -> pd.DataFrame:
     """Converts named wide component tables into block-labelled records."""
     records = []
@@ -223,7 +225,7 @@ def _block_wide_values(
         working = table.copy()
         working.index.name = identifier
         long_table = working.reset_index().melt(
-            id_vars=[identifier], var_name="component", value_name="value"
+            id_vars=[identifier], var_name="component", value_name=value_name
         )
         long_table["component"] = [
             component
@@ -232,7 +234,7 @@ def _block_wide_values(
         ]
         long_table.insert(0, "block", str(block))
         records.append(long_table)
-    columns = ["block", identifier, "component", "value"]
+    columns = ["block", identifier, "component", value_name]
     if not records:
         return pd.DataFrame(columns=columns)
     combined = pd.concat(records, ignore_index=True)[columns]
@@ -247,11 +249,17 @@ def _block_component_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         working = table.copy()
         if working.shape[1] == 1:
             long_table = pd.DataFrame(
-                {"component": working.index, "value": working.iloc[:, 0]}
+                {
+                    "component": working.index,
+                    "proportion_explained_variance": working.iloc[:, 0],
+                }
             )
         elif working.shape[0] == 1:
             long_table = pd.DataFrame(
-                {"component": working.columns, "value": working.iloc[0]}
+                {
+                    "component": working.columns,
+                    "proportion_explained_variance": working.iloc[0],
+                }
             )
         else:
             raise ValueError(
@@ -260,7 +268,7 @@ def _block_component_values(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         long_table["component"] = range(1, len(long_table) + 1)
         long_table.insert(0, "block", str(block))
         records.append(long_table)
-    columns = ["block", "component", "value"]
+    columns = ["block", "component", "proportion_explained_variance"]
     if not records:
         return pd.DataFrame(columns=columns)
     return pd.concat(records, ignore_index=True)[columns]

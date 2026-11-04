@@ -117,6 +117,9 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     """Serializes final DIABLO model and performance outputs to JSONL files."""
     loadings = _r_named_frames(model.rx2("loadings"))
     variates = _r_named_frames(model.rx2("variates"))
+    weights = _r_matrix_to_dataframe(r["as.matrix"](model.rx2("weights")))
+    # mixOmics changes weight row names but retains the input block order
+    weights.index = pd.Index([str(name) for name in model.rx2("X").names], name="block")
     prop_expl_var = model.rx2("prop_expl_var")
     directory_format = PLSFitDirFmt()
     _write_fit_table(
@@ -128,6 +131,18 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
         directory_format.variates,
         _block_wide_values(variates, "sample", "score"),
         "variates",
+    )
+    _write_fit_table(
+        directory_format.weights,
+        _component_vectors_to_dataframe(weights.iterrows(), "weight"),
+        "weights",
+    )
+    _write_fit_table(
+        directory_format.consensus_variates,
+        _block_wide_values(
+            _consensus_variates(variates, weights), "sample", "score"
+        ).rename(columns={"block": "method"}),
+        "consensus_variates",
     )
     _write_fit_table(
         directory_format.prop_expl_var,
@@ -177,6 +192,36 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
         "feature_similarity",
     )
     return directory_format
+
+
+def _consensus_variates(
+    variates: dict[str, pd.DataFrame], weights: pd.DataFrame
+) -> dict[str, pd.DataFrame]:
+    """Averages aligned input-block scores using equal or signed model weights.
+
+    The weight index identifies the input blocks, excluding the outcome Y.
+    Each weighted score is divided by the sum of weights for its component,
+    matching mixOmics plotIndiv().
+    """
+    first = variates[weights.index[0]]
+    scores = np.stack(
+        [
+            variates[block].loc[first.index, first.columns].to_numpy()
+            for block in weights.index
+        ]
+    )
+    block_weights = weights.loc[:, first.columns].to_numpy()
+    return {
+        "average": pd.DataFrame(
+            scores.mean(axis=0), index=first.index, columns=first.columns
+        ),
+        "weighted_average": pd.DataFrame(
+            (scores * block_weights[:, None, :]).sum(axis=0)
+            / block_weights.sum(axis=0),
+            index=first.index,
+            columns=first.columns,
+        ),
+    }
 
 
 def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) -> None:

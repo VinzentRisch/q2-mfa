@@ -24,6 +24,7 @@ from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.pls.examples import nutrimouse_tables_factory
 from q2_mfa.pls.fit_block_splsda import (
     _block_wide_values,
+    _consensus_variates,
     _feature_component_correlations,
     _feature_similarity_to_dataframe,
     _resolve_fit_keepx,
@@ -96,6 +97,8 @@ class TestFitBlockSPLSDA(TestPluginBase):
             for name in (
                 "loadings",
                 "variates",
+                "weights",
+                "consensus-variates",
                 "feature-component-correlation",
                 "feature-similarity",
                 "feature-similarity-comp1",
@@ -116,6 +119,9 @@ class TestFitBlockSPLSDA(TestPluginBase):
                 )
             }
         cls.nutrimouse_tables = nutrimouse_tables_factory()
+        cls.nutrimouse_weights = cls.nutrimouse_expected["weights"].pivot(
+            index="block", columns="component", values="weight"
+        )
         instance.package = "q2_mfa.pls.types.tests"
         cls.tuned = Artifact.import_data(
             PLSComponentSelection,
@@ -163,6 +169,24 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
         fitted = result.view(PLSFitDirFmt)
         fitted.validate()
+        variates = fitted.variates.view(pd.DataFrame)
+        scores = {
+            block: table.pivot(index="sample", columns="component", values="score")
+            for block, table in variates.groupby("block", sort=False)
+        }
+        weights = fitted.weights.view(pd.DataFrame).pivot(
+            index="block", columns="component", values="weight"
+        )
+        self.assertEqual(set(weights.index), set(self.tables))
+        for block in self.tables:
+            pd.testing.assert_series_equal(
+                weights.loc[block],
+                scores[block].corrwith(scores["Y"]),
+                check_names=False,
+            )
+        consensus = fitted.consensus_variates.view(pd.DataFrame)
+        self.assertEqual(set(consensus["method"]), {"average", "weighted_average"})
+        self.assertEqual(len(consensus), 2 * 2 * len(self.response.to_series()))
         loadings = fitted.loadings.view(pd.DataFrame)
         nonzero = loadings.loc[
             loadings["loading"].ne(0) & loadings["block"].isin(self.tables)
@@ -217,6 +241,25 @@ class TestFitBlockSPLSDA(TestPluginBase):
         pd.testing.assert_frame_equal(
             fitted.feature_component_correlation.view(pd.DataFrame),
             self.nutrimouse_expected["feature-component-correlation"],
+            check_dtype=False,
+        )
+
+    def test_consensus_variates_match_plot_indiv(self):
+        """Matches mixOmics averages with aligned sample and component labels."""
+        variates = dict(self.nutrimouse_matrices["variates"])
+        variates["lipid"] = variates["lipid"].iloc[::-1, ::-1]
+        consensus = _consensus_variates(variates, self.nutrimouse_weights.iloc[:, ::-1])
+        fitted = PLSFitDirFmt()
+        _write_fit_table(
+            fitted.consensus_variates,
+            _block_wide_values(consensus, "sample", "score").rename(
+                columns={"block": "method"}
+            ),
+            "consensus_variates",
+        )
+        pd.testing.assert_frame_equal(
+            fitted.consensus_variates.view(pd.DataFrame),
+            self.nutrimouse_expected["consensus-variates"],
             check_dtype=False,
         )
 

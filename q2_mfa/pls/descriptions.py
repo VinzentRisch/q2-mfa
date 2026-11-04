@@ -186,6 +186,18 @@ fit_descriptions = {
         "Per-sample latent-component scores from mixOmics block.splsda() "
         "model$variates, with input-block and component labels."
     ),
+    "consensus_variates": (
+        "Per-sample component scores combined across input blocks, excluding "
+        "the outcome block Y, to match mixOmics plotIndiv(). The method average "
+        "uses the arithmetic mean of the block scores. The method weighted_average "
+        "multiplies each block's score by its signed model$weights value, sums "
+        "the products, and divides by the sum of weights for that component."
+    ),
+    "weights": (
+        "Signed Pearson correlations between each input block's component scores "
+        "and the corresponding outcome-component scores from mixOmics "
+        "block.splsda() model$weights."
+    ),
     "prop_expl_var": (
         "Proportion of explained variance per input block and latent component "
         "from mixOmics block.splsda() model$prop_expl_var."

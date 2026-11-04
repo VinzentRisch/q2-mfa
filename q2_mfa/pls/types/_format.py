@@ -50,6 +50,10 @@ class PLSFitDirFmt(model.DirectoryFormat):
 
     loadings = model.File("loadings.jsonl", format=TableJSONLFileFormat)
     variates = model.File("variates.jsonl", format=TableJSONLFileFormat)
+    consensus_variates = model.File(
+        "consensus_variates.jsonl", format=TableJSONLFileFormat
+    )
+    weights = model.File("weights.jsonl", format=TableJSONLFileFormat)
     prop_expl_var = model.File("prop_expl_var.jsonl", format=TableJSONLFileFormat)
     ave = model.File("ave.jsonl", format=TableJSONLFileFormat)
     crit = model.File("criterion.jsonl", format=TableJSONLFileFormat)

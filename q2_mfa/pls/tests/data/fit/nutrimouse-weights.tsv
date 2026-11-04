@@ -1,0 +1,15 @@
+# Reference values generated independently in R with mixOmics 6.34.0.
+# Data come from the bundled nutrimouse dataset.
+# set.seed(1)
+# model <- block.splsda(
+#     X = list(gene = nutrimouse$gene, lipid = nutrimouse$lipid),
+#     Y = nutrimouse$diet, design = "full", ncomp = 2,
+#     keepX = list(gene = c(10, 10), lipid = c(15, 15)))
+# Values extracted directly from model$weights.
+# Weights are signed correlations before per-component normalization.
+# Reshaped in R into the fit output columns, with one-based row IDs.
+id	block	component	weight
+1	gene	1	0.701405372544086
+2	gene	2	0.687590062211719
+3	lipid	1	0.891117298250386
+4	lipid	2	0.940563709716121

@@ -8,19 +8,11 @@
 """Tests the fitting action with current feature-selection artifacts."""
 
 import pandas as pd
-from q2_types.feature_table import FeatureTable, Unconstrained
 from q2_types.tabular import TableJSONLFileFormat
-from rachis import Artifact, Metadata
+from rachis import Artifact
 from rachis.plugin.testing import TestPluginBase
 
-from q2_mfa.pls import (
-    AssociationMatrix,
-    PLSComponentSelection,
-    PLSFeatureSelection,
-    PLSFeatureSelectionDirFmt,
-    PLSFitDirFmt,
-)
-from q2_mfa.pls.descriptions import fit_descriptions
+from q2_mfa.pls import PLSFeatureSelection, PLSFeatureSelectionDirFmt, PLSFitDirFmt
 from q2_mfa.pls.examples import nutrimouse_tables_factory
 from q2_mfa.pls.fit_block_splsda import (
     _block_wide_values,
@@ -41,28 +33,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         """Loads shared artifacts and mixOmics reference results."""
         super().setUpClass()
         instance = cls()
-        cls.tables = {
-            name: Artifact.import_data(
-                FeatureTable[Unconstrained],
-                pd.read_csv(
-                    instance.get_data_path(f"tune-components/{name}.tsv"),
-                    sep="\t",
-                    index_col="id",
-                ),
-            )
-            for name in ("block-a", "block-b")
-        }
-        cls.response = Metadata.load(
-            instance.get_data_path("tune-components/response.tsv")
-        ).get_column("group")
-        cls.design = Artifact.import_data(
-            AssociationMatrix,
-            pd.read_csv(
-                instance.get_data_path("utils/design-valid.tsv"),
-                sep="\t",
-                index_col="id",
-            ),
-        )
         error_rates = (
             TableJSONLFileFormat(
                 instance.get_data_path(
@@ -122,11 +92,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         cls.nutrimouse_weights = cls.nutrimouse_expected["weights"].pivot(
             index="block", columns="component", values="weight"
         )
-        instance.package = "q2_mfa.pls.types.tests"
-        cls.tuned = Artifact.import_data(
-            PLSComponentSelection,
-            instance.get_data_path("pls-tune-components"),
-        )
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""
@@ -153,74 +118,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
                 ["block-a", "block-b"],
                 3,
             )
-
-    def test_fit_uses_current_selection_artifacts(self):
-        """Executes real R fitting using tuned components and wide keepX counts."""
-        (result,) = self.plugin.methods["fit_block_splsda"](
-            tables=self.tables,
-            y=self.response,
-            design_matrix=self.design,
-            tuned_components=self.tuned,
-            feature_selection=self.selection,
-            folds=3,
-            nrepeat=3,
-            seed=1,
-            threads=1,
-        )
-        fitted = result.view(PLSFitDirFmt)
-        fitted.validate()
-        variates = fitted.variates.view(pd.DataFrame)
-        scores = {
-            block: table.pivot(index="sample", columns="component", values="score")
-            for block, table in variates.groupby("block", sort=False)
-        }
-        weights = fitted.weights.view(pd.DataFrame).pivot(
-            index="block", columns="component", values="weight"
-        )
-        self.assertEqual(set(weights.index), set(self.tables))
-        for block in self.tables:
-            pd.testing.assert_series_equal(
-                weights.loc[block],
-                scores[block].corrwith(scores["Y"]),
-                check_names=False,
-            )
-        consensus = fitted.consensus_variates.view(pd.DataFrame)
-        self.assertEqual(set(consensus["method"]), {"average", "weighted_average"})
-        self.assertEqual(len(consensus), 2 * 2 * len(self.response.to_series()))
-        loadings = fitted.loadings.view(pd.DataFrame)
-        nonzero = loadings.loc[
-            loadings["loading"].ne(0) & loadings["block"].isin(self.tables)
-        ]
-        counts = nonzero.groupby(["block", "component"]).size().to_dict()
-        self.assertEqual(
-            counts,
-            {
-                ("block-a", 1): 1,
-                ("block-a", 2): 2,
-                ("block-b", 1): 2,
-                ("block-b", 2): 1,
-            },
-        )
-        correlations = fitted.feature_component_correlation.view(pd.DataFrame)
-        selected = set(zip(nonzero["block"], nonzero["feature"]))
-        self.assertCountEqual(
-            correlations[["block", "feature", "component"]].itertuples(
-                index=False, name=None
-            ),
-            [(block, feature, comp) for block, feature in selected for comp in (1, 2)],
-        )
-        self.assertFalse(fitted.feature_similarity.view(pd.DataFrame).empty)
-        stability = fitted.feature_stability.view(pd.DataFrame)
-        self.assertEqual(
-            stability.attrs["description"], fit_descriptions["feature_stability"]
-        )
-        frequencies = stability.set_index(["block", "feature", "component"])
-        # b0 was selected in two folds of one repeat and omitted from the other two.
-        self.assertAlmostEqual(
-            frequencies.loc[("block-b", "b0", 2), "mean_selection_frequency"], 2 / 9
-        )
-        for error_file in (fitted.error_rate_weighted, fitted.error_rate_majority):
-            self.assertEqual(set(error_file.view(pd.DataFrame)["component"]), {1, 2})
 
     def test_feature_component_correlations_match_plot_var(self):
         """Matches the labelled component correlations returned by plotVar."""

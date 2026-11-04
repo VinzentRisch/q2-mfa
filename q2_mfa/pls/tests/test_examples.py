@@ -18,7 +18,7 @@ from rachis.plugin.testing import TestPluginBase
 from rachis.sdk.usage import ExecutionUsage
 
 import q2_mfa
-from q2_mfa.pls import PLSFeatureSelectionDirFmt
+from q2_mfa.pls import PLSFeatureSelectionDirFmt, PLSFitDirFmt
 from q2_mfa.plugin_setup import plugin
 
 
@@ -67,6 +67,7 @@ class TestUsageExamples(TestPluginBase):
 
     @classmethod
     def setUpClass(cls):
+        """Loads shared feature-selection and independent R fit references."""
         super().setUpClass()
         instance = cls()
         cls.expected_error_rates = pd.read_csv(
@@ -83,6 +84,29 @@ class TestUsageExamples(TestPluginBase):
             index_col="id",
             dtype={"id": str},
         )
+        cls.expected_fit = {
+            name: pd.read_csv(
+                instance.get_data_path(f"fit/nutrimouse-{fixture}.tsv"),
+                sep="\t",
+                comment="#",
+                dtype={"id": str, "sample": str},
+            )
+            for name, fixture in (
+                ("loadings", "loadings"),
+                ("variates", "variates"),
+                ("weights", "weights"),
+                ("consensus_variates", "consensus-variates"),
+                ("prop_expl_var", "prop-expl-var"),
+                ("ave", "ave"),
+                ("crit", "criterion"),
+                ("feature_stability", "feature-stability"),
+                ("auc", "auc"),
+                ("error_rate_weighted", "error-rate-weighted"),
+                ("error_rate_majority", "error-rate-majority"),
+                ("feature_component_correlation", "feature-component-correlation"),
+                ("feature_similarity", "feature-similarity"),
+            )
+        }
 
     def test_select_features_block_splsda_nutrimouse(self):
         use = ExecutionUsage()
@@ -121,3 +145,22 @@ class TestUsageExamples(TestPluginBase):
             list(report_index["Error-rate heatmaps"]["children"]),
             ["Component 1", "Component 2"],
         )
+
+    def test_fit_block_splsda_nutrimouse(self):
+        """Executes the fit example and compares every output to R fixtures."""
+        use = ExecutionUsage()
+        action = self.plugin.methods["fit_block_splsda"]
+        action.examples["nutrimouse"](use)
+        outputs = use.render()
+
+        fitted = outputs["fit_nutrimouse"].execute().view(PLSFitDirFmt)
+        fitted.validate()
+        for name, expected in self.expected_fit.items():
+            with self.subTest(table=name):
+                assert_frame_equal(
+                    getattr(fitted, name).view(pd.DataFrame),
+                    expected,
+                    check_dtype=False,
+                    rtol=1e-8,
+                    atol=1e-10,
+                )

@@ -1,19 +1,20 @@
 # Reference values generated independently in R with mixOmics 6.34.0.
-# Data come from the bundled nutrimouse dataset.
-# set.seed(1)
-# model <- block.splsda(
-#     X = list(gene = nutrimouse$gene, lipid = nutrimouse$lipid),
-#     Y = nutrimouse$diet, design = "full", ncomp = 2,
-#     keepX = list(gene = c(10, 10), lipid = c(15, 15)))
-# Values extracted from model$loadings.
-# Reshaped in R into the fit output columns, with one-based row IDs.
+# Data: the nutrimouse dataset bundled with mixOmics; outcome: diet.
+# Model: ncomp = 2; keepX = list(gene = c(5, 5), lipid = c(9, 5)).
+# Design: gene-lipid = lipid-gene = 0.9; diagonal = 0; links to Y = 1.
+# scale = TRUE; tol = 1e-6; max.iter = 100; near.zero.var = FALSE.
+# Seed: 42. perf: Mfold, folds = 5, nrepeat = 10, dist = all, auc = TRUE.
+# perf: signif.threshold = 0.01; BiocParallel::SerialParam().
+# Source: model$loadings
+# Reshaped only in R to fit output columns, with one-based row IDs.
+# Regenerate with generate-nutrimouse.R in this directory.
 id	block	feature	component	loading
 1	gene	X36b4	1	0
 2	gene	ACAT1	1	0
 3	gene	ACAT2	1	0
 4	gene	ACBP	1	0
 5	gene	ACC1	1	0
-6	gene	ACC2	1	-0.520975517035796
+6	gene	ACC2	1	0
 7	gene	ACOTH	1	0
 8	gene	ADISP	1	0
 9	gene	ADSS1	1	0
@@ -39,24 +40,24 @@ id	block	feature	component	loading
 29	gene	CYP2b10	1	0
 30	gene	CYP2b13	1	0
 31	gene	CYP2c29	1	0
-32	gene	CYP3A11	1	0.239423508730418
+32	gene	CYP3A11	1	0
 33	gene	CYP4A10	1	0
 34	gene	CYP4A14	1	0
 35	gene	CYP7a	1	0
 36	gene	CYP8b1	1	0
 37	gene	FAS	1	0
-38	gene	FAT	1	-0.295569833196736
+38	gene	FAT	1	0
 39	gene	FDFT	1	0
 40	gene	FXR	1	0
 41	gene	G6PDH	1	0
 42	gene	G6Pase	1	0
 43	gene	GK	1	0
 44	gene	GS	1	0
-45	gene	GSTa	1	0
+45	gene	GSTa	1	0.0738758596690764
 46	gene	GSTmu	1	0
-47	gene	GSTpi2	1	0.551764935742783
+47	gene	GSTpi2	1	0
 48	gene	HMGCoAred	1	0
-49	gene	HPNCL	1	0
+49	gene	HPNCL	1	0.650352989250417
 50	gene	IL.2	1	0
 51	gene	L.FABP	1	0
 52	gene	LCE	1	0
@@ -65,9 +66,9 @@ id	block	feature	component	loading
 55	gene	LPL	1	0
 56	gene	LXRa	1	0
 57	gene	LXRb	1	0
-58	gene	Lpin	1	0
-59	gene	Lpin1	1	0
-60	gene	Lpin2	1	0
+58	gene	Lpin	1	0.390724399771934
+59	gene	Lpin1	1	0.325213183694388
+60	gene	Lpin2	1	0.559601800663136
 61	gene	Lpin3	1	0
 62	gene	M.CPT1	1	0
 63	gene	MCAD	1	0
@@ -78,12 +79,12 @@ id	block	feature	component	loading
 68	gene	MTHFR	1	0
 69	gene	NGFiB	1	0
 70	gene	NURR1	1	0
-71	gene	Ntcp	1	-0.149726419795749
+71	gene	Ntcp	1	0
 72	gene	OCTN2	1	0
 73	gene	PAL	1	0
 74	gene	PDK4	1	0
 75	gene	PECI	1	0
-76	gene	PLTP	1	-0.168288744539731
+76	gene	PLTP	1	0
 77	gene	PMDCI	1	0
 78	gene	PON	1	0
 79	gene	PPARa	1	0
@@ -96,11 +97,11 @@ id	block	feature	component	loading
 86	gene	RXRa	1	0
 87	gene	RXRb2	1	0
 88	gene	RXRg1	1	0
-89	gene	S14	1	-0.12912127417775
+89	gene	S14	1	0
 90	gene	SHP1	1	0
 91	gene	SIAT4c	1	0
-92	gene	SPI1.1	1	0.174355594594263
-93	gene	SR.BI	1	-0.369368661797485
+92	gene	SPI1.1	1	0
+93	gene	SR.BI	1	0
 94	gene	THB	1	0
 95	gene	THIOL	1	0
 96	gene	TRa	1	0
@@ -115,7 +116,7 @@ id	block	feature	component	loading
 105	gene	ap2	1	0
 106	gene	apoA.I	1	0
 107	gene	apoB	1	0
-108	gene	apoC3	1	-0.212627223214798
+108	gene	apoC3	1	0
 109	gene	apoE	1	0
 110	gene	c.fos	1	0
 111	gene	cHMGCoAS	1	0
@@ -141,10 +142,10 @@ id	block	feature	component	loading
 131	gene	AM2R	2	0
 132	gene	AOX	2	0
 133	gene	BACT	2	0
-134	gene	BIEN	2	-0.0590590622159898
+134	gene	BIEN	2	0
 135	gene	BSEP	2	0
 136	gene	Bcl.3	2	0
-137	gene	C16SR	2	-0.0340620283093415
+137	gene	C16SR	2	0
 138	gene	CACP	2	0
 139	gene	CAR1	2	0
 140	gene	CBS	2	0
@@ -159,24 +160,24 @@ id	block	feature	component	loading
 149	gene	CYP2b10	2	0
 150	gene	CYP2b13	2	0
 151	gene	CYP2c29	2	0
-152	gene	CYP3A11	2	-0.177793931776632
+152	gene	CYP3A11	2	0.707579697148478
 153	gene	CYP4A10	2	0
 154	gene	CYP4A14	2	0
 155	gene	CYP7a	2	0
 156	gene	CYP8b1	2	0
 157	gene	FAS	2	0
-158	gene	FAT	2	0
+158	gene	FAT	2	-0.0496890652112114
 159	gene	FDFT	2	0
 160	gene	FXR	2	0
 161	gene	G6PDH	2	0
-162	gene	G6Pase	2	-0.479946660941853
+162	gene	G6Pase	2	0
 163	gene	GK	2	0
 164	gene	GS	2	0
-165	gene	GSTa	2	-0.277478147949282
+165	gene	GSTa	2	0
 166	gene	GSTmu	2	0
-167	gene	GSTpi2	2	0
+167	gene	GSTpi2	2	0.700282250608769
 168	gene	HMGCoAred	2	0
-169	gene	HPNCL	2	-0.551139644987018
+169	gene	HPNCL	2	0
 170	gene	IL.2	2	0
 171	gene	L.FABP	2	0
 172	gene	LCE	2	0
@@ -185,9 +186,9 @@ id	block	feature	component	loading
 175	gene	LPL	2	0
 176	gene	LXRa	2	0
 177	gene	LXRb	2	0
-178	gene	Lpin	2	-0.307150565635184
-179	gene	Lpin1	2	-0.249930427940337
-180	gene	Lpin2	2	-0.442461906722972
+178	gene	Lpin	2	0
+179	gene	Lpin1	2	0
+180	gene	Lpin2	2	0
 181	gene	Lpin3	2	0
 182	gene	M.CPT1	2	0
 183	gene	MCAD	2	0
@@ -198,7 +199,7 @@ id	block	feature	component	loading
 188	gene	MTHFR	2	0
 189	gene	NGFiB	2	0
 190	gene	NURR1	2	0
-191	gene	Ntcp	2	0
+191	gene	Ntcp	2	-0.0740028735779892
 192	gene	OCTN2	2	0
 193	gene	PAL	2	0
 194	gene	PDK4	2	0
@@ -220,12 +221,12 @@ id	block	feature	component	loading
 210	gene	SHP1	2	0
 211	gene	SIAT4c	2	0
 212	gene	SPI1.1	2	0
-213	gene	SR.BI	2	0
+213	gene	SR.BI	2	-0.0314692415895373
 214	gene	THB	2	0
 215	gene	THIOL	2	0
 216	gene	TRa	2	0
 217	gene	TRb	2	0
-218	gene	Tpalpha	2	-0.0080042066835027
+218	gene	Tpalpha	2	0
 219	gene	Tpbeta	2	0
 220	gene	UCP2	2	0
 221	gene	UCP3	2	0
@@ -248,55 +249,55 @@ id	block	feature	component	loading
 238	gene	i.NOS	2	0
 239	gene	mABC1	2	0
 240	gene	mHMGCoAS	2	0
-241	lipid	C14.0	1	-0.3541699500373
-242	lipid	C16.0	1	0
-243	lipid	C18.0	1	0.28603572343159
-244	lipid	C16.1n.9	1	-0.333157275754691
-245	lipid	C16.1n.7	1	-0.356157758944618
-246	lipid	C18.1n.9	1	-0.372604801140229
-247	lipid	C18.1n.7	1	-0.408515422315033
+241	lipid	C14.0	1	0
+242	lipid	C16.0	1	0.0917598653699613
+243	lipid	C18.0	1	0
+244	lipid	C16.1n.9	1	0
+245	lipid	C16.1n.7	1	0.0664113587879887
+246	lipid	C18.1n.9	1	0
+247	lipid	C18.1n.7	1	0.0362310373843156
 248	lipid	C20.1n.9	1	0
-249	lipid	C20.3n.9	1	-0.214212191354386
-250	lipid	C18.2n.6	1	0.137252669631718
-251	lipid	C18.3n.6	1	-0.077008339664569
-252	lipid	C20.2n.6	1	0
-253	lipid	C20.3n.6	1	0.14569378381796
-254	lipid	C20.4n.6	1	0.0168052133021564
-255	lipid	C22.4n.6	1	0
-256	lipid	C22.5n.6	1	0
+249	lipid	C20.3n.9	1	0.164244969344903
+250	lipid	C18.2n.6	1	-0.50360307590293
+251	lipid	C18.3n.6	1	0
+252	lipid	C20.2n.6	1	-0.566261190555421
+253	lipid	C20.3n.6	1	0
+254	lipid	C20.4n.6	1	-0.0902282209815084
+255	lipid	C22.4n.6	1	-0.53552284283195
+256	lipid	C22.5n.6	1	-0.299477744518237
 257	lipid	C18.3n.3	1	0
-258	lipid	C20.3n.3	1	0.00791719024885356
-259	lipid	C20.5n.3	1	0.201676160790308
-260	lipid	C22.5n.3	1	0.123361249210585
-261	lipid	C22.6n.3	1	0.317911015324056
-262	lipid	C14.0	2	0
-263	lipid	C16.0	2	-0.278958946403659
+258	lipid	C20.3n.3	1	0
+259	lipid	C20.5n.3	1	0
+260	lipid	C22.5n.3	1	0
+261	lipid	C22.6n.3	1	0
+262	lipid	C14.0	2	-0.0910554201161081
+263	lipid	C16.0	2	0
 264	lipid	C18.0	2	0
 265	lipid	C16.1n.9	2	0
-266	lipid	C16.1n.7	2	-0.0279350160382979
-267	lipid	C18.1n.9	2	0
-268	lipid	C18.1n.7	2	0
-269	lipid	C20.1n.9	2	0.124804130730161
-270	lipid	C20.3n.9	2	-0.138969337937862
-271	lipid	C18.2n.6	2	0.388825026741689
+266	lipid	C16.1n.7	2	-0.0660470706419761
+267	lipid	C18.1n.9	2	-0.214153488335275
+268	lipid	C18.1n.7	2	-0.371364113379423
+269	lipid	C20.1n.9	2	0
+270	lipid	C20.3n.9	2	0
+271	lipid	C18.2n.6	2	0
 272	lipid	C18.3n.6	2	0
-273	lipid	C20.2n.6	2	0.479419747598484
-274	lipid	C20.3n.6	2	0.0250237783895047
-275	lipid	C20.4n.6	2	0.181032860282957
-276	lipid	C22.4n.6	2	0.457539788004633
-277	lipid	C22.5n.6	2	0.333537324585752
-278	lipid	C18.3n.3	2	-0.0274108830504541
-279	lipid	C20.3n.3	2	-0.0606758488204663
-280	lipid	C20.5n.3	2	-0.181658198282609
-281	lipid	C22.5n.3	2	-0.257107278481098
-282	lipid	C22.6n.3	2	-0.218995749001756
-283	Y	coc	1	-0.843253576136917
-284	Y	fish	1	0.455184011035353
-285	Y	lin	1	0.259205792974989
-286	Y	ref	1	0.0085733887914708
-287	Y	sun	1	0.120290383335104
-288	Y	coc	2	-0.339779938888024
-289	Y	fish	2	-0.289126320155171
-290	Y	lin	2	-0.309073810131779
-291	Y	ref	2	0.104623708667636
-292	Y	sun	2	0.833356360507338
+273	lipid	C20.2n.6	2	0
+274	lipid	C20.3n.6	2	0
+275	lipid	C20.4n.6	2	0
+276	lipid	C22.4n.6	2	0
+277	lipid	C22.5n.6	2	0
+278	lipid	C18.3n.3	2	0
+279	lipid	C20.3n.3	2	0
+280	lipid	C20.5n.3	2	0
+281	lipid	C22.5n.3	2	0
+282	lipid	C22.6n.3	2	0.896422709247619
+283	Y	coc	1	0.534372781307396
+284	Y	fish	1	0.116077886415563
+285	Y	lin	1	0.201449753864361
+286	Y	ref	1	-0.0402544191386596
+287	Y	sun	1	-0.811646002448661
+288	Y	coc	2	-0.682971926670755
+289	Y	fish	2	0.684534866371243
+290	Y	lin	2	0.207550298159808
+291	Y	ref	2	-0.10138922952344
+292	Y	sun	2	-0.107724008336856

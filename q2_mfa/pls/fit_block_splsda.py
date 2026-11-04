@@ -413,8 +413,6 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
     """
     auc = perf_result.rx2("auc")
     columns = ["component", "contrast", "auc", "p_value"]
-    if type(auc).__name__ == "NULLType":
-        return pd.DataFrame(columns=columns)
     records = []
     for component, values in enumerate(auc, start=1):
         auc_table = (
@@ -425,11 +423,7 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
         )
         auc_table.insert(0, "component", component)
         records.append(auc_table[columns])
-    return (
-        pd.concat(records, ignore_index=True)
-        if records
-        else pd.DataFrame(columns=columns)
-    )
+    return pd.concat(records, ignore_index=True)
 
 
 def _feature_component_correlations(

@@ -11,6 +11,7 @@ import pandas as pd
 from q2_types.tabular import TableJSONLFileFormat
 from rachis import Artifact
 from rachis.plugin.testing import TestPluginBase
+from rpy2.robjects import r
 
 from q2_mfa.pls import PLSFeatureSelection, PLSFeatureSelectionDirFmt, PLSFitDirFmt
 from q2_mfa.pls.examples import nutrimouse_tables_factory
@@ -19,6 +20,7 @@ from q2_mfa.pls.fit_block_splsda import (
     _consensus_variates,
     _feature_component_correlations,
     _feature_similarity_to_dataframe,
+    _r_auc_to_dataframe,
     _resolve_fit_keepx,
     _write_fit_table,
 )
@@ -92,6 +94,33 @@ class TestFitBlockSPLSDA(TestPluginBase):
         cls.nutrimouse_weights = cls.nutrimouse_expected["weights"].pivot(
             index="block", columns="component", values="weight"
         )
+
+    def test_r_auc_to_dataframe(self):
+        """Flattens R AUC matrices while preserving labels and values."""
+        perf_result = r("""
+            list(auc = list(
+                comp1 = matrix(
+                    c(0.8, 0.01, 0.7, 0.02), nrow = 2, byrow = TRUE,
+                    dimnames = list(c("A vs rest", "B vs rest"),
+                                    c("AUC", "p-value"))
+                ),
+                comp2 = matrix(
+                    c(0.9, 0.03, 0.85, 0.04), nrow = 2, byrow = TRUE,
+                    dimnames = list(c("A vs rest", "B vs rest"),
+                                    c("AUC", "p-value"))
+                )
+            ))
+        """)
+        expected = pd.DataFrame(
+            {
+                "component": [1, 1, 2, 2],
+                "contrast": ["A vs rest", "B vs rest", "A vs rest", "B vs rest"],
+                "auc": [0.8, 0.7, 0.9, 0.85],
+                "p_value": [0.01, 0.02, 0.03, 0.04],
+            }
+        )
+
+        pd.testing.assert_frame_equal(_r_auc_to_dataframe(perf_result), expected)
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""

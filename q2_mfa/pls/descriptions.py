@@ -226,7 +226,8 @@ fit_descriptions = {
         "plotVar()."
     ),
     "feature_similarity": (
-        "Pairwise selected-feature similarities across all fitted components from "
-        "mixOmics circosPlot()."
+        "Pairwise similarities between selected features. For each pair, "
+        "multiply the two feature-to-component correlations on each fitted "
+        "component and sum the products, as in mixOmics circosPlot()."
     ),
 }

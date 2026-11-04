@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from rachis import CategoricalMetadataColumn
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import IntVector, r
+from rpy2.robjects import r
 
 from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.pls.types._format import (
@@ -110,15 +110,10 @@ def fit_block_splsda(
             "progressBar": False,
         },
     )
-    return _serialize_fit(model, perf_result, blocks, selected_ncomp)
+    return _serialize_fit(model, perf_result)
 
 
-def _serialize_fit(
-    model,
-    perf_result,
-    blocks,
-    ncomp,
-) -> PLSFitDirFmt:
+def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     """Serializes final DIABLO model and performance outputs to JSONL files."""
     loadings = _r_named_frames(model.rx2("loadings"))
     variates = _r_named_frames(model.rx2("variates"))
@@ -168,14 +163,17 @@ def _serialize_fit(
         _r_perf_error_rate_to_df(perf_result, "MajorityVote"),
         "error_rate_majority",
     )
+    correlations = _feature_component_correlations(
+        _r_named_frames(model.rx2("X")), variates, loadings
+    )
     _write_fit_table(
         directory_format.feature_component_correlation,
-        _feature_component_correlation_to_dataframe(blocks, variates, loadings),
+        _block_wide_values(correlations, "feature", "correlation"),
         "feature_component_correlation",
     )
     _write_fit_table(
         directory_format.feature_similarity,
-        _r_feature_similarity_to_dataframe(model, blocks, loadings, ncomp),
+        _feature_similarity_to_dataframe(correlations),
         "feature_similarity",
     )
     return directory_format
@@ -384,66 +382,47 @@ def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
     )
 
 
-def _feature_component_correlation_to_dataframe(
+def _feature_component_correlations(
     blocks: dict[str, pd.DataFrame],
     variates: dict[str, pd.DataFrame],
     loadings: dict[str, pd.DataFrame],
-) -> pd.DataFrame:
-    """Correlates features selected on any component with all block scores."""
-    columns = ["block", "feature", "component", "correlation"]
-    records = []
+) -> dict[str, pd.DataFrame]:
+    """Returns feature-by-component Pearson correlations for each fitted block.
+
+    Selects features with a nonzero loading on any fitted component. Each
+    correlation uses the samples with both a feature value and a component
+    score, as in mixOmics ``circosPlot()``.
+    """
+    correlations = {}
     for block, values in blocks.items():
         block_loadings = loadings[block]
         selected = block_loadings.index[block_loadings.fillna(0).ne(0).any(axis=1)]
         feature_values = values.loc[:, selected]
-        for component, (_, scores) in enumerate(variates[block].items(), start=1):
-            records.extend(
-                (block, feature, component, feature_values[feature].corr(scores))
-                for feature in selected
-            )
-    return pd.DataFrame.from_records(records, columns=columns)
-
-
-def _r_feature_similarity_to_dataframe(
-    model,
-    blocks: dict[str, pd.DataFrame],
-    loadings: dict[str, pd.DataFrame],
-    ncomp: int,
-) -> pd.DataFrame:
-    """Captures the all-component similarity matrix returned by ``circosPlot``.
-
-    mixOmics builds this matrix from feature-to-variate correlations, so its
-    entries are component-derived similarities rather than raw feature
-    correlations. Feature identities are reconstructed from the selected
-    loading rows, in the ordering used by ``circosPlot``.
-    """
-    columns = ["block_1", "feature_1", "block_2", "feature_2", "similarity"]
-    features = []
-    for block in blocks:
-        selected = loadings[block].index[
-            loadings[block].iloc[:, :ncomp].abs().sum(axis=1).ne(0)
-        ]
-        features.extend((block, str(feature)) for feature in selected)
-    if len(features) < 2:
-        return pd.DataFrame(columns=columns)
-    similarity = np.asarray(
-        r["circosPlot"](model, comp=IntVector(range(1, ncomp + 1)), cutoff=0),
-        dtype=float,
-    )
-    if similarity.shape != (len(features), len(features)):
-        raise ValueError(
-            "circosPlot returned a similarity matrix incompatible with the "
-            "selected model features."
+        block_variates = variates[block]
+        correlations[block] = pd.DataFrame(
+            {
+                component: feature_values.corrwith(scores)
+                for component, (_, scores) in enumerate(block_variates.items(), start=1)
+            }
         )
-    records = [
+    return correlations
+
+
+def _feature_similarity_to_dataframe(
+    correlations: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Returns one dot product of component correlations per feature pair."""
+    combined = pd.concat(correlations, names=["block", "feature"])
+    blocks = combined.index.get_level_values("block")
+    features = combined.index.get_level_values("feature")
+    values = combined.to_numpy()
+    first, second = np.triu_indices(len(combined), k=1)
+    return pd.DataFrame(
         {
-            "block_1": features[first][0],
-            "feature_1": features[first][1],
-            "block_2": features[second][0],
-            "feature_2": features[second][1],
-            "similarity": similarity[first, second],
+            "block_1": blocks[first],
+            "feature_1": features[first],
+            "block_2": blocks[second],
+            "feature_2": features[second],
+            "similarity": (values @ values.T)[first, second],
         }
-        for first in range(len(features))
-        for second in range(first + 1, len(features))
-    ]
-    return pd.DataFrame.from_records(records, columns=columns)
+    )

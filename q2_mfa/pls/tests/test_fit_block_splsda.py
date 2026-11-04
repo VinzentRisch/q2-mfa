@@ -12,7 +12,6 @@ from q2_types.feature_table import FeatureTable, Unconstrained
 from q2_types.tabular import TableJSONLFileFormat
 from rachis import Artifact, Metadata
 from rachis.plugin.testing import TestPluginBase
-from rpy2.robjects import r
 
 from q2_mfa.pls import (
     AssociationMatrix,
@@ -22,7 +21,14 @@ from q2_mfa.pls import (
     PLSFitDirFmt,
 )
 from q2_mfa.pls.descriptions import fit_descriptions
-from q2_mfa.pls.fit_block_splsda import _resolve_fit_keepx
+from q2_mfa.pls.examples import nutrimouse_tables_factory
+from q2_mfa.pls.fit_block_splsda import (
+    _block_wide_values,
+    _feature_component_correlations,
+    _feature_similarity_to_dataframe,
+    _resolve_fit_keepx,
+    _write_fit_table,
+)
 from q2_mfa.pls.select_features_block_splsda import _serialize_feature_selection
 
 
@@ -31,7 +37,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
 
     @classmethod
     def setUpClass(cls):
-        """Loads shared tables and artifacts from existing fixtures."""
+        """Loads shared artifacts and mixOmics reference results."""
         super().setUpClass()
         instance = cls()
         cls.tables = {
@@ -80,6 +86,36 @@ class TestFitBlockSPLSDA(TestPluginBase):
         cls.selection = Artifact.import_data(
             PLSFeatureSelection, _serialize_feature_selection(error_rates, selected)
         )
+        cls.nutrimouse_expected = {
+            name: pd.read_csv(
+                instance.get_data_path(f"fit/nutrimouse-{name}.tsv"),
+                sep="\t",
+                comment="#",
+                dtype={"id": str, "sample": str},
+            )
+            for name in (
+                "loadings",
+                "variates",
+                "feature-component-correlation",
+                "feature-similarity",
+                "feature-similarity-comp1",
+            )
+        }
+        cls.nutrimouse_matrices = {}
+        for name, identifier, value in (
+            ("loadings", "feature", "loading"),
+            ("variates", "sample", "score"),
+            ("feature-component-correlation", "feature", "correlation"),
+        ):
+            cls.nutrimouse_matrices[name] = {
+                block: table.pivot_table(
+                    index=identifier, columns="component", values=value, sort=False
+                )
+                for block, table in cls.nutrimouse_expected[name].groupby(
+                    "block", sort=False
+                )
+            }
+        cls.nutrimouse_tables = nutrimouse_tables_factory()
         instance.package = "q2_mfa.pls.types.tests"
         cls.tuned = Artifact.import_data(
             PLSComponentSelection,
@@ -114,8 +150,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
 
     def test_fit_uses_current_selection_artifacts(self):
         """Executes real R fitting using tuned components and wide keepX counts."""
-        r("pdf(file = NULL)")
-        self.addCleanup(r["dev.off"])
         (result,) = self.plugin.methods["fit_block_splsda"](
             tables=self.tables,
             y=self.response,
@@ -163,3 +197,54 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
         for error_file in (fitted.error_rate_weighted, fitted.error_rate_majority):
             self.assertEqual(set(error_file.view(pd.DataFrame)["component"]), {1, 2})
+
+    def test_feature_component_correlations_match_plot_var(self):
+        """Matches the labelled component correlations returned by plotVar."""
+        correlations = _feature_component_correlations(
+            {
+                block: table.view(pd.DataFrame)
+                for block, table in self.nutrimouse_tables.items()
+            },
+            self.nutrimouse_matrices["variates"],
+            self.nutrimouse_matrices["loadings"],
+        )
+        fitted = PLSFitDirFmt()
+        _write_fit_table(
+            fitted.feature_component_correlation,
+            _block_wide_values(correlations, "feature", "correlation"),
+            "feature_component_correlation",
+        )
+        pd.testing.assert_frame_equal(
+            fitted.feature_component_correlation.view(pd.DataFrame),
+            self.nutrimouse_expected["feature-component-correlation"],
+            check_dtype=False,
+        )
+
+    def test_feature_similarity_matches_circos_plot(self):
+        """Matches circosPlot similarities using saved plotVar correlations."""
+        correlations = self.nutrimouse_matrices["feature-component-correlation"]
+        for component_count, key in (
+            (1, "feature-similarity-comp1"),
+            (2, "feature-similarity"),
+        ):
+            with self.subTest(components=component_count):
+                expected = self.nutrimouse_expected[key]
+                selected = set(expected["feature_1"]) | set(expected["feature_2"])
+                observed = _feature_similarity_to_dataframe(
+                    {
+                        block: table.loc[
+                            table.index.isin(selected),
+                            table.columns[:component_count],
+                        ]
+                        for block, table in correlations.items()
+                    }
+                )
+                fitted = PLSFitDirFmt()
+                _write_fit_table(
+                    fitted.feature_similarity, observed, "feature_similarity"
+                )
+                pd.testing.assert_frame_equal(
+                    fitted.feature_similarity.view(pd.DataFrame),
+                    expected,
+                    check_dtype=False,
+                )

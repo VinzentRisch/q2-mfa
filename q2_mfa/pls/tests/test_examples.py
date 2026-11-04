@@ -86,7 +86,7 @@ class TestUsageExamples(TestPluginBase):
         )
         cls.expected_fit = {
             name: pd.read_csv(
-                instance.get_data_path(f"fit/nutrimouse-{fixture}.tsv"),
+                instance.get_data_path(f"fit/nutrimouse/{fixture}.tsv"),
                 sep="\t",
                 comment="#",
                 dtype={"id": str, "sample": str},

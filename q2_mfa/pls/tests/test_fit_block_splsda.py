@@ -21,6 +21,9 @@ from q2_mfa.pls.fit_block_splsda import (
     _feature_component_correlations,
     _feature_similarity_to_dataframe,
     _r_auc_to_dataframe,
+    _r_ave_to_dataframe,
+    _r_criterion_to_dataframe,
+    _r_feature_stability_to_dataframe,
     _resolve_fit_keepx,
     _write_fit_table,
 )
@@ -35,6 +38,30 @@ class TestFitBlockSPLSDA(TestPluginBase):
         """Loads shared artifacts and mixOmics reference results."""
         super().setUpClass()
         instance = cls()
+        cls.ave_values = r["source"](instance.get_data_path("fit/ave-input.R")).rx2(
+            "value"
+        )
+        cls.ave_expected = pd.read_csv(
+            instance.get_data_path("fit/ave-expected.tsv"), sep="\t"
+        )
+        cls.criterion_values = r["source"](
+            instance.get_data_path("fit/criterion-input.R")
+        ).rx2("value")
+        cls.criterion_expected = pd.read_csv(
+            instance.get_data_path("fit/criterion-expected.tsv"), sep="\t"
+        )
+        cls.auc_values = r["source"](instance.get_data_path("fit/auc-input.R")).rx2(
+            "value"
+        )
+        cls.auc_expected = pd.read_csv(
+            instance.get_data_path("fit/auc-expected.tsv"), sep="\t"
+        )
+        cls.feature_stability_values = r["source"](
+            instance.get_data_path("fit/feature-stability-input.R")
+        ).rx2("value")
+        cls.feature_stability_expected = pd.read_csv(
+            instance.get_data_path("fit/feature-stability-expected.tsv"), sep="\t"
+        )
         error_rates = (
             TableJSONLFileFormat(
                 instance.get_data_path(
@@ -61,7 +88,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
         cls.nutrimouse_expected = {
             name: pd.read_csv(
-                instance.get_data_path(f"fit/nutrimouse-{name}.tsv"),
+                instance.get_data_path(f"fit/nutrimouse/{name}.tsv"),
                 sep="\t",
                 comment="#",
                 dtype={"id": str, "sample": str},
@@ -95,32 +122,30 @@ class TestFitBlockSPLSDA(TestPluginBase):
             index="block", columns="component", values="weight"
         )
 
-    def test_r_auc_to_dataframe(self):
-        """Flattens R AUC matrices while preserving labels and values."""
-        perf_result = r("""
-            list(auc = list(
-                comp1 = matrix(
-                    c(0.8, 0.01, 0.7, 0.02), nrow = 2, byrow = TRUE,
-                    dimnames = list(c("A vs rest", "B vs rest"),
-                                    c("AUC", "p-value"))
-                ),
-                comp2 = matrix(
-                    c(0.9, 0.03, 0.85, 0.04), nrow = 2, byrow = TRUE,
-                    dimnames = list(c("A vs rest", "B vs rest"),
-                                    c("AUC", "p-value"))
-                )
-            ))
-        """)
-        expected = pd.DataFrame(
-            {
-                "component": [1, 1, 2, 2],
-                "contrast": ["A vs rest", "B vs rest", "A vs rest", "B vs rest"],
-                "auc": [0.8, 0.7, 0.9, 0.85],
-                "p_value": [0.01, 0.02, 0.03, 0.04],
-            }
+    def test_r_ave_to_dataframe(self):
+        """Preserves block and overall AVE metrics with one-based components."""
+        pd.testing.assert_frame_equal(
+            _r_ave_to_dataframe(self.ave_values), self.ave_expected
         )
 
-        pd.testing.assert_frame_equal(_r_auc_to_dataframe(perf_result), expected)
+    def test_r_criterion_to_dataframe(self):
+        """Numbers components and restarts iterations for each convergence trace."""
+        pd.testing.assert_frame_equal(
+            _r_criterion_to_dataframe(self.criterion_values), self.criterion_expected
+        )
+
+    def test_r_auc_to_dataframe(self):
+        """Flattens R AUC matrices while preserving labels and values."""
+        pd.testing.assert_frame_equal(
+            _r_auc_to_dataframe(self.auc_values), self.auc_expected
+        )
+
+    def test_r_feature_stability_to_dataframe(self):
+        """Averages frequencies across repeats, including omitted features as zero."""
+        pd.testing.assert_frame_equal(
+            _r_feature_stability_to_dataframe(self.feature_stability_values),
+            self.feature_stability_expected,
+        )
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""

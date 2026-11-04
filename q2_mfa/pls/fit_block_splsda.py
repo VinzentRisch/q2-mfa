@@ -169,10 +169,12 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     )
     _write_fit_table(
         directory_format.feature_stability,
-        _r_feature_stability_to_dataframe(perf_result),
+        _r_feature_stability_to_dataframe(perf_result.rx2("features").rx2("stable")),
         "feature_stability",
     )
-    _write_fit_table(directory_format.auc, _r_auc_to_dataframe(perf_result), "auc")
+    _write_fit_table(
+        directory_format.auc, _r_auc_to_dataframe(perf_result.rx2("auc")), "auc"
+    )
     _write_fit_table(
         directory_format.error_rate_weighted,
         _r_perf_error_rate_to_df(perf_result, "WeightedVote"),
@@ -312,11 +314,7 @@ def _r_named_frames(values) -> dict[str, pd.DataFrame]:
 
 
 def _component_vectors_to_dataframe(vectors, value_name: str) -> pd.DataFrame:
-    """Flattens (block, numeric vector) pairs with one-based components.
-
-    Component positions follow the order returned by mixOmics, including
-    vectors without names such as AVE_outer and AVE_inner.
-    """
+    """Flattens (block, numeric vector) pairs with one-based components."""
     return pd.DataFrame.from_records(
         (
             (str(block), component, float(value))
@@ -330,13 +328,12 @@ def _component_vectors_to_dataframe(vectors, value_name: str) -> pd.DataFrame:
 def _r_ave_to_dataframe(values) -> pd.DataFrame:
     """Flattens block and overall AVE vectors into one labelled table."""
     ave_x = values.rx2("AVE_X")
-    metrics = {
-        "AVE_X": zip(ave_x.names, ave_x),
-        "AVE_outer": [("overall", values.rx2("AVE_outer"))],
-        "AVE_inner": [("overall", values.rx2("AVE_inner"))],
-    }
     tables = []
-    for metric, vectors in metrics.items():
+    for metric, vectors in (
+        ("AVE_X", zip(ave_x.names, ave_x)),
+        ("AVE_outer", [("overall", values.rx2("AVE_outer"))]),
+        ("AVE_inner", [("overall", values.rx2("AVE_inner"))]),
+    ):
         table = _component_vectors_to_dataframe(vectors, "value")
         table.insert(0, "metric", metric)
         tables.append(table)
@@ -363,19 +360,19 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame:
     )
 
 
-def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
+def _r_feature_stability_to_dataframe(stable) -> pd.DataFrame:
     """Averages selection frequencies across all CV repeats.
 
     A feature omitted from a repeat was selected in zero folds, so its
     contribution is zero and the repeat still counts in the denominator.
 
     Args:
-        perf_result: R ``perf`` result for the final block sPLS-DA model.
+        stable: R selection frequencies nested by repeat, block, and component
+            from ``perf_result$features$stable``.
 
     Returns:
         pd.DataFrame: Block, feature, component, and mean selection frequency.
     """
-    stable = perf_result.rx2("features").rx2("stable")
     records = []
     for repeat_values in stable:
         for block_name, component_values in zip(repeat_values.names, repeat_values):
@@ -402,16 +399,15 @@ def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
     return stability
 
 
-def _r_auc_to_dataframe(perf_result) -> pd.DataFrame:
+def _r_auc_to_dataframe(auc) -> pd.DataFrame:
     """Converts mixOmics per-component, per-contrast AUC results.
 
     Args:
-        perf_result: R ``perf`` result for the final block sPLS-DA model.
+        auc: R list of per-component AUC matrices from ``perf_result$auc``.
 
     Returns:
         pd.DataFrame: Component, contrast, AUC, and p-value records.
     """
-    auc = perf_result.rx2("auc")
     columns = ["component", "contrast", "auc", "p_value"]
     records = []
     for component, values in enumerate(auc, start=1):

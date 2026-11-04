@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from rachis import CategoricalMetadataColumn
 from rachis.plugin import CaptureHolder
-from rpy2.robjects import r
+from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.pls.types._format import (
@@ -23,6 +23,7 @@ from q2_mfa.pls.types._format import (
 )
 from q2_mfa.pls.utils import (
     _build_bpparam,
+    _call_without_messages,
     _parse_keepx_collection,
     _r_matrix_to_dataframe,
     _r_perf_error_rate_to_df,
@@ -30,6 +31,9 @@ from q2_mfa.pls.utils import (
     _resolve_ncomp,
     _to_r_inputs,
 )
+
+base = importr("base")
+mixomics = importr("mixOmics")
 
 
 def fit_block_splsda(
@@ -62,7 +66,6 @@ def fit_block_splsda(
     artifact, but not both. The input tables and response must already have
     identical sample IDs in the same order.
     """
-    r("suppressPackageStartupMessages(library(mixOmics))")
     blocks = dict(tables.items())
     target = y.to_series()
     design = _resolve_design(design_matrix, design_weight, list(blocks))
@@ -81,7 +84,8 @@ def fit_block_splsda(
         design,
         keep_x=selected_keepx,
     )
-    model = r["block.splsda"](
+    model = _call_without_messages(
+        mixomics.block_splsda,
         r_blocks,
         r_target,
         **{
@@ -96,7 +100,8 @@ def fit_block_splsda(
             "verbose.call": False,
         },
     )
-    perf_result = r["perf"](
+    perf_result = _call_without_messages(
+        mixomics.perf,
         model,
         **{
             "dist": "all",
@@ -117,7 +122,7 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     """Serializes final DIABLO model and performance outputs to JSONL files."""
     loadings = _r_named_frames(model.rx2("loadings"))
     variates = _r_named_frames(model.rx2("variates"))
-    weights = _r_matrix_to_dataframe(r["as.matrix"](model.rx2("weights")))
+    weights = _r_matrix_to_dataframe(base.as_matrix(model.rx2("weights")))
     # mixOmics changes weight row names but retains the input block order
     weights.index = pd.Index([str(name) for name in model.rx2("X").names], name="block")
     prop_expl_var = model.rx2("prop_expl_var")
@@ -375,7 +380,7 @@ def _r_feature_stability_to_dataframe(perf_result) -> pd.DataFrame:
     for repeat_values in stable:
         for block_name, component_values in zip(repeat_values.names, repeat_values):
             for component, selection_frequency in enumerate(component_values, start=1):
-                feature_names = [str(name) for name in r["names"](selection_frequency)]
+                feature_names = [str(name) for name in base.names(selection_frequency)]
                 records.append(
                     pd.DataFrame(
                         {

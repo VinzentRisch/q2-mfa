@@ -590,7 +590,7 @@ plugin.methods.register_function(
         **component_tuning_input_descriptions,
         "tables": (
             "Named feature tables used as DIABLO blocks. The tables and response "
-            "must already have identical sample IDs in the same order."
+            "are aligned to shared sample IDs before fitting."
         ),
         "tuned_components": "Optional artifact used to determine ncomp.",
         "feature_selection": "Optional artifact supplying selected keepX values.",

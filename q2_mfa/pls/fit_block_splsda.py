@@ -24,6 +24,7 @@ from q2_mfa.pls.types._format import (
     PLSFitDirFmt,
 )
 from q2_mfa.pls.utils import (
+    _align_samples,
     _build_bpparam,
     _call_without_messages,
     _parse_keepx_collection,
@@ -65,11 +66,10 @@ def fit_block_splsda(
 
     ``ncomp`` and ``tuned_components`` are mutually exclusive. Likewise,
     provide manual block-keyed ``keepx`` strings or a feature-selection
-    artifact, but not both. The input tables and response must already have
-    identical sample IDs in the same order.
+    artifact, but not both. The input tables and response are aligned to
+    shared sample IDs before fitting.
     """
-    blocks = dict(tables.items())
-    target = y.to_series()
+    blocks, target = _align_samples(dict(tables.items()), y.to_series())
     design = _resolve_design(design_matrix, design_weight, list(blocks))
     selected_ncomp = _resolve_ncomp(
         ncomp, tuned_components, weighted, measure, distance

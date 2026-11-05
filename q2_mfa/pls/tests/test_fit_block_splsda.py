@@ -5,8 +5,6 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
-"""Tests the fitting action with current feature-selection artifacts."""
-
 from unittest.mock import Mock
 
 import pandas as pd
@@ -41,7 +39,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
 
     @classmethod
     def setUpClass(cls):
-        """Loads shared artifacts and mixOmics reference results."""
         super().setUpClass()
         instance = cls()
         cls.named_matrices = r["source"](
@@ -173,25 +170,21 @@ class TestFitBlockSPLSDA(TestPluginBase):
                 pd.testing.assert_frame_equal(tables[block], expected)
 
     def test_r_ave_to_dataframe(self):
-        """Preserves block and overall AVE metrics with one-based components."""
         pd.testing.assert_frame_equal(
             _r_ave_to_dataframe(self.ave_values), self.ave_expected
         )
 
     def test_r_criterion_to_dataframe(self):
-        """Numbers components and restarts iterations for each convergence trace."""
         pd.testing.assert_frame_equal(
             _r_criterion_to_dataframe(self.criterion_values), self.criterion_expected
         )
 
     def test_r_auc_to_dataframe(self):
-        """Flattens R AUC matrices while preserving labels and values."""
         pd.testing.assert_frame_equal(
             _r_auc_to_dataframe(self.auc_values), self.auc_expected
         )
 
     def test_r_feature_stability_to_dataframe(self):
-        """Averages frequencies across repeats, including omitted features as zero."""
         pd.testing.assert_frame_equal(
             _r_feature_stability_to_dataframe(self.feature_stability_values),
             self.feature_stability_expected,
@@ -242,7 +235,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
                         _resolve_fit_keepx(keepx, artifact, ["block-a", "block-b"], 2)
 
     def test_resolve_fit_keepx_requires_one_count_per_component(self):
-        """Rejects short, long, and unequal manual component selections."""
         for counts in ("1", "1,2,3"):
             for other_counts in (counts, "1,2"):
                 with self.subTest(counts=counts, other_counts=other_counts):
@@ -265,7 +257,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
             _resolve_fit_keepx({"block-a": "1,2"}, None, ["block-a", "block-b"], 2)
 
     def test_selected_counts_follow_requested_block_order(self):
-        """Reads the wide selection table in fitting block order."""
         observed = _resolve_fit_keepx(
             None,
             self.selection.view(PLSFeatureSelectionDirFmt),
@@ -277,7 +268,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
 
     def test_selection_requires_matching_components(self):
-        """Rejects selection counts that do not cover the fitted components."""
         with self.assertRaisesRegex(
             ValueError,
             "The feature-selection artifact must contain one row per fitted "
@@ -291,7 +281,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
             )
 
     def test_feature_component_correlations_match_plot_var(self):
-        """Matches the labelled component correlations returned by plotVar."""
         correlations = _feature_component_correlations(
             {
                 block: table.view(pd.DataFrame)
@@ -313,7 +302,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
 
     def test_consensus_variates_match_plot_indiv(self):
-        """Matches mixOmics averages with aligned sample and component labels."""
         variates = dict(self.nutrimouse_matrices["variates"])
         variates["lipid"] = variates["lipid"].iloc[::-1, ::-1]
         consensus = _consensus_variates(variates, self.nutrimouse_weights.iloc[:, ::-1])
@@ -332,7 +320,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
 
     def test_feature_similarity_matches_circos_plot(self):
-        """Matches circosPlot similarities using saved plotVar correlations."""
         correlations = self.nutrimouse_matrices["feature-component-correlation"]
         for component_count, key in (
             (1, "feature-similarity-comp1"),

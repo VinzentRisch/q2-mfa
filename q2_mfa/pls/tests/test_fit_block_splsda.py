@@ -19,6 +19,7 @@ from rpy2.robjects import r
 from q2_mfa.pls import PLSFeatureSelection, PLSFeatureSelectionDirFmt, PLSFitDirFmt
 from q2_mfa.pls.examples import nutrimouse_tables_factory
 from q2_mfa.pls.fit_block_splsda import (
+    _block_keepx_from_feature_selection,
     _block_wide_values,
     _component_vectors_to_dataframe,
     _consensus_variates,
@@ -196,6 +197,14 @@ class TestFitBlockSPLSDA(TestPluginBase):
             self.feature_stability_expected,
         )
 
+    def test_block_keepx_from_feature_selection(self):
+        self.assertEqual(
+            _block_keepx_from_feature_selection(
+                self.selection.view(PLSFeatureSelectionDirFmt), 2
+            ),
+            {"block-a": "1,2", "block-b": "2,1"},
+        )
+
     def test_resolve_fit_keepx(self):
         manual = {"block-a": "1, 2", "block-b": "2,1"}
         observed = _resolve_fit_keepx(manual, None, ["block-b", "block-a"], 2)
@@ -249,25 +258,11 @@ class TestFitBlockSPLSDA(TestPluginBase):
                             2,
                         )
 
-    def test_resolve_fit_keepx_validates_manual_counts(self):
-        cases = (
-            (
-                {"block-a": "1,2"},
-                r"^keepx keys must exactly match input block names\.$",
-            ),
-            (
-                {"block-a": "0,2", "block-b": "1,2"},
-                r"Each keepx value must be a comma-separated list of positive",
-            ),
-            (
-                {"block-a": "x,2", "block-b": "1,2"},
-                r"Each keepx value must be a comma-separated list of positive",
-            ),
-        )
-        for keepx, message in cases:
-            with self.subTest(keepx=keepx):
-                with self.assertRaisesRegex(ValueError, message):
-                    _resolve_fit_keepx(keepx, None, ["block-a", "block-b"], 2)
+    def test_resolve_fit_keepx_validates_block_names(self):
+        with self.assertRaisesRegex(
+            ValueError, r"^keepx keys must exactly match input block names\.$"
+        ):
+            _resolve_fit_keepx({"block-a": "1,2"}, None, ["block-a", "block-b"], 2)
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""

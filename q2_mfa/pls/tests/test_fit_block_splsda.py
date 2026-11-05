@@ -17,6 +17,7 @@ from q2_mfa.pls import PLSFeatureSelection, PLSFeatureSelectionDirFmt, PLSFitDir
 from q2_mfa.pls.examples import nutrimouse_tables_factory
 from q2_mfa.pls.fit_block_splsda import (
     _block_wide_values,
+    _component_vectors_to_dataframe,
     _consensus_variates,
     _feature_component_correlations,
     _feature_similarity_to_dataframe,
@@ -24,6 +25,7 @@ from q2_mfa.pls.fit_block_splsda import (
     _r_ave_to_dataframe,
     _r_criterion_to_dataframe,
     _r_feature_stability_to_dataframe,
+    _r_named_frames,
     _resolve_fit_keepx,
     _write_fit_table,
 )
@@ -38,6 +40,20 @@ class TestFitBlockSPLSDA(TestPluginBase):
         """Loads shared artifacts and mixOmics reference results."""
         super().setUpClass()
         instance = cls()
+        cls.named_matrices = r["source"](
+            instance.get_data_path("fit/named-frames-input.R")
+        ).rx2("value")
+        cls.wide_tables = {
+            block: pd.read_csv(
+                instance.get_data_path(f"fit/named-frames-{block}.tsv"),
+                sep="\t",
+                index_col=0,
+            ).rename_axis(None)
+            for block in ("block_b", "block_a")
+        }
+        cls.block_wide_expected = pd.read_csv(
+            instance.get_data_path("fit/block-wide-expected.tsv"), sep="\t"
+        )
         cls.ave_values = r["source"](instance.get_data_path("fit/ave-input.R")).rx2(
             "value"
         )
@@ -121,6 +137,36 @@ class TestFitBlockSPLSDA(TestPluginBase):
         cls.nutrimouse_weights = cls.nutrimouse_expected["weights"].pivot(
             index="block", columns="component", values="weight"
         )
+
+    def test_component_vectors_to_dataframe(self):
+        vectors = self.ave_values.rx2("AVE_X")
+        expected = (
+            self.ave_expected.loc[
+                self.ave_expected["metric"] == "AVE_X", ["block", "component", "value"]
+            ]
+            .rename(columns={"value": "weight"})
+            .reset_index(drop=True)
+        )
+        pd.testing.assert_frame_equal(
+            _component_vectors_to_dataframe(zip(vectors.names, vectors), "weight"),
+            expected,
+        )
+
+    def test_r_named_frames(self):
+        observed = _r_named_frames(self.named_matrices)
+        self.assertEqual(list(observed), list(self.wide_tables))
+        for block, expected in self.wide_tables.items():
+            with self.subTest(block=block):
+                pd.testing.assert_frame_equal(observed[block], expected)
+
+    def test_block_wide_values(self):
+        tables = {block: table.copy() for block, table in self.wide_tables.items()}
+        pd.testing.assert_frame_equal(
+            _block_wide_values(tables, "feature", "loading"), self.block_wide_expected
+        )
+        for block, expected in self.wide_tables.items():
+            with self.subTest(block=block):
+                pd.testing.assert_frame_equal(tables[block], expected)
 
     def test_r_ave_to_dataframe(self):
         """Preserves block and overall AVE metrics with one-based components."""

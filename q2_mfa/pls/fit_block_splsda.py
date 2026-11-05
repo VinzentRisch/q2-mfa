@@ -8,11 +8,13 @@
 """QIIME-facing DIABLO block sPLS-DA fitting action."""
 
 import secrets
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
 from rachis import CategoricalMetadataColumn
 from rachis.plugin import CaptureHolder
+from rpy2.robjects import ListVector
 from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import fit_descriptions
@@ -239,29 +241,6 @@ def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) 
     directory_file.write_data(table, pd.DataFrame)
 
 
-def _block_wide_values(
-    tables: dict[str, pd.DataFrame], identifier: str, value_name: str
-) -> pd.DataFrame:
-    """Converts named wide component tables into block-labelled records."""
-    records = []
-    for block, table in tables.items():
-        working = table.copy()
-        working.index.name = identifier
-        working.columns = range(1, working.shape[1] + 1)
-        long_table = working.reset_index().melt(
-            id_vars=[identifier], var_name="component", value_name=value_name
-        )
-        long_table["component"] = long_table["component"].astype("int64")
-        long_table.insert(0, "block", str(block))
-        records.append(long_table)
-    columns = ["block", identifier, "component", value_name]
-    if not records:
-        return pd.DataFrame(columns=columns)
-    combined = pd.concat(records, ignore_index=True)[columns]
-    combined[identifier] = combined[identifier].astype(str)
-    return combined
-
-
 def _resolve_fit_keepx(
     keepx: CaptureHolder[dict], feature_selection, block_names: list[str], ncomp: int
 ) -> dict[str, list[int]]:
@@ -305,16 +284,76 @@ def _block_keepx_from_feature_selection(
     }
 
 
-def _r_named_frames(values) -> dict[str, pd.DataFrame]:
-    """Converts a named R list of labelled matrices to pandas tables."""
+def _block_wide_values(
+    tables: dict[str, pd.DataFrame], identifier: str, value_name: str
+) -> pd.DataFrame:
+    """Reshapes block-specific feature or sample tables into long records.
+
+    Args:
+        tables (dict[str, pd.DataFrame]): Wide tables keyed by block name.
+        identifier (str): Output column for the index, like ``feature``.
+        value_name (str): Output column for the numeric values like ``loading``.
+
+    Returns:
+        pd.DataFrame: Columns ``block``, the requested identifier,
+            ``component``, and the requested value name.
+
+    Example:
+        >>> tables = {"gene": pd.DataFrame([[0.2, 0.4]], index=["feature_a"])}
+        >>> _block_wide_values(tables, "feature", "loading")
+          block    feature  component  loading
+        0  gene  feature_a          1      0.2
+        1  gene  feature_a          2      0.4
+    """
+    records = []
+    for block, table in tables.items():
+        working = table.copy()
+        working.index.name = identifier
+        working.columns = range(1, working.shape[1] + 1)
+        long_table = working.reset_index().melt(
+            id_vars=[identifier], var_name="component", value_name=value_name
+        )
+        long_table["component"] = long_table["component"].astype("int64")
+        long_table.insert(0, "block", str(block))
+        records.append(long_table)
+    columns = ["block", identifier, "component", value_name]
+    if not records:
+        return pd.DataFrame(columns=columns)
+    combined = pd.concat(records, ignore_index=True)[columns]
+    combined[identifier] = combined[identifier].astype(str)
+    return combined
+
+
+def _r_named_frames(values: ListVector) -> dict[str, pd.DataFrame]:
+    """Converts each matrix in a named R list to a wide pandas table.
+
+    Preserves R list names as dictionary keys and matrix row and column
+    labels as DataFrame labels.
+
+    Args:
+        values: Named R list of numeric matrices with row and column labels.
+
+    Returns:
+        dict[str, pd.DataFrame]: One wide table per R list entry, with string
+            keys and labels in their original order.
+    """
     return {
         str(name): _r_matrix_to_dataframe(value)
         for name, value in zip(values.names, values)
     }
 
 
-def _component_vectors_to_dataframe(vectors, value_name: str) -> pd.DataFrame:
-    """Flattens (block, numeric vector) pairs with one-based components."""
+def _component_vectors_to_dataframe(
+    vectors: Iterable[tuple[str, Iterable[float]]], value_name: str
+) -> pd.DataFrame:
+    """Flattens one numeric vector per block into component records.
+
+    Example:
+        >>> _component_vectors_to_dataframe([("gene", [0.2, 0.4])], "weight")
+          block  component  weight
+        0  gene          1     0.2
+        1  gene          2     0.4
+    """
     return pd.DataFrame.from_records(
         (
             (str(block), component, float(value))

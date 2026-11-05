@@ -1,0 +1,7 @@
+block	feature	component	loading
+block_b	feature_b	1	0.2
+block_b	feature_a	1	0.6
+block_b	feature_b	2	0.4
+block_b	feature_a	2	0.8
+block_a	feature_c	1	0.3
+block_a	feature_c	2	0.5

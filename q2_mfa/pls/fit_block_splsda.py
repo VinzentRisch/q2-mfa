@@ -234,7 +234,6 @@ def _consensus_variates(
 
 
 def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) -> None:
-    """Adds row IDs and a description, then writes the fit table."""
     ids = pd.array([str(index) for index in range(1, len(table) + 1)], dtype="string")
     table.insert(0, "id", ids)
     table.attrs["description"] = fit_descriptions[description_key]

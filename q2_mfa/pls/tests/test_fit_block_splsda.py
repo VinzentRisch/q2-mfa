@@ -7,9 +7,12 @@
 # ----------------------------------------------------------------------------
 """Tests the fitting action with current feature-selection artifacts."""
 
+from unittest.mock import Mock
+
 import pandas as pd
 from q2_types.tabular import TableJSONLFileFormat
 from rachis import Artifact
+from rachis.plugin import CaptureHolder, Collection, Str
 from rachis.plugin.testing import TestPluginBase
 from rpy2.robjects import r
 
@@ -192,6 +195,79 @@ class TestFitBlockSPLSDA(TestPluginBase):
             _r_feature_stability_to_dataframe(self.feature_stability_values),
             self.feature_stability_expected,
         )
+
+    def test_resolve_fit_keepx(self):
+        manual = {"block-a": "1, 2", "block-b": "2,1"}
+        observed = _resolve_fit_keepx(manual, None, ["block-b", "block-a"], 2)
+        self.assertEqual(
+            list(observed.items()),
+            [("block-b", [2, 1]), ("block-a", [1, 2])],
+        )
+
+    def test_resolve_fit_keepx_from_artifact(self):
+        observed = _resolve_fit_keepx(
+            None,
+            self.selection.view(PLSFeatureSelectionDirFmt),
+            ["block-a", "block-b"],
+            2,
+        )
+        self.assertEqual(observed, {"block-a": [1, 2], "block-b": [2, 1]})
+
+    def test_resolve_fit_keepx_requires_exactly_one_source(self):
+        manual = {"block-a": "1,2", "block-b": "2,1"}
+        selection = self.selection.view(PLSFeatureSelectionDirFmt)
+        for captured in (False, True):
+            for values, artifact in ((None, None), (manual, selection)):
+                with self.subTest(captured=captured, manual=values is not None):
+                    keepx = (
+                        CaptureHolder(
+                            "keepx", values, Collection[Str], Mock(parameters={})
+                        )
+                        if captured
+                        else values
+                    )
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        r"^Provide exactly one of 'keepx' or 'feature-selection'\.$",
+                    ):
+                        _resolve_fit_keepx(keepx, artifact, ["block-a", "block-b"], 2)
+
+    def test_resolve_fit_keepx_requires_one_count_per_component(self):
+        """Rejects short, long, and unequal manual component selections."""
+        for counts in ("1", "1,2,3"):
+            for other_counts in (counts, "1,2"):
+                with self.subTest(counts=counts, other_counts=other_counts):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        r"^Each keepx block must provide exactly 2 feature counts, "
+                        r"one for each fitted component\.$",
+                    ):
+                        _resolve_fit_keepx(
+                            {"block-a": counts, "block-b": other_counts},
+                            None,
+                            ["block-a", "block-b"],
+                            2,
+                        )
+
+    def test_resolve_fit_keepx_validates_manual_counts(self):
+        cases = (
+            (
+                {"block-a": "1,2"},
+                r"^keepx keys must exactly match input block names\.$",
+            ),
+            (
+                {"block-a": "0,2", "block-b": "1,2"},
+                r"Each keepx value must be a comma-separated list of positive",
+            ),
+            (
+                {"block-a": "x,2", "block-b": "1,2"},
+                r"Each keepx value must be a comma-separated list of positive",
+            ),
+        )
+        for keepx, message in cases:
+            with self.subTest(keepx=keepx):
+                with self.assertRaisesRegex(ValueError, message):
+                    _resolve_fit_keepx(keepx, None, ["block-a", "block-b"], 2)
 
     def test_selected_counts_follow_requested_block_order(self):
         """Reads the wide selection table in fitting block order."""

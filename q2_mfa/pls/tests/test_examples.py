@@ -19,6 +19,7 @@ from rachis.sdk.usage import ExecutionUsage
 
 import q2_mfa
 from q2_mfa.pls import PLSFeatureSelectionDirFmt, PLSFitDirFmt
+from q2_mfa.pls.descriptions import fit_descriptions
 from q2_mfa.plugin_setup import plugin
 
 
@@ -95,7 +96,6 @@ class TestUsageExamples(TestPluginBase):
                 ("loadings", "loadings"),
                 ("variates", "variates"),
                 ("weights", "weights"),
-                ("consensus_variates", "consensus-variates"),
                 ("prop_expl_var", "prop-expl-var"),
                 ("ave", "ave"),
                 ("crit", "criterion"),
@@ -157,8 +157,10 @@ class TestUsageExamples(TestPluginBase):
         fitted.validate()
         for name, expected in self.expected_fit.items():
             with self.subTest(table=name):
+                observed = getattr(fitted, name).view(pd.DataFrame)
+                self.assertEqual(observed.attrs["description"], fit_descriptions[name])
                 assert_frame_equal(
-                    getattr(fitted, name).view(pd.DataFrame),
+                    observed,
                     expected,
                     check_dtype=False,
                     rtol=1e-8,

@@ -180,31 +180,38 @@ feature_selection_descriptions = {
 fit_descriptions = {
     "loadings": (
         "Per-feature component loading weights from mixOmics block.splsda() "
-        "model$loadings, with input-block and component labels."
+        "model$loadings, with one row per feature and block. Each row has a "
+        "unique generated id, a string feature ID, a block label, and comp1, "
+        "comp2, etc. columns in component order."
     ),
     "variates": (
         "Per-sample latent-component scores from mixOmics block.splsda() "
-        "model$variates, with input-block and component labels."
-    ),
-    "consensus_variates": (
-        "Per-sample component scores combined across input blocks, excluding "
-        "the outcome block Y, to match mixOmics plotIndiv(). The method average "
-        "uses the arithmetic mean of the block scores. The method weighted_average "
+        "model$variates, including Y when present, and combined scores. Each row "
+        "has a unique generated id, a string sample ID, a block label, and "
+        "comp1, comp2, etc. columns in component order. Original block names "
+        "label per-block scores. The average block contains the arithmetic "
+        "mean across input blocks, excluding the outcome block Y, to match "
+        "mixOmics plotIndiv(). The weighted_average block "
         "multiplies each block's score by its signed model$weights value, sums "
         "the products, and divides by the sum of weights for that component."
     ),
     "weights": (
         "Signed Pearson correlations between each input block's component scores "
         "and the corresponding outcome-component scores from mixOmics "
-        "block.splsda() model$weights."
+        "block.splsda() model$weights. Each row has a unique generated id, a "
+        "block label, and comp1, comp2, etc. columns in component order."
     ),
     "prop_expl_var": (
-        "Proportion of explained variance per input block and latent component "
-        "from mixOmics block.splsda() model$prop_expl_var."
+        "Proportion of explained variance per block and latent component from "
+        "mixOmics block.splsda() model$prop_expl_var. Each row has a unique "
+        "generated id, a block label, and comp1, comp2, etc. columns in "
+        "component order."
     ),
     "ave": (
         "Average variance explained summaries from mixOmics block.splsda() "
-        "model$AVE, with metric, block, and component labels."
+        "model$AVE. Each row has a unique generated id, a metric label, a "
+        "block label, and comp1, comp2, etc. columns in component order. "
+        "The AVE_outer and AVE_inner metrics use the block label overall."
     ),
     "crit": (
         "Per-component convergence criterion traces from mixOmics block.splsda() "
@@ -215,7 +222,10 @@ fit_descriptions = {
         "block, feature, and component. The per-repeat frequencies from mixOmics "
         "perf() features$stable are summed and divided by the total number of "
         "repeats. Repeats in which a feature was never selected are included "
-        "in the average with a selection frequency of zero."
+        "in the average with a selection frequency of zero. Each row has a "
+        "unique generated id, a block label, a string feature ID, and comp1, "
+        "comp2, etc. columns containing mean selection frequencies. Features "
+        "never selected for a component have a frequency of zero."
     ),
     "auc": (
         "Per-component contrast AUC values and p-values from mixOmics perf() "
@@ -235,7 +245,8 @@ fit_descriptions = {
         "Pearson correlations between features selected on any fitted component "
         "and every component's sample scores in their own block. These "
         "correlations correspond to the coordinates computed by mixOmics "
-        "plotVar()."
+        "plotVar(). Each row has a unique generated id, a string feature ID, "
+        "a block label, and comp1, comp2, etc. columns in component order."
     ),
     "feature_similarity": (
         "Pairwise similarities between selected features. For each pair, "

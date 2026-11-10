@@ -8,7 +8,6 @@
 """QIIME-facing DIABLO block sPLS-DA fitting action."""
 
 import secrets
-from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
@@ -90,32 +89,26 @@ def fit_block_splsda(
         mixomics.block_splsda,
         r_blocks,
         r_target,
+        ncomp=selected_ncomp,
+        keepX=r_keepx,
+        design=r_design,
+        scale=scale,
+        tol=tol,
         **{
-            "ncomp": selected_ncomp,
-            "keepX": r_keepx,
-            "design": r_design,
-            "scale": scale,
-            "tol": tol,
             "max.iter": max_iter,
             "near.zero.var": near_zero_var,
-            "all.outputs": True,
-            "verbose.call": False,
         },
     )
-    perf_result = _call_without_messages(
-        mixomics.perf,
+    perf_result = mixomics.perf(
         model,
-        **{
-            "dist": "all",
-            "validation": validation,
-            "folds": folds,
-            "nrepeat": nrepeat,
-            "signif.threshold": signif_threshold,
-            "auc": True,
-            "BPPARAM": bpparam,
-            "seed": resolved_seed,
-            "progressBar": False,
-        },
+        dist="all",
+        validation=validation,
+        folds=folds,
+        nrepeat=nrepeat,
+        auc=True,
+        BPPARAM=bpparam,
+        seed=resolved_seed,
+        **{"signif.threshold": signif_threshold},
     )
     return _serialize_fit(model, perf_result)
 
@@ -127,78 +120,61 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     weights = _r_matrix_to_dataframe(base.as_matrix(model.rx2("weights")))
     # mixOmics changes weight row names but retains the input block order
     weights.index = pd.Index([str(name) for name in model.rx2("X").names], name="block")
-    prop_expl_var = model.rx2("prop_expl_var")
     directory_format = PLSFitDirFmt()
     _write_fit_table(
-        directory_format.loadings,
-        _block_wide_values(loadings, "feature", "loading"),
-        "loadings",
+        output_file=directory_format.loadings,
+        table=_block_matrices_to_dataframe(loadings, identifier="feature"),
     )
     _write_fit_table(
-        directory_format.variates,
-        _block_wide_values(variates, "sample", "score"),
-        "variates",
-    )
-    _write_fit_table(
-        directory_format.weights,
-        _component_vectors_to_dataframe(weights.iterrows(), "weight"),
-        "weights",
-    )
-    _write_fit_table(
-        directory_format.consensus_variates,
-        _block_wide_values(
-            _consensus_variates(variates, weights), "sample", "score"
-        ).rename(columns={"block": "method"}),
-        "consensus_variates",
-    )
-    _write_fit_table(
-        directory_format.prop_expl_var,
-        _component_vectors_to_dataframe(
-            zip(prop_expl_var.names, prop_expl_var),
-            "proportion_explained_variance",
+        output_file=directory_format.variates,
+        table=_block_matrices_to_dataframe(
+            variates, _consensus_variates(variates, weights), identifier="sample"
         ),
-        "prop_expl_var",
     )
     _write_fit_table(
-        directory_format.ave,
-        _r_ave_to_dataframe(model.rx2("AVE")),
-        "ave",
+        output_file=directory_format.weights,
+        table=weights.reset_index(),
     )
     _write_fit_table(
-        directory_format.crit,
-        _r_criterion_to_dataframe(model.rx2("crit")),
-        "crit",
+        output_file=directory_format.prop_expl_var,
+        table=_r_prop_expl_var_to_dataframe(model.rx2("prop_expl_var")),
     )
     _write_fit_table(
-        directory_format.feature_stability,
-        _r_feature_stability_to_dataframe(perf_result.rx2("features").rx2("stable")),
-        "feature_stability",
+        output_file=directory_format.ave,
+        table=_r_ave_to_dataframe(model.rx2("AVE")),
     )
     _write_fit_table(
-        directory_format.auc, _r_auc_to_dataframe(perf_result.rx2("auc")), "auc"
+        output_file=directory_format.crit,
+        table=_r_criterion_to_dataframe(model.rx2("crit")),
     )
     _write_fit_table(
-        directory_format.error_rate_weighted,
-        _r_perf_error_rate_to_df(perf_result, "WeightedVote"),
-        "error_rate_weighted",
+        output_file=directory_format.feature_stability,
+        table=_r_feature_stability_to_dataframe(
+            perf_result.rx2("features").rx2("stable")
+        ),
     )
     _write_fit_table(
-        directory_format.error_rate_majority,
-        _r_perf_error_rate_to_df(perf_result, "MajorityVote"),
-        "error_rate_majority",
+        output_file=directory_format.auc,
+        table=_r_auc_to_dataframe(perf_result.rx2("auc")),
+    )
+    _write_fit_table(
+        output_file=directory_format.error_rate_weighted,
+        table=_r_perf_error_rate_to_df(perf_result, "WeightedVote"),
+    )
+    _write_fit_table(
+        output_file=directory_format.error_rate_majority,
+        table=_r_perf_error_rate_to_df(perf_result, "MajorityVote"),
     )
     correlations = _feature_component_correlations(
         _r_named_frames(model.rx2("X")), variates, loadings
     )
     _write_fit_table(
-        directory_format.feature_component_correlation,
-        _block_wide_values(correlations, "feature", "correlation"),
-        "feature_component_correlation",
+        output_file=directory_format.feature_component_correlation,
+        table=_block_matrices_to_dataframe(correlations, identifier="feature"),
     )
     _write_fit_table(
-        directory_format.feature_similarity,
-        _feature_similarity_to_dataframe(correlations),
-        "feature_similarity",
+        output_file=directory_format.feature_similarity,
+        table=_feature_similarity_to_dataframe(correlations),
     )
     return directory_format
 
@@ -206,38 +182,30 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
 def _consensus_variates(
     variates: dict[str, pd.DataFrame], weights: pd.DataFrame
 ) -> dict[str, pd.DataFrame]:
-    """Averages aligned input-block scores using equal or signed model weights.
+    """Averages input-block scores using equal or signed model weights.
 
     The weight index identifies the input blocks, excluding the outcome Y.
+    Pandas preserves sample and component labels throughout the calculation.
     Each weighted score is divided by the sum of weights for its component,
     matching mixOmics plotIndiv().
     """
-    first = variates[weights.index[0]]
-    scores = np.stack(
-        [
-            variates[block].loc[first.index, first.columns].to_numpy()
-            for block in weights.index
-        ]
-    )
-    block_weights = weights.loc[:, first.columns].to_numpy()
     return {
-        "average": pd.DataFrame(
-            scores.mean(axis=0), index=first.index, columns=first.columns
-        ),
-        "weighted_average": pd.DataFrame(
-            (scores * block_weights[:, None, :]).sum(axis=0)
-            / block_weights.sum(axis=0),
-            index=first.index,
-            columns=first.columns,
+        "average": (sum(variates[block] for block in weights.index) / len(weights)),
+        "weighted_average": (
+            sum(
+                variates[block].mul(weights.loc[block], axis="columns")
+                for block in weights.index
+            )
+            / weights.sum(axis=0)
         ),
     }
 
 
-def _write_fit_table(directory_file, table: pd.DataFrame, description_key: str) -> None:
+def _write_fit_table(output_file, table: pd.DataFrame) -> None:
     ids = pd.array([str(index) for index in range(1, len(table) + 1)], dtype="string")
     table.insert(0, "id", ids)
-    table.attrs["description"] = fit_descriptions[description_key]
-    directory_file.write_data(table, pd.DataFrame)
+    table.attrs["description"] = fit_descriptions[output_file.name]
+    output_file.write_data(table, pd.DataFrame)
 
 
 def _resolve_fit_keepx(
@@ -283,44 +251,30 @@ def _block_keepx_from_feature_selection(
     }
 
 
-def _block_wide_values(
-    tables: dict[str, pd.DataFrame], identifier: str, value_name: str
+def _block_matrices_to_dataframe(
+    *tables: dict[str, pd.DataFrame],
+    identifier: str,
 ) -> pd.DataFrame:
-    """Reshapes block-specific feature or sample tables into long records.
+    """Concatenates block matrices while keeping component columns wide.
 
     Args:
-        tables (dict[str, pd.DataFrame]): Wide tables keyed by block name.
-        identifier (str): Output column for the index, like ``feature``.
-        value_name (str): Output column for the numeric values like ``loading``.
+        tables (dict[str, pd.DataFrame]): Block-keyed matrices. Multiple
+            dictionaries retain separate entries even when block names repeat.
+        identifier (str): Column name for the matrix row labels, such as
+            ``sample`` or ``feature``.
 
     Returns:
-        pd.DataFrame: Columns ``block``, the requested identifier,
-            ``component``, and the requested value name.
-
-    Example:
-        >>> tables = {"gene": pd.DataFrame([[0.2, 0.4]], index=["feature_a"])}
-        >>> _block_wide_values(tables, "feature", "loading")
-          block    feature  component  loading
-        0  gene  feature_a          1      0.2
-        1  gene  feature_a          2      0.4
+        pd.DataFrame: String row identifiers, block labels, and component
+            columns with their original names, values, and order.
     """
     records = []
-    for block, table in tables.items():
-        working = table.copy()
-        working.index.name = identifier
-        working.columns = range(1, working.shape[1] + 1)
-        long_table = working.reset_index().melt(
-            id_vars=[identifier], var_name="component", value_name=value_name
-        )
-        long_table["component"] = long_table["component"].astype("int64")
-        long_table.insert(0, "block", str(block))
-        records.append(long_table)
-    columns = ["block", identifier, "component", value_name]
-    if not records:
-        return pd.DataFrame(columns=columns)
-    combined = pd.concat(records, ignore_index=True)[columns]
-    combined[identifier] = combined[identifier].astype(str)
-    return combined
+    for blocks in tables:
+        for block, table in blocks.items():
+            working = table.copy()
+            working.insert(0, "block", str(block))
+            working.insert(0, identifier, table.index.astype(str))
+            records.append(working)
+    return pd.concat(records, ignore_index=True)
 
 
 def _r_named_frames(values: ListVector) -> dict[str, pd.DataFrame]:
@@ -342,40 +296,29 @@ def _r_named_frames(values: ListVector) -> dict[str, pd.DataFrame]:
     }
 
 
-def _component_vectors_to_dataframe(
-    vectors: Iterable[tuple[str, Iterable[float]]], value_name: str
-) -> pd.DataFrame:
-    """Flattens one numeric vector per block into component records.
-
-    Example:
-        >>> _component_vectors_to_dataframe([("gene", [0.2, 0.4])], "weight")
-          block  component  weight
-        0  gene          1     0.2
-        1  gene          2     0.4
-    """
-    return pd.DataFrame.from_records(
-        (
-            (str(block), component, float(value))
-            for block, values in vectors
-            for component, value in enumerate(values, start=1)
-        ),
-        columns=["block", "component", value_name],
+def _r_prop_expl_var_to_dataframe(values: ListVector) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"block": str(block), **dict(zip(vector.names, vector))}
+        for block, vector in values.items()
     )
 
 
 def _r_ave_to_dataframe(values) -> pd.DataFrame:
-    """Flattens block and overall AVE vectors into one labelled table."""
-    ave_x = values.rx2("AVE_X")
-    tables = []
+    """Stores block and overall AVE vectors with one column per component."""
+    rows = []
     for metric, vectors in (
-        ("AVE_X", zip(ave_x.names, ave_x)),
+        ("AVE_X", values.rx2("AVE_X").items()),
         ("AVE_outer", [("overall", values.rx2("AVE_outer"))]),
         ("AVE_inner", [("overall", values.rx2("AVE_inner"))]),
     ):
-        table = _component_vectors_to_dataframe(vectors, "value")
-        table.insert(0, "metric", metric)
-        tables.append(table)
-    return pd.concat(tables, ignore_index=True)
+        for block, vector in vectors:
+            row = {"metric": metric, "block": str(block)}
+            row.update(
+                (f"comp{component}", float(value))
+                for component, value in enumerate(vector, start=1)
+            )
+            rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def _r_criterion_to_dataframe(values) -> pd.DataFrame:
@@ -399,7 +342,7 @@ def _r_criterion_to_dataframe(values) -> pd.DataFrame:
 
 
 def _r_feature_stability_to_dataframe(stable) -> pd.DataFrame:
-    """Averages selection frequencies across all CV repeats.
+    """Builds wide component tables and averages frequencies across CV repeats.
 
     A feature omitted from a repeat was selected in zero folds, so its
     contribution is zero and the repeat still counts in the denominator.
@@ -409,32 +352,31 @@ def _r_feature_stability_to_dataframe(stable) -> pd.DataFrame:
             from ``perf_result$features$stable``.
 
     Returns:
-        pd.DataFrame: Block, feature, component, and mean selection frequency.
+        pd.DataFrame: One row per block and feature, with mean selection
+            frequencies in ``comp1``, ``comp2``, etc. columns. Features absent
+            from every repeat for a component have a frequency of zero.
     """
-    records = []
+    repeat_tables = []
     for repeat_values in stable:
-        for block_name, component_values in zip(repeat_values.names, repeat_values):
-            for component, selection_frequency in enumerate(component_values, start=1):
-                feature_names = [str(name) for name in base.names(selection_frequency)]
-                records.append(
-                    pd.DataFrame(
-                        {
-                            "block": str(block_name),
-                            "feature": feature_names,
-                            "component": component,
-                            "selection_frequency": np.asarray(
-                                selection_frequency, dtype=float
-                            ),
-                        }
+        blocks = {}
+        for block_name, components in repeat_values.items():
+            blocks[str(block_name)] = pd.DataFrame(
+                {
+                    str(component): pd.Series(
+                        list(frequencies),
+                        index=list(base.names(frequencies)),
                     )
-                )
-    stability = (
-        pd.concat(records, ignore_index=True)
-        .groupby(["block", "feature", "component"], as_index=False)
-        .agg(mean_selection_frequency=("selection_frequency", "sum"))
+                    for component, frequencies in components.items()
+                }
+            ).fillna(0)
+        repeat_tables.append(_block_matrices_to_dataframe(blocks, identifier="feature"))
+    return (
+        pd.concat(repeat_tables, ignore_index=True)
+        .groupby(["feature", "block"])
+        .sum()
+        .div(len(stable))
+        .reset_index()
     )
-    stability["mean_selection_frequency"] /= len(stable)
-    return stability
 
 
 def _r_auc_to_dataframe(auc) -> pd.DataFrame:
@@ -480,7 +422,7 @@ def _feature_component_correlations(
         correlations[block] = pd.DataFrame(
             {
                 component: feature_values.corrwith(scores)
-                for component, (_, scores) in enumerate(block_variates.items(), start=1)
+                for component, scores in block_variates.items()
             }
         )
     return correlations

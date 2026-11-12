@@ -18,7 +18,7 @@ from rachis.plugin.testing import TestPluginBase
 from rachis.sdk.usage import ExecutionUsage
 
 import q2_mfa
-from q2_mfa.pls import PLSFeatureSelectionDirFmt
+from q2_mfa.pls import PLSComponentSelectionDirFmt, PLSFeatureSelectionDirFmt
 from q2_mfa.plugin_setup import plugin
 
 
@@ -83,6 +83,58 @@ class TestUsageExamples(TestPluginBase):
             index_col="id",
             dtype={"id": str},
         )
+        cls.expected_component_tuning = {}
+        for vote in ("weighted", "majority"):
+            for table in ("error-rates", "choices"):
+                expected = pd.read_csv(
+                    instance.get_data_path(
+                        f"tune-components/nutrimouse-{vote}-{table}.tsv"
+                    ),
+                    sep="\t",
+                    index_col="id",
+                    dtype={"id": str, "component": float},
+                )
+                cls.expected_component_tuning[vote, table] = (
+                    expected.astype(float) if table == "choices" else expected
+                )
+
+    def test_tune_components_block_splsda_nutrimouse(self):
+        """Check the Nutrimouse tuning metrics, printed choices, and report."""
+        use = ExecutionUsage()
+        action = self.plugin.pipelines["tune_components_block_splsda"]
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            action.examples["nutrimouse"](use)
+        outputs = use.render()
+        tuning = outputs["tuned_components_nutrimouse"].execute()
+        data = tuning.view(PLSComponentSelectionDirFmt)
+
+        expected_stdout = []
+        for vote in ("weighted", "majority"):
+            expected_rates = self.expected_component_tuning[vote, "error-rates"]
+            expected_choices = self.expected_component_tuning[vote, "choices"]
+            rates = getattr(data, f"error_rate_{vote}").view(Metadata).to_dataframe()
+            choice_file = getattr(data, f"choice_matrix_{vote}")
+            choices = choice_file.view(Metadata).to_dataframe()
+            with self.subTest(vote=vote):
+                assert_frame_equal(rates, expected_rates, rtol=1e-8, atol=1e-10)
+                assert_frame_equal(choices, expected_choices, check_exact=True)
+            printed_choices = expected_choices.astype("Int64").to_string()
+            expected_stdout.append(
+                f"{vote.capitalize()}Vote component-choice matrix:\n\n"
+                f"{printed_choices}\n\n"
+            )
+        self.assertEqual(stdout.getvalue(), "".join(expected_stdout))
+
+        report = outputs["component_tuning_report"].execute()
+        with (report._archiver.data_dir / "subfigures" / "index.json").open() as fh:
+            report_index = json.load(fh)
+        self.assertEqual(list(report_index), ["Error rates", "Component choices"])
+        for section in ("Error rates", "Component choices"):
+            self.assertEqual(
+                list(report_index[section]["children"]),
+                ["Weighted vote", "Majority vote"],
+            )
 
     def test_select_features_block_splsda_nutrimouse(self):
         use = ExecutionUsage()

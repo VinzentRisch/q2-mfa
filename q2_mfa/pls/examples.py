@@ -104,3 +104,42 @@ def select_features_block_splsda_nutrimouse(use):
             visualization="feature_selection_report",
         ),
     )
+
+
+def tune_components_block_splsda_nutrimouse(use):
+    use.comment(
+        "Use gene expression and lipid measurements from the mixOmics Nutrimouse "
+        "dataset to classify 40 mice by diet. Evaluate up to two components "
+        "using three repeats of three-fold cross-validation and a gene/lipid "
+        "association weight of 0.9. The report shows weighted- and majority-vote "
+        "error rates and the selected component counts. "
+        'Martin, Pascal GP, et al. "Novel aspects of PPARα‐mediated regulation of '
+        'lipid and xenobiotic metabolism revealed through a nutrigenomic study." '
+        "Hepatology 45.3 (2007): 767-777."
+    )
+    tables = use.init_artifact_collection(
+        "nutrimouse_tables", nutrimouse_tables_factory
+    )
+    metadata = use.init_metadata("nutrimouse_metadata", nutrimouse_metadata_factory)
+    diet = use.get_metadata_column("diet", "diet", metadata)
+    design_matrix = use.init_artifact(
+        "nutrimouse_association_matrix", nutrimouse_association_matrix_factory
+    )
+    use.action(
+        use.UsageAction(plugin_id="mfa", action_id="tune_components_block_splsda"),
+        use.UsageInputs(
+            tables=tables,
+            y=diet,
+            design_matrix=design_matrix,
+            ncomp=2,
+            validation="Mfold",
+            folds=3,
+            nrepeat=3,
+            seed=42,
+            threads=1,
+        ),
+        use.UsageOutputNames(
+            tune_components="tuned_components_nutrimouse",
+            visualization="component_tuning_report",
+        ),
+    )

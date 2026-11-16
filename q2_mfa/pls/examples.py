@@ -71,7 +71,7 @@ def select_features_block_splsda_nutrimouse(use):
         "weighted BER choice is two components, and a gene/lipid association "
         "matrix with integration weight 0.9."
     )
-    use.comment("DOI: 10.1002/hep.21510")
+    use.comment("DOI: https://doi.org/10.1002/hep.21510")
     tables = use.init_artifact_collection(
         "nutrimouse_tables", nutrimouse_tables_factory
     )

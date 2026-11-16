@@ -126,7 +126,7 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
         table=_block_matrices_to_dataframe(loadings, identifier="feature"),
     )
     _write_fit_table(
-        output_file=directory_format.variates,
+        output_file=directory_format.scores,
         table=_block_matrices_to_dataframe(
             variates, _consensus_variates(variates, weights), identifier="sample"
         ),

@@ -49,7 +49,7 @@ class PLSFitDirFmt(model.DirectoryFormat):
     """Stores PLS and DIABLO tables with wide scores, loadings, and correlations."""
 
     loadings = model.File("loadings.jsonl", format=TableJSONLFileFormat)
-    variates = model.File("variates.jsonl", format=TableJSONLFileFormat)
+    scores = model.File("scores.jsonl", format=TableJSONLFileFormat)
     weights = model.File("weights.jsonl", format=TableJSONLFileFormat)
     prop_expl_var = model.File("prop_expl_var.jsonl", format=TableJSONLFileFormat)
     ave = model.File("ave.jsonl", format=TableJSONLFileFormat)

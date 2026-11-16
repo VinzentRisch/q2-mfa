@@ -184,10 +184,11 @@ fit_descriptions = {
         "unique generated id, a string feature ID, a block label, and comp1, "
         "comp2, etc. columns in component order."
     ),
-    "variates": (
-        "Per-sample latent-component scores from mixOmics block.splsda() "
-        "model$variates, including Y when present, and combined scores. Each row "
-        "has a unique generated id, a string sample ID, a block label, and "
+    "scores": (
+        "Per-sample component scores for each input block and the outcome block "
+        "Y from mixOmics block.splsda() model$variates, plus "
+        "combined scores across the input blocks. Each row has a unique "
+        "generated id, a string sample ID, a block label, and "
         "comp1, comp2, etc. columns in component order. Original block names "
         "label per-block scores. The average block contains the arithmetic "
         "mean across input blocks, excluding the outcome block Y, to match "
@@ -196,10 +197,11 @@ fit_descriptions = {
         "the products, and divides by the sum of weights for that component."
     ),
     "weights": (
-        "Signed Pearson correlations between each input block's component scores "
-        "and the corresponding outcome-component scores from mixOmics "
-        "block.splsda() model$weights. Each row has a unique generated id, a "
-        "block label, and comp1, comp2, etc. columns in component order."
+        "Block weights from mixOmics block.splsda() model$weights. Each weight "
+        "is a signed Pearson correlation across samples between an input "
+        "block's scores and the outcome block Y's scores for the same component. "
+        "Each row has a unique generated id, a block label, and comp1, comp2, etc. "
+        "columns in component order."
     ),
     "prop_expl_var": (
         "Proportion of explained variance per block and latent component from "

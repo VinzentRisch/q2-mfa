@@ -107,7 +107,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
             )
             for name in (
                 "loadings",
-                "variates",
+                "scores",
                 "weights",
                 "feature-component-correlation",
                 "feature-similarity",
@@ -117,7 +117,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
         cls.nutrimouse_matrices = {}
         for name, identifier in (
             ("loadings", "feature"),
-            ("variates", "sample"),
+            ("scores", "sample"),
             ("feature-component-correlation", "feature"),
         ):
             cls.nutrimouse_matrices[name] = {
@@ -255,7 +255,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
                 block: table.view(pd.DataFrame)
                 for block, table in self.nutrimouse_tables.items()
             },
-            self.nutrimouse_matrices["variates"],
+            self.nutrimouse_matrices["scores"],
             self.nutrimouse_matrices["loadings"],
         )
         pd.testing.assert_frame_equal(
@@ -267,7 +267,7 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
 
     def test_consensus_variates_match_plot_indiv(self):
-        expected = self.nutrimouse_matrices["variates"]
+        expected = self.nutrimouse_matrices["scores"]
         variates = {
             block: scores
             for block, scores in expected.items()

@@ -94,7 +94,7 @@ class TestUsageExamples(TestPluginBase):
             )
             for name, fixture in (
                 ("loadings", "loadings"),
-                ("variates", "variates"),
+                ("scores", "scores"),
                 ("weights", "weights"),
                 ("prop_expl_var", "prop-expl-var"),
                 ("ave", "ave"),

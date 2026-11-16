@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: plotVar(model, comp = 1:2, plot = FALSE): x and y coordinates
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	feature	block	comp1	comp2
 1	CYP3A11	gene	0.360477069898682	0.825508773559846
 2	FAT	gene	0.194716260735842	-0.547342453171592

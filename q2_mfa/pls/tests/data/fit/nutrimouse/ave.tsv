@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: model$AVE
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	metric	block	comp1	comp2
 1	AVE_X	gene	0.15923052998394	0.110385085752464
 2	AVE_X	lipid	0.246095727278585	0.272623229197145

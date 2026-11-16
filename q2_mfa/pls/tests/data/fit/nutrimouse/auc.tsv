@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: perf$auc (mixOmics-returned AUC summaries, not held-out CV ROC coordinates)
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	component	contrast	auc	p_value
 1	1	coc vs Other(s)	0.923047	0.0161822379
 2	1	fish vs Other(s)	0.75071	0.194256809

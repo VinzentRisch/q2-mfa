@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: model$crit
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	component	iteration	criterion
 1	1	1	8.77864330718032
 2	1	2	9.27926010673545

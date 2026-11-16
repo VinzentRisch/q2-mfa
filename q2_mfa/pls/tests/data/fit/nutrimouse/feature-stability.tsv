@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: perf$features$stable: summed frequencies / all 10 repeats, including omitted repeats as zero
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	feature	block	comp1	comp2
 1	ACAT2	gene	0.06	0.12
 2	ACBP	gene	0	0.08

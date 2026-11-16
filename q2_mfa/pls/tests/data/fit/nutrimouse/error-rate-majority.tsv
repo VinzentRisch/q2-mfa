@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: perf$MajorityVote.error.rate and .error.rate.sd
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	distance	class	component	mean	sd
 1	max.dist	coc	1	0.375	0.204124145231932
 2	max.dist	coc	2	0.325	0.0874007373475126

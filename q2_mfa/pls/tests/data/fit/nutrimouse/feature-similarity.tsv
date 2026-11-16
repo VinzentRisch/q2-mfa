@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: circosPlot(model, comp = 1:2, cutoff = 0): upper triangle in row order
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	block_1	feature_1	block_2	feature_2	similarity
 1	gene	CYP3A11	gene	FAT	-0.381645250103234
 2	gene	CYP3A11	gene	GSTa	0.537888587642463

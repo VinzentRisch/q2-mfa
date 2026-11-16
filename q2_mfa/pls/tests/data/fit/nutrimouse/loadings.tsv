@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: model$loadings
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	feature	block	comp1	comp2
 1	X36b4	gene	0	0
 2	ACAT1	gene	0	0

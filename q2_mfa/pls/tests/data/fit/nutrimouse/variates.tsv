@@ -7,7 +7,6 @@
 # perf: signif.threshold = 0.01; BiocParallel::SerialParam().
 # Source: model$variates and plotIndiv(model, comp = 1:2, blocks = "average" / "weighted.average")$df
 # Reshaped only in R to fit output columns, with one-based row IDs.
-# Regenerate with generate-nutrimouse.R in this directory.
 id	sample	block	comp1	comp2
 1	1	gene	-0.0874398899978032	2.32285148419698
 2	2	gene	-0.980096033768788	0.98272108378704

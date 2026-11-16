@@ -144,10 +144,6 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
         table=_r_ave_to_dataframe(model.rx2("AVE")),
     )
     _write_fit_table(
-        output_file=directory_format.crit,
-        table=_r_criterion_to_dataframe(model.rx2("crit")),
-    )
-    _write_fit_table(
         output_file=directory_format.feature_stability,
         table=_r_feature_stability_to_dataframe(
             perf_result.rx2("features").rx2("stable")
@@ -319,26 +315,6 @@ def _r_ave_to_dataframe(values) -> pd.DataFrame:
             )
             rows.append(row)
     return pd.DataFrame(rows)
-
-
-def _r_criterion_to_dataframe(values) -> pd.DataFrame:
-    """Flattens per-component convergence traces into one pandas table.
-
-    Args:
-        values: Unnamed R list of numeric convergence criteria, one per
-            component.
-
-    Returns:
-        pd.DataFrame: Component, iteration, and criterion values.
-    """
-    return pd.DataFrame.from_records(
-        (
-            (component, iteration, float(criterion))
-            for component, trace in enumerate(values, start=1)
-            for iteration, criterion in enumerate(trace, start=1)
-        ),
-        columns=["component", "iteration", "criterion"],
-    )
 
 
 def _r_feature_stability_to_dataframe(stable) -> pd.DataFrame:

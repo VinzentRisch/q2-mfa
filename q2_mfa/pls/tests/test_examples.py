@@ -98,7 +98,6 @@ class TestUsageExamples(TestPluginBase):
                 ("weights", "weights"),
                 ("prop_expl_var", "prop-expl-var"),
                 ("ave", "ave"),
-                ("crit", "criterion"),
                 ("feature_stability", "feature-stability"),
                 ("auc", "auc"),
                 ("error_rate_weighted", "error-rate-weighted"),

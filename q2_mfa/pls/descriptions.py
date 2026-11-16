@@ -215,10 +215,6 @@ fit_descriptions = {
         "block label, and comp1, comp2, etc. columns in component order. "
         "The AVE_outer and AVE_inner metrics use the block label overall."
     ),
-    "crit": (
-        "Per-component convergence criterion traces from mixOmics block.splsda() "
-        "model$crit."
-    ),
     "feature_stability": (
         "Mean selection frequency across all cross-validation repeats for each "
         "block, feature, and component. The per-repeat frequencies from mixOmics "

@@ -24,7 +24,6 @@ from q2_mfa.pls.fit_block_splsda import (
     _feature_similarity_to_dataframe,
     _r_auc_to_dataframe,
     _r_ave_to_dataframe,
-    _r_criterion_to_dataframe,
     _r_feature_stability_to_dataframe,
     _r_named_frames,
     _resolve_fit_keepx,
@@ -55,12 +54,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
         )
         cls.ave_expected = pd.read_csv(
             instance.get_data_path("fit/ave-expected.tsv"), sep="\t"
-        )
-        cls.criterion_values = r["source"](
-            instance.get_data_path("fit/criterion-input.R")
-        ).rx2("value")
-        cls.criterion_expected = pd.read_csv(
-            instance.get_data_path("fit/criterion-expected.tsv"), sep="\t"
         )
         cls.auc_values = r["source"](instance.get_data_path("fit/auc-input.R")).rx2(
             "value"
@@ -141,11 +134,6 @@ class TestFitBlockSPLSDA(TestPluginBase):
     def test_r_ave_to_dataframe(self):
         pd.testing.assert_frame_equal(
             _r_ave_to_dataframe(self.ave_values), self.ave_expected
-        )
-
-    def test_r_criterion_to_dataframe(self):
-        pd.testing.assert_frame_equal(
-            _r_criterion_to_dataframe(self.criterion_values), self.criterion_expected
         )
 
     def test_r_auc_to_dataframe(self):

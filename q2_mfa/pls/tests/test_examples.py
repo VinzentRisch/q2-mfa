@@ -99,7 +99,6 @@ class TestUsageExamples(TestPluginBase):
                 )
 
     def test_tune_components_block_splsda_nutrimouse(self):
-        """Check the Nutrimouse tuning metrics, printed choices, and report."""
         use = ExecutionUsage()
         action = self.plugin.pipelines["tune_components_block_splsda"]
         stdout = StringIO()

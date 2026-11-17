@@ -111,6 +111,9 @@ def tune_components_block_splsda_nutrimouse(use):
         "using three repeats of three-fold cross-validation and a gene/lipid "
         "association weight of 0.9. The report shows weighted- and majority-vote "
         "error rates and the selected component counts."
+        "This example uses few folds and repeats to keep runtime short. For a real "
+        "analysis, use more repeats and increase the number of folds For more "
+        "information, consult the mixOmics documentation."
     )
     use.comment("DOI: https://doi.org/10.1002/hep.21510")
     tables = use.init_artifact_collection(

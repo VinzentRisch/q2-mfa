@@ -41,7 +41,10 @@ from q2_mfa.pls import (
     select_features_block_splsda,
     tune_components_block_splsda,
 )
-from q2_mfa.pls.examples import select_features_block_splsda_nutrimouse
+from q2_mfa.pls.examples import (
+    select_features_block_splsda_nutrimouse,
+    tune_components_block_splsda_nutrimouse,
+)
 from q2_mfa.preprocessing import transform_clr
 
 citations = Citations.load("citations.bib", package="q2_mfa")
@@ -410,6 +413,7 @@ plugin.pipelines.register_function(
 
 plugin.pipelines.register_function(
     function=tune_components_block_splsda,
+    examples={"nutrimouse": tune_components_block_splsda_nutrimouse},
     inputs={
         "tables": Collection[FeatureTable[Unconstrained]],
         "design_matrix": AssociationMatrix,

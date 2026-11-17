@@ -191,7 +191,7 @@ def _r_error_rate_matrices_to_dataframe(
         .rename_axis(index=[row_name, "component"])
         .reset_index()
     )
-    rates["component"] = rates["component"].str.removeprefix("comp").astype("int64")
+    rates["component"] = rates["component"].str.removeprefix("comp").astype("Int64")
     return rates
 
 
@@ -257,7 +257,9 @@ def _resolve_ncomp(
         ValueError: If exactly one of a manual count and tuning artifact is not
             provided.
     """
-    manual_ncomp = ncomp.is_set
+    manual_ncomp = ncomp is not None and (
+        not isinstance(ncomp, CaptureHolder) or ncomp.is_set
+    )
     has_tuned_ncomp = tuned_ncomp is not None
     if manual_ncomp == has_tuned_ncomp:
         raise ValueError("Provide exactly one of ncomp or a tuned-ncomp artifact.")
@@ -296,5 +298,66 @@ def _ncomp_from_tuned_ncomp(
         else tuned_ncomp.choice_matrix_majority
     )
     matrix = matrix_file.view(pd.DataFrame)
-    selected_ncomp = matrix.loc[matrix["id"] == requested_measure, distance].iloc[0]
-    return int(selected_ncomp)
+    selected = matrix.loc[matrix["id"] == requested_measure, distance]
+    if len(selected) != 1 or pd.isna(selected.iloc[0]):
+        raise ValueError(
+            "The component-tuning artifact has no selected number of components for "
+            "the requested vote, measure, and distance."
+        )
+    return int(selected.iloc[0])
+
+
+def _parse_keepx_collection(
+    keepx: dict,
+    block_names: list[str],
+    ncomp: int,
+    already_tested: bool = False,
+) -> dict[str, list[int]]:
+    """
+    Parses comma-separated keepX counts keyed by input block.
+
+    For example, ``{"metabolome": "5,10", "microbiome": "3,6"}``
+    becomes ``{"metabolome": [5, 10], "microbiome": [3, 6]}``.
+
+    Args:
+        keepx (dict): Collection mapping each block to comma-separated feature
+            counts.
+        block_names (list[str]): Ordered names of the input feature blocks.
+        ncomp (int): Total components being tuned.
+        already_tested (bool): Whether the values are fixed selections for
+            earlier components rather than candidate counts.
+
+    Returns:
+        dict[str, list[int]]: Validated feature counts keyed by block name.
+
+    Raises:
+        ValueError: If the collection keys do not match the input blocks, a
+            value is not a positive integer, fixed selections have unequal
+            lengths, or ncomp does not exceed their length.
+    """
+    if set(keepx) != set(block_names):
+        raise ValueError("keepx keys must exactly match input block names.")
+    parsed = {}
+    for name in block_names:
+        try:
+            values = [int(value.strip()) for value in str(keepx[name]).split(",")]
+            if not values or any(value < 1 for value in values):
+                raise ValueError
+        except ValueError as error:
+            raise ValueError(
+                "Each keepx value must be a comma-separated list of positive integers."
+            ) from error
+        parsed[name] = values
+    if already_tested:
+        selection_lengths = {len(values) for values in parsed.values()}
+        if len(selection_lengths) != 1:
+            raise ValueError(
+                "All 'already-tested-x' lists must have the same length. "
+                "Each entry specifies how many features to retain for one component."
+            )
+        if ncomp <= selection_lengths.pop():
+            raise ValueError(
+                "'ncomp' must be greater than the length of each 'already-tested-x' "
+                "list so that at least one component remains to tune."
+            )
+    return parsed

@@ -25,13 +25,12 @@ from q2_mfa.pls.descriptions import (
     feature_selection_report_descriptions,
 )
 from q2_mfa.pls.select_features_block_splsda import (
-    _parse_keepx_collection,
     _r_feature_selection_error_rate_to_dataframe,
     _select_features_block_splsda_visualiser,
     _selected_features_table,
     _serialize_feature_selection,
 )
-from q2_mfa.pls.utils import base
+from q2_mfa.pls.utils import _parse_keepx_collection, base
 
 
 class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
@@ -340,7 +339,7 @@ class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
             )
             .sort_values(["keepx_block-a", "keepx_block-b"], kind="stable")
             .reset_index(drop=True)
-            .astype({"component": "int64"})
+            .astype({"component": "Int64"})
         )
 
         assert_frame_equal(observed, expected)
@@ -354,7 +353,7 @@ class TestSelectFeaturesBlockSPLSDA(TestPluginBase):
         observed = _selected_features_table(tune_result)
         expected = pd.DataFrame(
             {"metabolome": [5, 7], "microbiome": [3, 4]},
-            index=pd.Index([1, 2], name="component"),
+            index=pd.Index([1, 2], dtype="Int64", name="component"),
         )
 
         assert_frame_equal(observed, expected)

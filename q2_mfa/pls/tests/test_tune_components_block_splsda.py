@@ -13,7 +13,9 @@ from pandas.testing import assert_frame_equal
 from q2_types.feature_table import FeatureTable, Unconstrained
 from rachis import Artifact, Metadata, ResultCollection
 from rachis.plugin.testing import TestPluginBase
+from rpy2.rinterface_lib.embedded import RRuntimeError
 from rpy2.robjects import r
+from rpy2.robjects.packages import importr
 
 from q2_mfa.pls.descriptions import jsonl_descriptions
 from q2_mfa.pls.tune_components_block_splsda import (
@@ -21,7 +23,9 @@ from q2_mfa.pls.tune_components_block_splsda import (
     _print_component_choice,
     _r_choice_matrix_to_df,
     _serialize_tune_components,
+    _tune_components_block_splsda,
     _tune_components_block_visualisation,
+    mixomics,
     tune_components_block_splsda,
 )
 
@@ -71,6 +75,53 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         cls.expected_majority_choices = read_table(
             "nutrimouse-majority-choices.tsv"
         ).astype(float)
+
+    def test_parameters_reach_mixomics(self):
+        """Checks non-default arguments after R translation and S3 dispatch."""
+        for name in ("block.plsda", "perf.sgccda"):
+            self.addCleanup(r, f'untrace("{name}", where=asNamespace("mixOmics"))')
+        r("""
+            trace("block.plsda", where=asNamespace("mixOmics"), print=FALSE,
+                  tracer=quote(stopifnot(
+                ncomp == 3, !scale, tol == 1e-4, max.iter == 200,
+                near.zero.var, design == 0.4
+            )))
+            trace("perf.sgccda", where=asNamespace("mixOmics"), print=FALSE,
+                  tracer=quote({
+                stopifnot(
+                    inherits(object, "sgccda"), dist == "all",
+                    validation == "loo", folds == 4, nrepeat == 4,
+                    signif.threshold == 0.2, seed == 17,
+                    BiocParallel::bpworkers(BPPARAM) == 2,
+                    length(list(...)) == 0
+                )
+                stop("mixOmics parameters verified")
+            }))
+        """)
+        # Refresh rpy2's cached handle to the traced R function.
+        with (
+            patch.object(mixomics, "block_plsda", importr("mixOmics").block_plsda),
+            self.assertRaisesRegex(RRuntimeError, "mixOmics parameters verified"),
+        ):
+            _tune_components_block_splsda(
+                tables={
+                    name: table.view(pd.DataFrame)
+                    for name, table in self.tables.items()
+                },
+                y=self.response,
+                design_weight=0.4,
+                ncomp=3,
+                scale=False,
+                tol=1e-4,
+                max_iter=200,
+                near_zero_var=True,
+                validation="loo",
+                folds=4,
+                nrepeat=4,
+                signif_threshold=0.2,
+                seed=17,
+                threads=2,
+            )
 
     def test_tune_components_pipeline_calls_its_actions(self):
         tuning = MagicMock()
@@ -223,7 +274,7 @@ class TestTuneComponentsBlockSPLSDA(TestPluginBase):
         expected = pd.DataFrame(
             {"max.dist": [2, 1], "centroids.dist": [4, 3]},
             index=pd.Index(["Overall.ER", "Overall.BER"], name="id"),
-        ).astype("Int64")
+        ).astype("int64")
         assert_frame_equal(actual, expected)
 
     @patch("builtins.print")

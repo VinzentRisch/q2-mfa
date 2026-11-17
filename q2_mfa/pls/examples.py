@@ -67,13 +67,11 @@ def select_features_block_splsda_nutrimouse(use):
         "Load the nutrimouse dataset bundled with mixOmics: 40 mice, 120 "
         "gene-expression features, and 21 lipid features. The small grid and three "
         "repeats keep this demonstration short; use more repeats for a thorough "
-        "analysis. Usees an illustrative prebuilt component-selection artifact whose "
+        "analysis. Uses an illustrative prebuilt component-selection artifact whose "
         "weighted BER choice is two components, and a gene/lipid association "
         "matrix with integration weight 0.9."
-        'Martin, Pascal GP, et al. "Novel aspects of PPARα‐mediated regulation of '
-        'lipid and xenobiotic metabolism revealed through a nutrigenomic study." '
-        "Hepatology 45.3 (2007): 767-777."
     )
+    use.comment("DOI: https://doi.org/10.1002/hep.21510")
     tables = use.init_artifact_collection(
         "nutrimouse_tables", nutrimouse_tables_factory
     )
@@ -112,11 +110,9 @@ def tune_components_block_splsda_nutrimouse(use):
         "dataset to classify 40 mice by diet. Evaluate up to two components "
         "using three repeats of three-fold cross-validation and a gene/lipid "
         "association weight of 0.9. The report shows weighted- and majority-vote "
-        "error rates and the selected component counts. "
-        'Martin, Pascal GP, et al. "Novel aspects of PPARα‐mediated regulation of '
-        'lipid and xenobiotic metabolism revealed through a nutrigenomic study." '
-        "Hepatology 45.3 (2007): 767-777."
+        "error rates and the selected component counts."
     )
+    use.comment("DOI: https://doi.org/10.1002/hep.21510")
     tables = use.init_artifact_collection(
         "nutrimouse_tables", nutrimouse_tables_factory
     )

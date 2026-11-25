@@ -166,14 +166,13 @@ def _serialize_fit(model, perf_result) -> PLSFitDirFmt:
     correlations = _feature_component_correlations(
         _r_named_frames(model.rx2("X")), variates, loadings
     )
-    similarities = _feature_similarity_to_dataframe(correlations)
     _write_fit_table(
         output_file=directory_format.feature_component_correlation,
         table=correlations,
     )
     _write_fit_table(
         output_file=directory_format.feature_similarity,
-        table=similarities,
+        table=_feature_similarity_to_dataframe(correlations),
     )
     return directory_format
 
